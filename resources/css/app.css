@@ -1,0 +1,221 @@
+@import 'tailwindcss';
+
+@import 'tw-animate-css';
+
+@source '../views';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+    --font-sans:
+        'Manrope', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+        'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-heading: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+
+    --radius-lg: var(--radius);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-sm: calc(var(--radius) - 4px);
+
+    --color-nppc-900: #1a3694;
+    --color-nppc-700: #365bb0;
+    --color-nppc-500: #5282d3;
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+    --background: oklch(0.985 0.01 255);
+    --foreground: oklch(0.22 0.04 265);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.22 0.04 265);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.22 0.04 265);
+    --primary: oklch(0.42 0.14 265);
+    --primary-foreground: oklch(0.98 0.01 255);
+    --secondary: oklch(0.95 0.02 255);
+    --secondary-foreground: oklch(0.32 0.08 265);
+    --muted: oklch(0.96 0.015 255);
+    --muted-foreground: oklch(0.5 0.03 265);
+    --accent: oklch(0.94 0.03 255);
+    --accent-foreground: oklch(0.32 0.08 265);
+    --destructive: oklch(0.577 0.245 27.325);
+    --destructive-foreground: oklch(0.577 0.245 27.325);
+    --border: oklch(0.9 0.02 255);
+    --input: oklch(0.9 0.02 255);
+    --ring: oklch(0.55 0.12 265);
+    --chart-1: oklch(0.42 0.14 265);
+    --chart-2: oklch(0.55 0.12 250);
+    --chart-3: oklch(0.65 0.1 240);
+    --chart-4: oklch(0.72 0.08 230);
+    --chart-5: oklch(0.8 0.06 220);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.98 0.015 255);
+    --sidebar-foreground: oklch(0.22 0.04 265);
+    --sidebar-primary: oklch(0.42 0.14 265);
+    --sidebar-primary-foreground: oklch(0.98 0.01 255);
+    --sidebar-accent: oklch(0.94 0.03 255);
+    --sidebar-accent-foreground: oklch(0.32 0.08 265);
+    --sidebar-border: oklch(0.9 0.02 255);
+    --sidebar-ring: oklch(0.55 0.12 265);
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.145 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.145 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.985 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.396 0.141 25.723);
+    --destructive-foreground: oklch(0.637 0.237 25.331);
+    --border: oklch(0.269 0 0);
+    --input: oklch(0.269 0 0);
+    --ring: oklch(0.439 0 0);
+    --chart-1: oklch(0.488 0.243 264.376);
+    --chart-2: oklch(0.696 0.17 162.48);
+    --chart-3: oklch(0.769 0.188 70.08);
+    --chart-4: oklch(0.627 0.265 303.9);
+    --chart-5: oklch(0.645 0.246 16.439);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.985 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(0.269 0 0);
+    --sidebar-ring: oklch(0.439 0 0);
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+@layer utilities {
+    .font-heading {
+        font-family: var(--font-heading);
+    }
+
+    .nppc-atmosphere {
+        background:
+            radial-gradient(
+                circle at top left,
+                rgba(82, 130, 211, 0.28),
+                transparent 40%
+            ),
+            radial-gradient(
+                circle at bottom right,
+                rgba(26, 54, 148, 0.18),
+                transparent 45%
+            ),
+            linear-gradient(160deg, #f4f7fc 0%, #e7eef9 45%, #f8fafc 100%);
+    }
+
+    @keyframes intake-enter {
+        from {
+            opacity: 0;
+            transform: translateY(0.75rem);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .intake-enter {
+        animation: intake-enter 0.65s ease-out both;
+    }
+
+    .intake-enter-delay {
+        animation: intake-enter 0.7s ease-out 0.12s both;
+    }
+
+    .intake-enter-late {
+        animation: intake-enter 0.75s ease-out 0.22s both;
+    }
+
+    .intake-landing {
+        isolation: isolate;
+    }
+
+    .intake-grid {
+        background-image:
+            linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+            linear-gradient(
+                90deg,
+                rgba(255, 255, 255, 0.08) 1px,
+                transparent 1px
+            );
+        background-size: 48px 48px;
+        mask-image: radial-gradient(circle at center, black, transparent 78%);
+    }
+
+    @keyframes intake-float {
+        0%,
+        100% {
+            transform: translateY(0);
+        }
+        50% {
+            transform: translateY(-10px);
+        }
+    }
+
+    .intake-float {
+        animation: intake-float 8s ease-in-out infinite;
+    }
+}
