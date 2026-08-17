@@ -2,6 +2,7 @@ import { Link, usePage } from '@inertiajs/react';
 import {
     Beaker,
     ClipboardCheck,
+    FileText,
     Hash,
     History,
     LayoutGrid,
@@ -101,6 +102,11 @@ export function AppSidebar() {
                       title: 'Control number',
                       href: '/admin/control-number',
                       icon: Hash,
+                  } satisfies NavItem,
+                  {
+                      title: 'Form templates',
+                      href: '/admin/form-templates',
+                      icon: FileText,
                   } satisfies NavItem,
               ]
             : []),

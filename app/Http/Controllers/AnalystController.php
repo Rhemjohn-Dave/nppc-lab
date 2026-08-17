@@ -6,8 +6,10 @@ use App\Enums\JobOrderAnalysisStatus;
 use App\Enums\JobOrderStatus;
 use App\Models\JobOrderAnalysis;
 use App\Services\JobOrderService;
+use App\Support\AnalysisResultPdfExporter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -28,30 +30,38 @@ class AnalystController extends Controller
             JobOrderAnalysisStatus::Pending,
         ];
 
-        $baseQuery = JobOrderAnalysis::query()
+        $openQuery = JobOrderAnalysis::query()
             ->whereIn('status', $openStatuses)
             ->whereHas('jobOrder', function ($query) {
                 $query->where('status', JobOrderStatus::InAnalysis);
             });
 
+        $completedQuery = JobOrderAnalysis::query()
+            ->where('status', JobOrderAnalysisStatus::Completed);
+
         if (! $user->hasRole('admin')) {
-            $baseQuery->where('assigned_to', $user->id);
+            $openQuery->where('assigned_to', $user->id);
+            $completedQuery->where('assigned_to', $user->id);
         }
 
+        $showingCompleted = $statusFilter === JobOrderAnalysisStatus::Completed->value;
+        $baseQuery = $showingCompleted ? $completedQuery : $openQuery;
+
         $counts = [
-            'all' => (clone $baseQuery)->count(),
-            'returned' => (clone $baseQuery)
+            'all' => (clone $openQuery)->count(),
+            'returned' => (clone $openQuery)
                 ->where('status', JobOrderAnalysisStatus::Returned)
                 ->count(),
-            'in_progress' => (clone $baseQuery)
+            'in_progress' => (clone $openQuery)
                 ->where('status', JobOrderAnalysisStatus::InProgress)
                 ->count(),
-            'assigned' => (clone $baseQuery)
+            'assigned' => (clone $openQuery)
                 ->whereIn('status', [
                     JobOrderAnalysisStatus::Assigned,
                     JobOrderAnalysisStatus::Pending,
                 ])
                 ->count(),
+            'completed' => (clone $completedQuery)->count(),
         ];
 
         $allowedStatusFilters = [
@@ -59,12 +69,13 @@ class AnalystController extends Controller
             JobOrderAnalysisStatus::InProgress->value,
             JobOrderAnalysisStatus::Assigned->value,
             JobOrderAnalysisStatus::Pending->value,
+            JobOrderAnalysisStatus::Completed->value,
         ];
 
         $tasks = (clone $baseQuery)
             ->with(['jobOrder.samples', 'analysisType'])
             ->when(
-                in_array($statusFilter, $allowedStatusFilters, true),
+                in_array($statusFilter, $allowedStatusFilters, true) && ! $showingCompleted,
                 function ($query) use ($statusFilter) {
                     if ($statusFilter === JobOrderAnalysisStatus::Assigned->value) {
                         $query->whereIn('status', [
@@ -157,5 +168,17 @@ class AnalystController extends Controller
         $this->jobOrders->completeAnalysis($analysis, $data, $request->user());
 
         return back()->with('success', 'Result saved and analysis marked complete.');
+    }
+
+    public function pdf(Request $request, JobOrderAnalysis $analysis): HttpResponse
+    {
+        $user = $request->user();
+
+        abort_unless(
+            $user->hasRole('admin') || $analysis->assigned_to === $user->id,
+            403,
+        );
+
+        return AnalysisResultPdfExporter::download($analysis);
     }
 }

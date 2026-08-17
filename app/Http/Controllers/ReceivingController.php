@@ -6,8 +6,7 @@ use App\Enums\JobOrderStatus;
 use App\Models\JobOrder;
 use App\Services\JobOrderService;
 use App\Support\JobOrderFormPresenter;
-use App\Support\OfficialAnalysisCatalog;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Support\RfaPdfExporter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
@@ -129,14 +128,7 @@ class ReceivingController extends Controller
     {
         $jobOrder->load(['samples', 'analyses', 'receiver', 'reviewer']);
 
-        $pdf = Pdf::loadView('pdf.request-for-analysis', [
-            'jobOrder' => $jobOrder,
-            'catalog' => JobOrderFormPresenter::catalog(),
-            'documentControl' => OfficialAnalysisCatalog::documentControl(),
-            'showResults' => false,
-        ])->setPaper('folio');
-
-        return $pdf->download("RFA-{$jobOrder->reference_no}.pdf");
+        return RfaPdfExporter::download($jobOrder, showResults: false);
     }
 
     /**

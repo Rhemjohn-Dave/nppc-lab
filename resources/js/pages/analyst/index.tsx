@@ -52,6 +52,7 @@ type Props = {
         returned: number;
         in_progress: number;
         assigned: number;
+        completed: number;
     };
     filters: {
         q: string;
@@ -66,6 +67,10 @@ function statusBadgeClass(status: string) {
 
     if (status === 'in_progress') {
         return 'border-sky-200 bg-sky-50 text-sky-900';
+    }
+
+    if (status === 'completed') {
+        return 'border-emerald-200 bg-emerald-50 text-emerald-900';
     }
 
     return 'border-[#c5d4f0] bg-[#eef3fb] text-[#1A3694]';
@@ -200,6 +205,7 @@ export default function AnalystIndex({ tasks, counts, filters }: Props) {
             count: counts.in_progress,
         },
         { id: 'assigned', label: 'Not started', count: counts.assigned },
+        { id: 'completed', label: 'Completed', count: counts.completed },
     ] as const;
 
     return (
@@ -223,7 +229,7 @@ export default function AnalystIndex({ tasks, counts, filters }: Props) {
                     )}
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                     <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
                         <p className="text-sm text-muted-foreground">Open tasks</p>
                         <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
@@ -252,6 +258,14 @@ export default function AnalystIndex({ tasks, counts, filters }: Props) {
                         </p>
                         <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
                             {counts.assigned}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border bg-gradient-to-br from-white to-emerald-50/70 p-4">
+                        <p className="text-sm text-muted-foreground">
+                            Completed
+                        </p>
+                        <p className="mt-1 font-heading text-3xl font-semibold text-emerald-800">
+                            {counts.completed}
                         </p>
                     </div>
                 </div>
@@ -343,7 +357,10 @@ export default function AnalystIndex({ tasks, counts, filters }: Props) {
                                     variant="outline"
                                     className="border-[#c5d4f0] bg-white text-[#1A3694]"
                                 >
-                                    {jobTasks.length} open
+                                    {jobTasks.length}{' '}
+                                    {filters.status === 'completed'
+                                        ? 'completed'
+                                        : 'open'}
                                 </Badge>
                             </div>
 
@@ -404,17 +421,35 @@ export default function AnalystIndex({ tasks, counts, filters }: Props) {
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-3 text-right">
-                                                    <Button
-                                                        size="sm"
-                                                        className="bg-[#1A3694] hover:bg-[#365BB0]"
-                                                        onClick={() =>
-                                                            openTask(task)
-                                                        }
-                                                    >
-                                                        {task.result_value
-                                                            ? 'Continue'
-                                                            : 'Enter result'}
-                                                    </Button>
+                                                    <div className="flex justify-end gap-2">
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            asChild
+                                                        >
+                                                            <a
+                                                                href={`/analyst/tasks/${task.id}/pdf`}
+                                                            >
+                                                                Download PDF
+                                                            </a>
+                                                        </Button>
+                                                        {task.status !==
+                                                            'completed' && (
+                                                            <Button
+                                                                size="sm"
+                                                                className="bg-[#1A3694] hover:bg-[#365BB0]"
+                                                                onClick={() =>
+                                                                    openTask(
+                                                                        task,
+                                                                    )
+                                                                }
+                                                            >
+                                                                {task.result_value
+                                                                    ? 'Continue'
+                                                                    : 'Enter result'}
+                                                            </Button>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -428,7 +463,7 @@ export default function AnalystIndex({ tasks, counts, filters }: Props) {
                         <div className="rounded-xl border bg-white px-4 py-12 text-center text-muted-foreground">
                             {filters.q || filters.status
                                 ? 'No tasks match your filters.'
-                                : 'No open tasks right now. Jobs appear here after Receiving finalizes pricing and marks samples received.'}
+                                : 'No open tasks right now. Completed results are under the Completed filter.'}
                         </div>
                     )}
 
@@ -573,6 +608,17 @@ export default function AnalystIndex({ tasks, counts, filters }: Props) {
                                 Cancel
                             </Button>
                             <div className="flex flex-wrap gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    asChild
+                                >
+                                    <a
+                                        href={`/analyst/tasks/${active.id}/pdf`}
+                                    >
+                                        Download PDF
+                                    </a>
+                                </Button>
                                 <Button
                                     type="button"
                                     variant="outline"

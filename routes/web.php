@@ -2,8 +2,9 @@
 
 use App\Http\Controllers\Admin\AnalysisTypeAdminController;
 use App\Http\Controllers\Admin\AssignmentAdminController;
-use App\Http\Controllers\Admin\HistoryAccessAdminController;
 use App\Http\Controllers\Admin\ControlNumberAdminController;
+use App\Http\Controllers\Admin\FormTemplateAdminController;
+use App\Http\Controllers\Admin\HistoryAccessAdminController;
 use App\Http\Controllers\Admin\UserAdminController;
 use App\Http\Controllers\AnalystController;
 use App\Http\Controllers\DashboardController;
@@ -50,6 +51,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/', [AnalystController::class, 'index'])->name('index');
         Route::post('/tasks/{analysis}/draft', [AnalystController::class, 'saveDraft'])->name('draft');
         Route::post('/tasks/{analysis}/complete', [AnalystController::class, 'complete'])->name('complete');
+        Route::get('/tasks/{analysis}/pdf', [AnalystController::class, 'pdf'])->name('pdf');
     });
 
     Route::middleware('role:head_analysis')->prefix('head')->name('head.')->group(function () {
@@ -82,6 +84,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         Route::get('/control-number', [ControlNumberAdminController::class, 'edit'])->name('control-number');
         Route::put('/control-number', [ControlNumberAdminController::class, 'update'])->name('control-number.update');
+
+        Route::get('/form-templates', [FormTemplateAdminController::class, 'edit'])->name('form-templates');
+        Route::post('/form-templates', [FormTemplateAdminController::class, 'update'])->name('form-templates.update');
+        Route::post('/form-templates/regenerate', [FormTemplateAdminController::class, 'regenerate'])->name('form-templates.regenerate');
+        Route::get('/form-templates/source', [FormTemplateAdminController::class, 'downloadSource'])->name('form-templates.source');
+        Route::get('/form-templates/fillable', [FormTemplateAdminController::class, 'downloadFillable'])->name('form-templates.fillable');
+        Route::get('/form-templates/sample', [FormTemplateAdminController::class, 'downloadSample'])->name('form-templates.sample');
+        Route::get('/form-templates/calibration', [FormTemplateAdminController::class, 'downloadCalibration'])->name('form-templates.calibration');
     });
 });
 
