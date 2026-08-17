@@ -608,17 +608,19 @@ export default function AnalystIndex({ tasks, counts, filters }: Props) {
                                 Cancel
                             </Button>
                             <div className="flex flex-wrap gap-2">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    asChild
-                                >
-                                    <a
-                                        href={`/analyst/tasks/${active.id}/pdf`}
+                                {active && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        asChild
                                     >
-                                        Download PDF
-                                    </a>
-                                </Button>
+                                        <a
+                                            href={`/analyst/tasks/${active.id}/pdf`}
+                                        >
+                                            Download PDF
+                                        </a>
+                                    </Button>
+                                )}
                                 <Button
                                     type="button"
                                     variant="outline"
