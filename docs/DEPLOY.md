@@ -163,7 +163,7 @@ memory_limit = 256M
 
 ## Queue worker (Supervisor)
 
-Database notifications need a running worker. Customer `ResultsReadyMail` is sent synchronously when a job becomes ready for pickup. Broadcast channels (`database` + `broadcast`) also need the worker so Reverb delivers bell updates.
+In-app LMS notifications write to the database and broadcast immediately (`BroadcastMessage` on the `sync` connection) so Reverb can push to the header bell without a queue worker. Customer `ResultsReadyMail` is also sent synchronously when a job becomes ready for pickup. Queue workers remain useful for other jobs.
 
 ```ini
 [program:nppc-lab-worker]
@@ -177,9 +177,9 @@ redirect_stderr=true
 stdout_logfile=/var/www/nppc-lab/storage/logs/worker.log
 ```
 
-## Reverb (real-time notifications)
+## Reverb (real-time notifications and queues)
 
-Run Reverb beside the queue worker so the header bell updates without a page reload.
+Run Reverb beside the queue worker so the header bell and Receiving / Analyst / Head queue boards update without a page reload or timed poll. Workflow changes in `JobOrderService` broadcast `LabQueueUpdated` on private `lab.queue.*` channels; those pages do a one-shot Inertia partial reload.
 
 ```ini
 [program:nppc-lab-reverb]

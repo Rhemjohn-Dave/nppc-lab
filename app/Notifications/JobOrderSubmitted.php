@@ -3,15 +3,12 @@
 namespace App\Notifications;
 
 use App\Models\JobOrder;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
+use App\Support\SyncBroadcastMessage;
 use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Notification;
 
-class JobOrderSubmitted extends Notification implements ShouldQueue
+class JobOrderSubmitted extends Notification
 {
-    use Queueable;
-
     public function __construct(public JobOrder $jobOrder) {}
 
     /** @return array<int, string> */
@@ -35,6 +32,6 @@ class JobOrderSubmitted extends Notification implements ShouldQueue
 
     public function toBroadcast(object $notifiable): BroadcastMessage
     {
-        return new BroadcastMessage($this->toArray($notifiable));
+        return SyncBroadcastMessage::make($this->toArray($notifiable));
     }
 }

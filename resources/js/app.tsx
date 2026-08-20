@@ -10,6 +10,13 @@ import SettingsLayout from '@/layouts/settings/layout';
 if (import.meta.env.VITE_REVERB_APP_KEY) {
     configureEcho({
         broadcaster: 'reverb',
+        key: import.meta.env.VITE_REVERB_APP_KEY,
+        wsHost: import.meta.env.VITE_REVERB_HOST || 'localhost',
+        wsPort: Number(import.meta.env.VITE_REVERB_PORT || 8080),
+        wssPort: Number(import.meta.env.VITE_REVERB_PORT || 8080),
+        forceTLS: (import.meta.env.VITE_REVERB_SCHEME || 'http') === 'https',
+        enabledTransports: ['ws', 'wss'],
+        authEndpoint: '/broadcasting/auth',
     });
 }
 

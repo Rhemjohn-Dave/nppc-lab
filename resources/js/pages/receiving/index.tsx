@@ -7,6 +7,7 @@ import TablePagination from '@/components/table-pagination';
 import WorkspaceHeader from '@/components/workspace-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { LabQueueRealtime } from '@/hooks/use-lab-queue-realtime';
 import { cn } from '@/lib/utils';
 
 type Order = {
@@ -60,27 +61,10 @@ function money(value: string | number) {
 export default function ReceivingIndex({ orders, counts, filters }: Props) {
     const { flash } = usePage().props as { flash?: { success?: string } };
     const [query, setQuery] = useState(filters.q ?? '');
-    const [isRefreshing, setIsRefreshing] = useState(false);
-    const [lastUpdated, setLastUpdated] = useState(() => new Date());
 
     useEffect(() => {
         setQuery(filters.q ?? '');
     }, [filters.q]);
-
-    useEffect(() => {
-        const id = window.setInterval(() => {
-            setIsRefreshing(true);
-            router.reload({
-                only: ['orders', 'counts'],
-                onFinish: () => {
-                    setIsRefreshing(false);
-                    setLastUpdated(new Date());
-                },
-            });
-        }, 20000);
-
-        return () => window.clearInterval(id);
-    }, []);
 
     useEffect(() => {
         const trimmed = query.trim();
@@ -124,14 +108,12 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
     return (
         <>
             <Head title="Receiving" />
+            <LabQueueRealtime role="receiving" only={['orders', 'counts']} />
             <div className="flex flex-col gap-5 p-4">
                 <WorkspaceHeader
                     title="Receiving queue"
-                    description="Price and receive samples. After Head releases results, reprint reviewed RFA copies for the customer packet. Auto-refreshes every 20 seconds."
+                    description="Price and receive samples. After Head releases results, reprint reviewed RFA copies for the customer packet. Updates live when the queue changes."
                     flash={flash?.success}
-                    refreshing={isRefreshing}
-                    lastUpdated={lastUpdated}
-                    refreshLabel="Refreshing queue…"
                     hint="Priority: price first, then receive."
                 />
 

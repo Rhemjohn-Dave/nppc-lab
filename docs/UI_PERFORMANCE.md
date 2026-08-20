@@ -6,8 +6,8 @@ These rules keep workspace polish from making the app feel slower.
 - Receiving, Head Analysis, History, and Analyst use **server pagination**.
 - Do not replace those lists with large always-mounted client tables.
 - Search is **debounced** (~350ms). Prefer that over live filtering of already-paginated server data.
-- Auto-refresh screens (`router.reload`) should not remount heavy row components or run extra animations on each poll.
-- Analyst result-entry and report preview pause auto-refresh while those dialogs are open.
+- Auto-refresh via Reverb (`LabQueueUpdated` → `router.reload` of list props) should not remount heavy row components or run extra animations on each update.
+- Analyst result-entry and report preview pause live queue reloads while those dialogs are open.
 
 ## Heavy views stay lazy
 - PDF/report previews fetch only when opened.

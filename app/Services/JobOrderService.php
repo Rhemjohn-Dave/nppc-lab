@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\JobOrderAnalysisStatus;
 use App\Enums\JobOrderStatus;
+use App\Events\LabQueueUpdated;
 use App\Mail\ResultsReadyMail;
 use App\Models\AnalysisCategory;
 use App\Models\AnalysisPackage;
@@ -32,7 +33,7 @@ class JobOrderService
      */
     public function createFromIntake(array $data): JobOrder
     {
-        return DB::transaction(function () use ($data) {
+        $jobOrder = DB::transaction(function () use ($data) {
             Customer::rememberFromIntake($data);
 
             $jobOrder = JobOrder::create([
@@ -177,6 +178,10 @@ class JobOrderService
 
             return $jobOrder->fresh(['samples', 'analyses']) ?? $jobOrder;
         });
+
+        LabQueueUpdated::notify([LabQueueUpdated::SCOPE_RECEIVING], $jobOrder->id);
+
+        return $jobOrder;
     }
 
     /**
@@ -184,7 +189,7 @@ class JobOrderService
      */
     public function updatePricing(JobOrder $jobOrder, array $lines): JobOrder
     {
-        return DB::transaction(function () use ($jobOrder, $lines) {
+        $jobOrder = DB::transaction(function () use ($jobOrder, $lines) {
             foreach ($lines as $line) {
                 $analysis = $jobOrder->analyses()->whereKey($line['id'])->firstOrFail();
                 $quantity = (int) ($line['quantity'] ?? $analysis->quantity);
@@ -202,6 +207,10 @@ class JobOrderService
 
             return $jobOrder->fresh(['samples', 'analyses.analysisType', 'analyses.assignee']) ?? $jobOrder;
         });
+
+        LabQueueUpdated::notify([LabQueueUpdated::SCOPE_RECEIVING], $jobOrder->id);
+
+        return $jobOrder;
     }
 
     public function receive(JobOrder $jobOrder, User $receiver): JobOrder
@@ -212,7 +221,7 @@ class JobOrderService
             ]);
         }
 
-        return DB::transaction(function () use ($jobOrder, $receiver) {
+        $jobOrder = DB::transaction(function () use ($jobOrder, $receiver) {
             $jobOrder->load('analyses.analysisType.analysts');
             $loads = $this->assignments->openLoads();
 
@@ -239,6 +248,13 @@ class JobOrderService
 
             return $jobOrder->fresh(['samples', 'analyses.assignee', 'analyses.analysisType']) ?? $jobOrder;
         });
+
+        LabQueueUpdated::notify([
+            LabQueueUpdated::SCOPE_RECEIVING,
+            LabQueueUpdated::SCOPE_ANALYST,
+        ], $jobOrder->id);
+
+        return $jobOrder;
     }
 
     /**
@@ -354,7 +370,13 @@ class JobOrderService
             fn (User $user) => $user->notify(new JobOrderPendingReview($jobOrder))
         );
 
-        return $jobOrder->fresh(['analyses.assignee', 'packages']) ?? $jobOrder;
+        $fresh = $jobOrder->fresh(['analyses.assignee', 'packages']) ?? $jobOrder;
+        LabQueueUpdated::notify([
+            LabQueueUpdated::SCOPE_HEAD,
+            LabQueueUpdated::SCOPE_ANALYST,
+        ], $fresh->id);
+
+        return $fresh;
     }
 
     public function userCanSubmitForReview(JobOrder $jobOrder, User $user): bool
@@ -583,7 +605,14 @@ class JobOrderService
             Mail::to($jobOrder->customer_email)->send(new ResultsReadyMail($jobOrder));
         }
 
-        return $jobOrder->fresh(['samples', 'analyses', 'reviewer']) ?? $jobOrder;
+        $fresh = $jobOrder->fresh(['samples', 'analyses', 'reviewer']) ?? $jobOrder;
+        LabQueueUpdated::notify([
+            LabQueueUpdated::SCOPE_HEAD,
+            LabQueueUpdated::SCOPE_RECEIVING,
+            LabQueueUpdated::SCOPE_ANALYST,
+        ], $fresh->id);
+
+        return $fresh;
     }
 
     /**
@@ -620,7 +649,7 @@ class JobOrderService
             ]);
         }
 
-        return DB::transaction(function () use ($jobOrder, $analysisIds, $notes) {
+        $jobOrder = DB::transaction(function () use ($jobOrder, $analysisIds, $notes) {
             $ids = collect($analysisIds)->unique()->values()->all();
 
             $analyses = $jobOrder->analyses()->whereIn('id', $ids)->get();
@@ -649,5 +678,12 @@ class JobOrderService
 
             return $jobOrder->fresh(['samples', 'analyses.assignee']) ?? $jobOrder;
         });
+
+        LabQueueUpdated::notify([
+            LabQueueUpdated::SCOPE_ANALYST,
+            LabQueueUpdated::SCOPE_HEAD,
+        ], $jobOrder->id);
+
+        return $jobOrder;
     }
 }

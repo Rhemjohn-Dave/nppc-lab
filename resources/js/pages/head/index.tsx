@@ -16,6 +16,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { LabQueueRealtime } from '@/hooks/use-lab-queue-realtime';
 import { cn } from '@/lib/utils';
 
 type Order = {
@@ -63,8 +64,6 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
     const [selected, setSelected] = useState<number[]>([]);
     const [confirmBatch, setConfirmBatch] = useState(false);
     const [signing, setSigning] = useState(false);
-    const [isRefreshing, setIsRefreshing] = useState(false);
-    const [lastUpdated, setLastUpdated] = useState(() => new Date());
 
     const tab = filters.tab;
     const unsignedTab = tab === 'unsigned';
@@ -81,21 +80,6 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
     useEffect(() => {
         setQuery(filters.q ?? '');
     }, [filters.q]);
-
-    useEffect(() => {
-        const id = window.setInterval(() => {
-            setIsRefreshing(true);
-            router.reload({
-                only: ['orders', 'counts'],
-                onFinish: () => {
-                    setIsRefreshing(false);
-                    setLastUpdated(new Date());
-                },
-            });
-        }, 20000);
-
-        return () => window.clearInterval(id);
-    }, []);
 
     useEffect(() => {
         const trimmed = query.trim();
@@ -168,14 +152,12 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
     return (
         <>
             <Head title="Head Analysis" />
+            <LabQueueRealtime role="head" only={['orders', 'counts']} />
             <div className="flex flex-col gap-5 p-4">
                 <WorkspaceHeader
                     title="Head Analysis · Signing queue"
-                    description="Results already released when analysts finish. Sign today’s finished files here. The full archive is in History. Auto-refreshes every 20 seconds."
+                    description="Results already released when analysts finish. Sign today’s finished files here. The full archive is in History. Updates live when the queue changes."
                     flash={flash?.success}
-                    refreshing={isRefreshing}
-                    lastUpdated={lastUpdated}
-                    refreshLabel="Refreshing review queue…"
                     hint="Use this screen for jobs sent by the designated analyst; use History for released files."
                     actions={
                         canSelect && selected.length > 0 ? (

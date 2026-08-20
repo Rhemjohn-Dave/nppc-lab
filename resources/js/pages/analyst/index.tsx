@@ -1,5 +1,5 @@
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import InputError from '@/components/input-error';
 import QueueFilterBar from '@/components/queue-filter-bar';
@@ -21,6 +21,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { LabQueueRealtime } from '@/hooks/use-lab-queue-realtime';
 import { cn } from '@/lib/utils';
 
 type SampleSummary = {
@@ -155,9 +156,6 @@ export default function AnalystIndex({
     const [query, setQuery] = useState(filters.q ?? '');
     const [active, setActive] = useState<Task | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const [isRefreshing, setIsRefreshing] = useState(false);
-    const [lastUpdated, setLastUpdated] = useState(() => new Date());
-    const pauseRefresh = useRef(false);
     const form = useForm({
         result_value: '',
         result_measurement: '',
@@ -165,30 +163,11 @@ export default function AnalystIndex({
         result_remarks: '',
     });
 
-    pauseRefresh.current = Boolean(active) || Boolean(previewUrl);
+    const pauseQueueReload = Boolean(active) || Boolean(previewUrl);
 
     useEffect(() => {
         setQuery(filters.q ?? '');
     }, [filters.q]);
-
-    useEffect(() => {
-        const id = window.setInterval(() => {
-            if (pauseRefresh.current) {
-                return;
-            }
-
-            setIsRefreshing(true);
-            router.reload({
-                only: ['tasks', 'counts', 'jobs', 'consolidations', 'releasedPrints'],
-                onFinish: () => {
-                    setIsRefreshing(false);
-                    setLastUpdated(new Date());
-                },
-            });
-        }, 15000);
-
-        return () => window.clearInterval(id);
-    }, []);
 
     useEffect(() => {
         const trimmed = query.trim();
@@ -294,14 +273,22 @@ export default function AnalystIndex({
     return (
         <>
             <Head title="Analyst tasks" />
+            <LabQueueRealtime
+                role="analyst"
+                only={[
+                    'tasks',
+                    'counts',
+                    'jobs',
+                    'consolidations',
+                    'releasedPrints',
+                ]}
+                pause={pauseQueueReload}
+            />
             <div className="flex flex-col gap-5 p-4">
                 <WorkspaceHeader
                     title="Analyst workspace"
-                    description="Encode assigned tests, then the designated analyst previews the result form and sends the job to Head after every result is complete. Auto-refreshes every 15 seconds."
+                    description="Encode assigned tests, then the designated analyst previews the result form and sends the job to Head after every result is complete. Updates live when the queue changes."
                     flash={flash?.success}
-                    refreshing={isRefreshing}
-                    lastUpdated={lastUpdated}
-                    refreshLabel="Refreshing tasks…"
                     hint="Returned tasks should usually be handled first."
                 />
 

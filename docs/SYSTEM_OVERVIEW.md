@@ -465,7 +465,7 @@ Domain logic lives in services, for example:
 - reference-number generation
 
 ### Inertia-Driven Frontend
-Laravel routes and permissions; React pages receive server props. Roles, notifications, and flash state come through Inertia middleware. In-app LMS notifications use the `database` channel plus Laravel Reverb `broadcast` so the header bell can update in real time when `php artisan reverb:start` is running (see `docs/DEPLOY.md`).
+Laravel routes and permissions; React pages receive server props. Roles, notifications, and flash state come through Inertia middleware. In-app LMS notifications use the `database` channel plus Laravel Reverb `broadcast` so the header bell can update in real time when `php artisan reverb:start` is running (see `docs/DEPLOY.md`). Receiving, Analyst, and Head queue boards subscribe to private `lab.queue.*` channels and reload list props on `LabQueueUpdated` instead of interval polling.
 
 ### Revision-Based Documents
 Upload-first overlays. The active revision is the approved operational version.

@@ -4,15 +4,12 @@ namespace App\Notifications;
 
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
+use App\Support\SyncBroadcastMessage;
 use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Notification;
 
-class TaskAssigned extends Notification implements ShouldQueue
+class TaskAssigned extends Notification
 {
-    use Queueable;
-
     public function __construct(
         public JobOrder $jobOrder,
         public JobOrderAnalysis $analysis,
@@ -40,6 +37,6 @@ class TaskAssigned extends Notification implements ShouldQueue
 
     public function toBroadcast(object $notifiable): BroadcastMessage
     {
-        return new BroadcastMessage($this->toArray($notifiable));
+        return SyncBroadcastMessage::make($this->toArray($notifiable));
     }
 }
