@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { ChevronDown, Plus, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, Plus, Search, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import InputError from '@/components/input-error';
@@ -15,6 +15,24 @@ type CategoryGroup = {
     category: string;
     label: string;
     items: Array<{
+        id: number;
+        code: string;
+        name: string;
+        default_price: string;
+    }>;
+};
+
+type IntakePackage = {
+    id: number;
+    code: string;
+    name: string;
+    description: string | null;
+    default_price: string | number;
+    form_code: string | null;
+    classifications: string[];
+    category_label: string | null;
+    analysis_type_ids: number[];
+    tests: Array<{
         id: number;
         code: string;
         name: string;
@@ -48,6 +66,7 @@ type SampleDraft = {
 
 type Props = {
     categories: CategoryGroup[];
+    packages?: IntakePackage[];
     prefill: Prefill;
     options: Options;
 };
@@ -88,7 +107,12 @@ function ChoiceChip({
     );
 }
 
-export default function IntakeWizard({ categories, prefill, options }: Props) {
+export default function IntakeWizard({
+    categories,
+    packages = [],
+    prefill,
+    options,
+}: Props) {
     const { errors } = usePage().props as {
         errors?: Record<string, string>;
     };
@@ -110,14 +134,23 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
     const [samplingTime, setSamplingTime] = useState('');
     const [sampleCollectedBy, setSampleCollectedBy] = useState('');
     const [fieldData, setFieldData] = useState('');
+    const [sterileBottle, setSterileBottle] = useState(false);
     const [sampleStorageTemp, setSampleStorageTemp] = useState('');
     const [wastewaterSource, setWastewaterSource] = useState('');
+    const [wastewaterSourceOther, setWastewaterSourceOther] = useState('');
     const [otherTests, setOtherTests] = useState('');
     const [openCategory, setOpenCategory] = useState<string | null>(
         categories[0]?.category ?? null,
     );
+    const [testsQuery, setTestsQuery] = useState('');
     const [selectedTypes, setSelectedTypes] = useState<number[]>([]);
+    const [selectedPackageIds, setSelectedPackageIds] = useState<number[]>([]);
     const [samples, setSamples] = useState<SampleDraft[]>([emptySample()]);
+
+    const selectedTypeSet = useMemo(
+        () => new Set(selectedTypes),
+        [selectedTypes],
+    );
 
     const selectedItems = useMemo(() => {
         const map = new Map<number, { name: string; price: string }>();
@@ -129,28 +162,221 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                 }),
             ),
         );
+        packages.forEach((pkg) =>
+            pkg.tests.forEach((item) =>
+                map.set(item.id, {
+                    name: item.name,
+                    price: item.default_price,
+                }),
+            ),
+        );
 
         return selectedTypes.map((id) => map.get(id)).filter(Boolean) as Array<{
             name: string;
             price: string;
         }>;
-    }, [categories, selectedTypes]);
+    }, [categories, packages, selectedTypes]);
+
+    const filteredCategories = useMemo(() => {
+        const needle = testsQuery.trim().toLowerCase();
+        if (!needle) {
+            return categories;
+        }
+
+        return categories
+            .map((group) => ({
+                ...group,
+                items: group.items.filter((item) =>
+                    `${item.code} ${item.name}`.toLowerCase().includes(needle),
+                ),
+            }))
+            .filter((group) => group.items.length > 0);
+    }, [categories, testsQuery]);
+
+    const resolvedClassification =
+        classification === 'Others'
+            ? classificationOther.trim()
+                ? `Others: ${classificationOther.trim()}`
+                : 'Others'
+            : classification;
+
+    const resolvedSampleSource =
+        wastewaterSource === 'Others'
+            ? wastewaterSourceOther.trim()
+                ? `Others: ${wastewaterSourceOther.trim()}`
+                : 'Others'
+            : wastewaterSource;
+
+    const suggestedPackages = useMemo(() => {
+        const value = resolvedClassification.toLowerCase();
+
+        return packages.filter((pkg) => {
+            if (pkg.classifications.length === 0) {
+                return true;
+            }
+
+            return pkg.classifications.some((tag) =>
+                value.includes(tag.toLowerCase()),
+            );
+        });
+    }, [packages, resolvedClassification]);
+
+    const otherPackages = useMemo(
+        () =>
+            packages.filter(
+                (pkg) => !suggestedPackages.some((item) => item.id === pkg.id),
+            ),
+        [packages, suggestedPackages],
+    );
 
     const estimatedTotal = selectedItems.reduce(
         (sum, item) => sum + Number(item.price || 0),
         0,
     );
 
-    const resolvedClassification =
-        classification === 'Others'
-            ? classificationOther.trim() || 'Others'
-            : classification;
-
     function toggleType(id: number) {
         setSelectedTypes((current) =>
             current.includes(id)
                 ? current.filter((value) => value !== id)
                 : [...current, id],
+        );
+    }
+
+    function togglePackage(pkg: IntakePackage) {
+        const memberIds = pkg.analysis_type_ids;
+        const selected = selectedPackageIds.includes(pkg.id);
+
+        if (selected) {
+            const remaining = packages.filter(
+                (item) =>
+                    selectedPackageIds.includes(item.id) && item.id !== pkg.id,
+            );
+            const keep = new Set(
+                remaining.flatMap((item) => item.analysis_type_ids),
+            );
+            setSelectedPackageIds((current) =>
+                current.filter((id) => id !== pkg.id),
+            );
+            setSelectedTypes((current) =>
+                current.filter((id) => !memberIds.includes(id) || keep.has(id)),
+            );
+            return;
+        }
+
+        setSelectedPackageIds((current) => [...current, pkg.id]);
+        setSelectedTypes((current) => [
+            ...new Set([...current, ...memberIds]),
+        ]);
+    }
+
+    function togglePackageMember(pkg: IntakePackage, typeId: number) {
+        if (!selectedPackageIds.includes(pkg.id)) {
+            return;
+        }
+
+        const memberIds = pkg.analysis_type_ids;
+        const currentlyOn = selectedTypes.includes(typeId);
+        const selectedMembers = memberIds.filter((id) =>
+            currentlyOn ? id !== typeId && selectedTypes.includes(id) : selectedTypes.includes(id) || id === typeId,
+        );
+
+        if (currentlyOn && selectedMembers.length === 0) {
+            togglePackage(pkg);
+            return;
+        }
+
+        if (currentlyOn) {
+            setSelectedTypes((current) => current.filter((id) => id !== typeId));
+            return;
+        }
+
+        setSelectedTypes((current) =>
+            current.includes(typeId) ? current : [...current, typeId],
+        );
+    }
+
+    function renderPackageCard(pkg: IntakePackage) {
+        const selected = selectedPackageIds.includes(pkg.id);
+        const selectedMemberCount = pkg.analysis_type_ids.filter((id) =>
+            selectedTypes.includes(id),
+        ).length;
+
+        return (
+            <div
+                key={pkg.id}
+                className={cn(
+                    'rounded-2xl border p-4 text-left transition',
+                    selected
+                        ? 'border-[#1A3694] bg-[#eef3fb] shadow-sm'
+                        : 'border-slate-200 bg-white hover:border-[#5282D3]',
+                )}
+            >
+                <button
+                    type="button"
+                    onClick={() => togglePackage(pkg)}
+                    className="w-full text-left"
+                >
+                    <div className="flex items-start justify-between gap-3">
+                        <p className="font-semibold text-[#1A3694]">{pkg.name}</p>
+                        <span className="shrink-0 text-sm font-semibold text-slate-700">
+                            ₱{Number(pkg.default_price).toFixed(2)}
+                        </span>
+                    </div>
+                    {pkg.description && (
+                        <p className="mt-1 text-sm text-slate-600">
+                            {pkg.description}
+                        </p>
+                    )}
+                    {pkg.form_code && (
+                        <p className="mt-2 font-mono text-[11px] text-muted-foreground">
+                            {pkg.form_code}
+                        </p>
+                    )}
+                    {selected && (
+                        <p className="mt-2 text-xs font-medium text-emerald-700">
+                            Selected · {selectedMemberCount}/
+                            {pkg.tests.length} tests
+                        </p>
+                    )}
+                </button>
+                {selected ? (
+                    <div className="mt-3 space-y-2 border-t border-[#d7e2f5] pt-3">
+                        <p className="text-xs text-muted-foreground">
+                            Uncheck tests you do not need. Those slots print as
+                            “-” on the package result form.
+                        </p>
+                        {pkg.tests.map((test) => {
+                            const checked = selectedTypes.includes(test.id);
+
+                            return (
+                                <label
+                                    key={test.id}
+                                    className="flex items-start gap-2 text-sm text-slate-700"
+                                >
+                                    <Checkbox
+                                        checked={checked}
+                                        onCheckedChange={() =>
+                                            togglePackageMember(pkg, test.id)
+                                        }
+                                    />
+                                    <span>
+                                        <span className="font-medium">
+                                            {test.name}
+                                        </span>
+                                        <span className="mt-0.5 block font-mono text-[11px] text-muted-foreground">
+                                            {test.code}
+                                        </span>
+                                    </span>
+                                </label>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <p className="mt-2 text-xs text-slate-500">
+                        {pkg.tests.map((test) => test.name).join(' · ')}
+                    </p>
+                )}
+            </div>
         );
     }
 
@@ -187,14 +413,46 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                 return false;
             }
 
+            if (wastewaterSource === 'Others' && !wastewaterSourceOther.trim()) {
+                return false;
+            }
+
             return true;
         }
 
         if (step === 3) {
-            return selectedTypes.length > 0 || otherTests.trim().length > 0;
+            return (
+                selectedTypes.length > 0 ||
+                selectedPackageIds.length > 0 ||
+                otherTests.trim().length > 0
+            );
         }
 
         return true;
+    }
+
+    function stepError(index: number) {
+        if (index !== step) {
+            return null;
+        }
+
+        if (step === 0 && !canContinue()) {
+            return 'Add your full name and email to continue.';
+        }
+
+        if (step === 1 && !canContinue()) {
+            return 'Each sample needs at least a description.';
+        }
+
+        if (step === 2 && !canContinue()) {
+            return 'Choose a classification before continuing.';
+        }
+
+        if (step === 3 && !canContinue()) {
+            return 'Select at least one listed test or describe another test.';
+        }
+
+        return null;
     }
 
     function submit() {
@@ -208,15 +466,20 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                 sampling_date: samplingDate || null,
                 sampling_time: samplingTime || null,
                 sample_collected_by: sampleCollectedBy || null,
-                field_data: fieldData || null,
+                field_data: sterileBottle
+                    ? fieldData.trim()
+                        ? `Water in sterile bottle. ${fieldData.trim()}`
+                        : 'Water in sterile bottle'
+                    : fieldData || null,
                 sample_storage_temp: sampleStorageTemp || null,
-                wastewater_source: wastewaterSource || null,
+                wastewater_source: resolvedSampleSource || null,
                 other_tests: otherTests || null,
                 samples: samples.map((sample) => ({
                     ...sample,
                     quantity: sample.quantity || null,
                 })),
                 analysis_type_ids: selectedTypes,
+                package_ids: selectedPackageIds,
             },
             {
                 onFinish: () => setSubmitting(false),
@@ -298,20 +561,28 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                                     key={label}
                                     className="flex min-w-0 flex-col items-center gap-1.5 text-center"
                                 >
-                                    <span
+                                    <button
+                                        type="button"
+                                        disabled={!done}
+                                        onClick={() => done && setStep(index)}
                                         className={cn(
                                             'flex size-8 items-center justify-center rounded-full text-xs font-semibold transition',
                                             current &&
                                                 'bg-[#1A3694] text-white shadow-sm',
                                             done &&
-                                                'bg-[#5282D3]/25 text-[#1A3694]',
+                                                'bg-[#5282D3]/25 text-[#1A3694] hover:bg-[#5282D3]/35',
                                             !current &&
                                                 !done &&
                                                 'bg-slate-100 text-slate-400',
+                                            done && 'cursor-pointer',
                                         )}
                                     >
-                                        {index + 1}
-                                    </span>
+                                        {done ? (
+                                            <Check className="size-4" />
+                                        ) : (
+                                            index + 1
+                                        )}
+                                    </button>
                                     <span
                                         className={cn(
                                             'hidden truncate text-[11px] font-medium sm:block',
@@ -326,6 +597,11 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                             );
                         })}
                     </ol>
+                    {stepError(step) && (
+                        <p className="mt-3 text-sm text-amber-700">
+                            {stepError(step)}
+                        </p>
+                    )}
                 </div>
 
                 <div
@@ -390,6 +666,20 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                                                 }))
                                             }
                                         />
+                                        {key === 'customer_name' &&
+                                            !customer.customer_name.trim() && (
+                                                <p className="mt-1 text-xs text-muted-foreground">
+                                                    Required for the Request for
+                                                    Analysis.
+                                                </p>
+                                            )}
+                                        {key === 'customer_email' &&
+                                            !customer.customer_email.trim() && (
+                                                <p className="mt-1 text-xs text-muted-foreground">
+                                                    Required so NPPC can notify
+                                                    you when results are ready.
+                                                </p>
+                                            )}
                                     </div>
                                 ))}
                             </div>
@@ -435,24 +725,52 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                                         <p className="font-medium text-[#1A3694]">
                                             Sample {index + 1}
                                         </p>
-                                        {samples.length > 1 && (
+                                        <div className="flex items-center gap-2">
                                             <Button
                                                 type="button"
                                                 variant="ghost"
                                                 size="sm"
                                                 onClick={() =>
-                                                    setSamples((current) =>
-                                                        current.filter(
-                                                            (_, i) =>
-                                                                i !== index,
-                                                        ),
-                                                    )
+                                                    setSamples((current) => {
+                                                        const copy = {
+                                                            ...current[index],
+                                                            sample_code: '',
+                                                        };
+
+                                                        return [
+                                                            ...current.slice(
+                                                                0,
+                                                                index + 1,
+                                                            ),
+                                                            copy,
+                                                            ...current.slice(
+                                                                index + 1,
+                                                            ),
+                                                        ];
+                                                    })
                                                 }
                                             >
-                                                <Trash2 className="size-4" />
-                                                Remove
+                                                Duplicate
                                             </Button>
-                                        )}
+                                            {samples.length > 1 && (
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() =>
+                                                        setSamples((current) =>
+                                                            current.filter(
+                                                                (_, i) =>
+                                                                    i !== index,
+                                                            ),
+                                                        )
+                                                    }
+                                                >
+                                                    <Trash2 className="size-4" />
+                                                    Remove
+                                                </Button>
+                                            )}
+                                        </div>
                                     </div>
                                     <div className="grid gap-3 sm:grid-cols-2">
                                         <div>
@@ -593,7 +911,7 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                                 {classification === 'Others' && (
                                     <Input
                                         className="mt-3 h-11"
-                                        placeholder="Please specify"
+                                        placeholder="Please specify classification"
                                         value={classificationOther}
                                         onChange={(e) =>
                                             setClassificationOther(
@@ -647,13 +965,20 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                                     />
                                 </div>
                                 <div>
-                                    <Label htmlFor="field_data">
-                                        Field data (potability notes)
-                                    </Label>
+                                    <Label>Field data (Potability)</Label>
+                                    <label className="mt-2 flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm">
+                                        <Checkbox
+                                            checked={sterileBottle}
+                                            onCheckedChange={(checked) =>
+                                                setSterileBottle(checked === true)
+                                            }
+                                        />
+                                        <span>Water in sterile bottle</span>
+                                    </label>
                                     <Textarea
                                         id="field_data"
-                                        className="mt-1"
-                                        placeholder="e.g. water in sterile bottle"
+                                        className="mt-3"
+                                        placeholder="Other potability notes (optional)"
                                         value={fieldData}
                                         onChange={(e) =>
                                             setFieldData(e.target.value)
@@ -677,26 +1002,45 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                             </div>
 
                             <div>
-                                <Label>
-                                    Wastewater sample source (if applicable)
-                                </Label>
+                                <Label>Sample source</Label>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    Same field as the Request for Analysis
+                                    (Local water district, Tank, Faucet,
+                                    Deepwell). Used as Sampling Point on the
+                                    drinking-water result sheet.
+                                </p>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                     {options.wastewater_sources.map((item) => (
                                         <ChoiceChip
                                             key={item}
                                             active={wastewaterSource === item}
-                                            onClick={() =>
+                                            onClick={() => {
                                                 setWastewaterSource(
                                                     wastewaterSource === item
                                                         ? ''
                                                         : item,
-                                                )
-                                            }
+                                                );
+                                                if (item !== 'Others') {
+                                                    setWastewaterSourceOther('');
+                                                }
+                                            }}
                                         >
                                             {item}
                                         </ChoiceChip>
                                     ))}
                                 </div>
+                                {wastewaterSource === 'Others' && (
+                                    <Input
+                                        className="mt-3 h-11"
+                                        placeholder="Please specify sample source"
+                                        value={wastewaterSourceOther}
+                                        onChange={(e) =>
+                                            setWastewaterSourceOther(
+                                                e.target.value,
+                                            )
+                                        }
+                                    />
+                                )}
                             </div>
                         </div>
                     )}
@@ -709,9 +1053,9 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                                         Select analyses
                                     </h2>
                                     <p className="mt-1 text-sm text-slate-600">
-                                        Expand a category, then tap tests to
-                                        select. Prices may be adjusted by
-                                        Receiving.
+                                        Choose a package when it matches your
+                                        sample, or pick individual tests.
+                                        Prices may be adjusted by Receiving.
                                     </p>
                                 </div>
                                 <div className="rounded-xl bg-[#e8eef8] px-3 py-2 text-sm font-semibold text-[#1A3694]">
@@ -722,9 +1066,70 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                                 </div>
                             </div>
 
-                            {categories.map((group) => {
+                            {packages.length > 0 && (
+                                <div className="space-y-3">
+                                    <div>
+                                        <p className="text-sm font-medium text-slate-900">
+                                            {suggestedPackages.length > 0
+                                                ? `Suggested packages${resolvedClassification ? ` for ${resolvedClassification}` : ''}`
+                                                : 'Analysis packages'}
+                                        </p>
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                            Select a package, then uncheck any
+                                            tests you do not need. The result
+                                            form stays the package sheet;
+                                            unchecked tests print as “-”.
+                                        </p>
+                                    </div>
+                                    <div className="grid gap-3 md:grid-cols-2">
+                                        {(suggestedPackages.length > 0
+                                            ? suggestedPackages
+                                            : packages
+                                        ).map((pkg) => renderPackageCard(pkg))}
+                                    </div>
+                                    {suggestedPackages.length > 0 &&
+                                        otherPackages.length > 0 && (
+                                            <div className="space-y-2">
+                                                <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                                                    Other packages
+                                                </p>
+                                                <div className="grid gap-3 md:grid-cols-2">
+                                                    {otherPackages.map((pkg) =>
+                                                        renderPackageCard(pkg),
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                </div>
+                            )}
+
+                            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-[#f8fafc] p-4 lg:flex-row lg:items-start lg:justify-between">
+                                <div className="max-w-xl">
+                                    <p className="text-sm font-medium text-slate-900">
+                                        Search and select tests
+                                    </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        Search by test code or name. Receiving
+                                        can still adjust prices after
+                                        submission.
+                                    </p>
+                                </div>
+                                <div className="relative w-full max-w-sm">
+                                    <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
+                                    <Input
+                                        className="pl-9"
+                                        placeholder="Search tests..."
+                                        value={testsQuery}
+                                        onChange={(e) =>
+                                            setTestsQuery(e.target.value)
+                                        }
+                                    />
+                                </div>
+                            </div>
+
+                            {filteredCategories.map((group) => {
                                 const selectedCount = group.items.filter(
-                                    (item) => selectedTypes.includes(item.id),
+                                    (item) => selectedTypeSet.has(item.id),
                                 ).length;
                                 const open = openCategory === group.category;
 
@@ -761,7 +1166,7 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                                             <div className="grid gap-2 border-t px-4 py-3 sm:grid-cols-2">
                                                 {group.items.map((item) => {
                                                     const checked =
-                                                        selectedTypes.includes(
+                                                        selectedTypeSet.has(
                                                             item.id,
                                                         );
 
@@ -821,6 +1226,36 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                                     placeholder="Describe any test not listed above"
                                 />
                             </div>
+
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                                    Selected tests summary
+                                </p>
+                                {selectedItems.length > 0 ? (
+                                    <ul className="mt-2 space-y-1 text-sm">
+                                        {selectedItems.slice(0, 8).map((item) => (
+                                            <li
+                                                key={item.name}
+                                                className="flex justify-between gap-3"
+                                            >
+                                                <span>{item.name}</span>
+                                                <span className="text-slate-500">
+                                                    ₱{Number(item.price).toFixed(2)}
+                                                </span>
+                                            </li>
+                                        ))}
+                                        {selectedItems.length > 8 && (
+                                            <li className="text-xs text-muted-foreground">
+                                                +{selectedItems.length - 8} more selected
+                                            </li>
+                                        )}
+                                    </ul>
+                                ) : (
+                                    <p className="mt-2 text-sm text-muted-foreground">
+                                        No listed tests selected yet.
+                                    </p>
+                                )}
+                            </div>
                         </div>
                     )}
 
@@ -879,6 +1314,18 @@ export default function IntakeWizard({ categories, prefill, options }: Props) {
                                     </p>
                                     <p className="text-sm">
                                         Collected by: {sampleCollectedBy || '—'}
+                                    </p>
+                                    <p className="text-sm">
+                                        Sample source:{' '}
+                                        {resolvedSampleSource || '—'}
+                                    </p>
+                                    <p className="text-sm">
+                                        Field data:{' '}
+                                        {sterileBottle
+                                            ? fieldData.trim()
+                                                ? `Water in sterile bottle — ${fieldData.trim()}`
+                                                : 'Water in sterile bottle'
+                                            : fieldData || '—'}
                                     </p>
                                     <p className="text-sm">
                                         Storage temp: {sampleStorageTemp || '—'}

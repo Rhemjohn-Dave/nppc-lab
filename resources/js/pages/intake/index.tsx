@@ -94,6 +94,10 @@ export default function IntakeIndex() {
                                         First visit? Start a guided request with
                                         your details and tests.
                                     </p>
+                                    <p className="mt-2 text-xs text-slate-500">
+                                        Best for first-time clients. Usually
+                                        takes about 3-5 minutes.
+                                    </p>
                                     <span className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[#1A3694]">
                                         Start request
                                         <ArrowRight className="size-4 transition duration-300 group-hover:translate-x-1" />
@@ -114,6 +118,10 @@ export default function IntakeIndex() {
                                     <p className="mt-2 text-sm leading-relaxed text-slate-600">
                                         Look up your email, contact number, or
                                         name from a past visit.
+                                    </p>
+                                    <p className="mt-2 text-xs text-slate-500">
+                                        Use this if you have submitted before and
+                                        want to reuse saved customer details.
                                     </p>
                                     <span className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[#1A3694]">
                                         Find my details

@@ -22,25 +22,32 @@ class ReceivingController extends Controller
         $statusFilter = $request->string('status')->toString();
         $search = trim($request->string('q')->toString());
 
-        $baseQuery = JobOrder::query()->whereIn('status', [
+        $intakeQuery = JobOrder::query()->whereIn('status', [
             JobOrderStatus::DraftSubmitted,
             JobOrderStatus::Priced,
         ]);
+        $reviewedQuery = JobOrder::query()
+            ->whereNotNull('reviewed_at')
+            ->where('status', JobOrderStatus::ReadyForPickup);
+
+        $showingReviewed = $statusFilter === 'reviewed';
+        $baseQuery = $showingReviewed ? $reviewedQuery : $intakeQuery;
 
         $counts = [
-            'all' => (clone $baseQuery)->count(),
-            'draft_submitted' => (clone $baseQuery)
+            'all' => (clone $intakeQuery)->count(),
+            'draft_submitted' => (clone $intakeQuery)
                 ->where('status', JobOrderStatus::DraftSubmitted)
                 ->count(),
-            'priced' => (clone $baseQuery)
+            'priced' => (clone $intakeQuery)
                 ->where('status', JobOrderStatus::Priced)
                 ->count(),
+            'reviewed' => (clone $reviewedQuery)->count(),
         ];
 
         $orders = (clone $baseQuery)
             ->withCount(['analyses', 'samples'])
             ->when(
-                in_array($statusFilter, [
+                ! $showingReviewed && in_array($statusFilter, [
                     JobOrderStatus::DraftSubmitted->value,
                     JobOrderStatus::Priced->value,
                 ], true),
@@ -55,7 +62,8 @@ class ReceivingController extends Controller
                         ->orWhere('customer_contact', 'like', "%{$search}%");
                 });
             })
-            ->latest()
+            ->when($showingReviewed, fn ($query) => $query->latest('reviewed_at'))
+            ->when(! $showingReviewed, fn ($query) => $query->latest())
             ->paginate(15)
             ->withQueryString()
             ->through(fn (JobOrder $order) => [
@@ -67,6 +75,7 @@ class ReceivingController extends Controller
                 'company_name' => $order->company_name,
                 'status' => $order->status->value,
                 'status_label' => $order->status->label(),
+                'reviewed' => $order->reviewed_at !== null,
                 'total_cost' => $order->total_cost,
                 'analyses_count' => $order->analyses_count,
                 'samples_count' => $order->samples_count,
@@ -113,19 +122,24 @@ class ReceivingController extends Controller
         return redirect()->route('receiving.index')->with('success', "Job order {$jobOrder->reference_no} received and assigned.");
     }
 
-    public function print(JobOrder $jobOrder): Response
+    public function print(Request $request, JobOrder $jobOrder): Response
     {
+        $this->assertCanPrintRfa($jobOrder);
+
         $jobOrder->load(['samples', 'analyses', 'receiver', 'reviewer']);
+        $copies = max(1, min(20, $request->integer('copies', 3)));
 
         return Inertia::render('rfa/print', [
             'jobOrder' => JobOrderFormPresenter::toArray($jobOrder, withResults: false),
-            'copies' => 2,
+            'copies' => $copies,
             'showResults' => false,
         ]);
     }
 
     public function pdf(JobOrder $jobOrder): HttpResponse
     {
+        $this->assertCanPrintRfa($jobOrder);
+
         $jobOrder->load(['samples', 'analyses', 'receiver', 'reviewer']);
 
         return RfaPdfExporter::download($jobOrder, showResults: false);
@@ -137,5 +151,10 @@ class ReceivingController extends Controller
     private function transformJobOrder(JobOrder $jobOrder, bool $withResults = true): array
     {
         return JobOrderFormPresenter::toArray($jobOrder, $withResults);
+    }
+
+    private function assertCanPrintRfa(JobOrder $jobOrder): void
+    {
+        abort_unless($jobOrder->reviewed_at !== null, 403);
     }
 }

@@ -1,11 +1,12 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Search } from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
+import QueueFilterBar from '@/components/queue-filter-bar';
+import QueueRangeNote from '@/components/queue-range-note';
+import SummaryStat from '@/components/summary-stat';
 import TablePagination from '@/components/table-pagination';
+import WorkspaceHeader from '@/components/workspace-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
 
 type Order = {
     id: number;
@@ -61,6 +62,20 @@ export default function HistoryIndex({
         setQuery(filters.q ?? '');
     }, [filters.q]);
 
+    useEffect(() => {
+        const trimmed = query.trim();
+        const active = filters.q ?? '';
+        const id = window.setTimeout(() => {
+            if (trimmed === active) {
+                return;
+            }
+
+            applyFilters({ q: trimmed });
+        }, 350);
+
+        return () => window.clearTimeout(id);
+    }, [query, filters.q, filters.status]);
+
     function applyFilters(next: { q?: string; status?: string }) {
         router.get(
             '/history',
@@ -75,8 +90,7 @@ export default function HistoryIndex({
         );
     }
 
-    function submitSearch(event: FormEvent) {
-        event.preventDefault();
+    function submitSearch() {
         applyFilters({ q: query.trim() });
     }
 
@@ -94,113 +108,60 @@ export default function HistoryIndex({
         <>
             <Head title="History" />
             <div className="flex flex-col gap-5 p-4">
-                <div>
-                    <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                        Finished files · History
-                    </h1>
-                    <p className="text-sm text-muted-foreground">
-                        Archive of jobs ready for pickup. Search, open the
-                        official form, and download PDFs.
-                        {canSign
-                            ? ' Head Analysis can still sign unsigned files from this list or from Head Analysis.'
-                            : ''}
-                    </p>
-                    {flash?.success && (
-                        <p className="mt-2 text-sm text-emerald-700">
-                            {flash.success}
-                        </p>
-                    )}
-                </div>
+                <WorkspaceHeader
+                    title="History archive"
+                    description={`Read-only archive of finished files. Search, open the official form, and download PDFs without leaving the workflow queues.${
+                        canSign
+                            ? ' Head Analysis can still sign unsigned files from this list or from the signing queue.'
+                            : ''
+                    }`}
+                    flash={flash?.success}
+                />
 
                 <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
-                        <p className="text-sm text-muted-foreground">
-                            All finished
-                        </p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
-                            {counts.all}
-                        </p>
-                    </div>
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
-                        <p className="text-sm text-muted-foreground">
-                            Ready for pickup
-                        </p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
-                            {counts.unsigned}
-                        </p>
-                    </div>
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-emerald-50/70 p-4">
-                        <p className="text-sm text-muted-foreground">Signed</p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-emerald-800">
-                            {counts.signed}
-                        </p>
-                    </div>
+                    <SummaryStat label="All finished" value={counts.all} />
+                    <SummaryStat
+                        label="Ready for pickup"
+                        value={counts.unsigned}
+                    />
+                    <SummaryStat
+                        label="Signed"
+                        value={counts.signed}
+                        tone="success"
+                    />
                 </div>
 
-                <div className="flex flex-col gap-3 rounded-xl border bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex flex-wrap gap-2">
-                        {chips.map((chip) => {
-                            const active = (filters.status || '') === chip.id;
+                <QueueFilterBar
+                    chips={chips}
+                    activeId={filters.status || ''}
+                    onChip={(id) =>
+                        applyFilters({ status: id, q: query.trim() })
+                    }
+                    query={query}
+                    onQueryChange={setQuery}
+                    onSearch={submitSearch}
+                    onClear={() => {
+                        setQuery('');
+                        applyFilters({ q: '' });
+                    }}
+                />
 
-                            return (
-                                <button
-                                    key={chip.id || 'all'}
-                                    type="button"
-                                    onClick={() =>
-                                        applyFilters({
-                                            status: chip.id,
-                                            q: query.trim(),
-                                        })
-                                    }
-                                    className={cn(
-                                        'inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-sm font-medium transition',
-                                        active
-                                            ? 'border-[#1A3694] bg-[#1A3694] text-white'
-                                            : 'border-slate-200 bg-white text-slate-700 hover:border-[#5282D3]',
-                                    )}
-                                >
-                                    {chip.label}
-                                    <span
-                                        className={cn(
-                                            'rounded-full px-1.5 py-0.5 text-xs tabular-nums',
-                                            active
-                                                ? 'bg-white/20'
-                                                : 'bg-slate-100 text-slate-600',
-                                        )}
-                                    >
-                                        {chip.count}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    <form
-                        onSubmit={submitSearch}
-                        className="flex w-full max-w-md items-center gap-2"
-                    >
-                        <div className="relative flex-1">
-                            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
-                            <Input
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Search reference, customer…"
-                                className="h-10 pl-9"
-                            />
-                        </div>
-                        <Button
-                            type="submit"
-                            variant="outline"
-                            className="h-10"
-                        >
-                            Search
-                        </Button>
-                    </form>
-                </div>
+                <QueueRangeNote
+                    from={orders.from}
+                    to={orders.to}
+                    total={orders.total}
+                    suffix={
+                        filters.status === 'unsigned'
+                            ? 'archived records that are still waiting for signature.'
+                            : filters.status === 'signed'
+                              ? 'archived records that already have a recorded signature.'
+                              : 'archived records.'
+                    }
+                />
 
                 <div className="overflow-x-auto rounded-xl border bg-white">
                     <table className="w-full text-sm">
-                        <thead className="bg-[#f8fafc] text-left">
+                        <thead className="sticky top-0 z-10 bg-[#f8fafc] text-left">
                             <tr>
                                 <th className="px-3 py-3 font-medium text-slate-600">
                                     Reference

@@ -1,10 +1,12 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Search } from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
+import QueueFilterBar from '@/components/queue-filter-bar';
+import QueueRangeNote from '@/components/queue-range-note';
+import SummaryStat from '@/components/summary-stat';
 import TablePagination from '@/components/table-pagination';
+import WorkspaceHeader from '@/components/workspace-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 type Order = {
@@ -16,6 +18,7 @@ type Order = {
     company_name: string | null;
     status: string;
     status_label: string;
+    reviewed?: boolean;
     total_cost: string | number;
     analyses_count: number;
     samples_count: number;
@@ -34,6 +37,7 @@ type Props = {
         all: number;
         draft_submitted: number;
         priced: number;
+        reviewed: number;
     };
     filters: {
         q: string;
@@ -56,6 +60,8 @@ function money(value: string | number) {
 export default function ReceivingIndex({ orders, counts, filters }: Props) {
     const { flash } = usePage().props as { flash?: { success?: string } };
     const [query, setQuery] = useState(filters.q ?? '');
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [lastUpdated, setLastUpdated] = useState(() => new Date());
 
     useEffect(() => {
         setQuery(filters.q ?? '');
@@ -63,11 +69,32 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
 
     useEffect(() => {
         const id = window.setInterval(() => {
-            router.reload({ only: ['orders', 'counts'] });
+            setIsRefreshing(true);
+            router.reload({
+                only: ['orders', 'counts'],
+                onFinish: () => {
+                    setIsRefreshing(false);
+                    setLastUpdated(new Date());
+                },
+            });
         }, 20000);
 
         return () => window.clearInterval(id);
     }, []);
+
+    useEffect(() => {
+        const trimmed = query.trim();
+        const active = filters.q ?? '';
+        const id = window.setTimeout(() => {
+            if (trimmed === active) {
+                return;
+            }
+
+            applyFilters({ q: trimmed });
+        }, 350);
+
+        return () => window.clearTimeout(id);
+    }, [query, filters.q, filters.status]);
 
     function applyFilters(next: { q?: string; status?: string }) {
         router.get(
@@ -83,11 +110,6 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
         );
     }
 
-    function submitSearch(event: FormEvent) {
-        event.preventDefault();
-        applyFilters({ q: query.trim() });
-    }
-
     const statusChips = [
         { id: '', label: 'All', count: counts.all },
         {
@@ -96,122 +118,74 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
             count: counts.draft_submitted,
         },
         { id: 'priced', label: 'Ready to receive', count: counts.priced },
+        { id: 'reviewed', label: 'Reviewed', count: counts.reviewed },
     ] as const;
 
     return (
         <>
             <Head title="Receiving" />
             <div className="flex flex-col gap-5 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                            Receiving queue
-                        </h1>
-                        <p className="text-sm text-muted-foreground">
-                            Review intake requests, set pricing, print the
-                            form, then mark samples received. Auto-refreshes
-                            every 20 seconds.
-                        </p>
-                        {flash?.success && (
-                            <p className="mt-2 text-sm text-emerald-700">
-                                {flash.success}
-                            </p>
-                        )}
-                    </div>
+                <WorkspaceHeader
+                    title="Receiving queue"
+                    description="Price and receive samples. After Head releases results, reprint reviewed RFA copies for the customer packet. Auto-refreshes every 20 seconds."
+                    flash={flash?.success}
+                    refreshing={isRefreshing}
+                    lastUpdated={lastUpdated}
+                    refreshLabel="Refreshing queue…"
+                    hint="Priority: price first, then receive."
+                />
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <SummaryStat label="In queue" value={counts.all} />
+                    <SummaryStat
+                        label="Needs pricing"
+                        value={counts.draft_submitted}
+                    />
+                    <SummaryStat
+                        label="Ready to receive"
+                        value={counts.priced}
+                        tone="success"
+                    />
+                    <SummaryStat
+                        label="Reviewed RFAs"
+                        value={counts.reviewed}
+                        tone="info"
+                    />
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
-                        <p className="text-sm text-muted-foreground">
-                            In queue
-                        </p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
-                            {counts.all}
-                        </p>
-                    </div>
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
-                        <p className="text-sm text-muted-foreground">
-                            Needs pricing
-                        </p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
-                            {counts.draft_submitted}
-                        </p>
-                    </div>
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-emerald-50/70 p-4">
-                        <p className="text-sm text-muted-foreground">
-                            Ready to receive
-                        </p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-emerald-800">
-                            {counts.priced}
-                        </p>
-                    </div>
-                </div>
+                <QueueFilterBar
+                    chips={statusChips}
+                    activeId={filters.status || ''}
+                    onChip={(id) =>
+                        applyFilters({ status: id, q: query.trim() })
+                    }
+                    query={query}
+                    onQueryChange={setQuery}
+                    onSearch={() => applyFilters({ q: query.trim() })}
+                    onClear={() => {
+                        setQuery('');
+                        applyFilters({ q: '' });
+                    }}
+                />
 
-                <div className="flex flex-col gap-3 rounded-xl border bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex flex-wrap gap-2">
-                        {statusChips.map((chip) => {
-                            const active =
-                                (filters.status || '') === chip.id;
-
-                            return (
-                                <button
-                                    key={chip.id || 'all'}
-                                    type="button"
-                                    onClick={() =>
-                                        applyFilters({
-                                            status: chip.id,
-                                            q: query.trim(),
-                                        })
-                                    }
-                                    className={cn(
-                                        'inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-sm font-medium transition',
-                                        active
-                                            ? 'border-[#1A3694] bg-[#1A3694] text-white'
-                                            : 'border-slate-200 bg-white text-slate-700 hover:border-[#5282D3]',
-                                    )}
-                                >
-                                    {chip.label}
-                                    <span
-                                        className={cn(
-                                            'rounded-full px-1.5 py-0.5 text-xs tabular-nums',
-                                            active
-                                                ? 'bg-white/20'
-                                                : 'bg-slate-100 text-slate-600',
-                                        )}
-                                    >
-                                        {chip.count}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    <form
-                        onSubmit={submitSearch}
-                        className="flex w-full max-w-md items-center gap-2"
-                    >
-                        <div className="relative flex-1">
-                            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
-                            <Input
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Search reference, customer…"
-                                className="h-10 pl-9"
-                            />
-                        </div>
-                        <Button
-                            type="submit"
-                            variant="outline"
-                            className="h-10"
-                        >
-                            Search
-                        </Button>
-                    </form>
-                </div>
+                <QueueRangeNote
+                    from={orders.from}
+                    to={orders.to}
+                    total={orders.total}
+                    suffix={
+                        filters.status === 'draft_submitted'
+                            ? 'job orders that still need pricing.'
+                            : filters.status === 'priced'
+                              ? 'job orders that are ready to be received.'
+                              : filters.status === 'reviewed'
+                                ? 'jobs Head has reviewed. Print RFA copies for the customer packet.'
+                                : 'job orders across the full receiving queue.'
+                    }
+                />
 
                 <div className="overflow-x-auto rounded-xl border bg-white">
                     <table className="w-full text-sm">
-                        <thead className="bg-[#f8fafc] text-left">
+                        <thead className="sticky top-0 z-10 bg-[#f8fafc] text-left">
                             <tr>
                                 <th className="px-3 py-3 font-medium text-slate-600">
                                     Reference
@@ -241,7 +215,11 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                             {orders.data.map((order) => (
                                 <tr
                                     key={order.id}
-                                    className="border-t transition hover:bg-[#f8fafc]"
+                                    className={cn(
+                                        'border-t transition hover:bg-[#f8fafc]',
+                                        order.status === 'priced' &&
+                                            'bg-emerald-50/30',
+                                    )}
                                 >
                                     <td className="px-3 py-3 font-semibold text-[#1A3694]">
                                         {order.reference_no}
@@ -270,7 +248,9 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                                             {order.status ===
                                             'draft_submitted'
                                                 ? 'Needs pricing'
-                                                : order.status_label}
+                                                : order.reviewed
+                                                  ? 'Reviewed'
+                                                  : order.status_label}
                                         </Badge>
                                     </td>
                                     <td className="px-3 py-3 tabular-nums">
@@ -286,19 +266,58 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                                         {order.created_at}
                                     </td>
                                     <td className="px-3 py-3 text-right">
-                                        <Button
-                                            asChild
-                                            size="sm"
-                                            className="bg-[#1A3694] hover:bg-[#365BB0]"
-                                        >
-                                            <Link
-                                                href={`/receiving/${order.id}`}
-                                            >
-                                                {order.status === 'priced'
-                                                    ? 'Receive'
-                                                    : 'Price & receive'}
-                                            </Link>
-                                        </Button>
+                                        <div className="flex flex-wrap items-center justify-end gap-2">
+                                            {order.status === 'priced' && (
+                                                <Badge
+                                                    variant="outline"
+                                                    className="border-emerald-200 bg-emerald-50 text-emerald-800"
+                                                >
+                                                    Next: mark received
+                                                </Badge>
+                                            )}
+                                            {filters.status === 'reviewed' ||
+                                            order.reviewed ? (
+                                                <Button
+                                                    asChild
+                                                    size="sm"
+                                                    variant="outline"
+                                                >
+                                                    <Link
+                                                        href={`/receiving/${order.id}/print?copies=3`}
+                                                    >
+                                                        Print RFA copies
+                                                    </Link>
+                                                </Button>
+                                            ) : null}
+                                            {filters.status === 'reviewed' ? (
+                                                <Button
+                                                    asChild
+                                                    size="sm"
+                                                    className="bg-[#1A3694] hover:bg-[#365BB0]"
+                                                >
+                                                    <Link
+                                                        href={`/receiving/${order.id}`}
+                                                    >
+                                                        Open
+                                                    </Link>
+                                                </Button>
+                                            ) : (
+                                                <Button
+                                                    asChild
+                                                    size="sm"
+                                                    className="bg-[#1A3694] hover:bg-[#365BB0]"
+                                                >
+                                                    <Link
+                                                        href={`/receiving/${order.id}`}
+                                                    >
+                                                        {order.status ===
+                                                        'priced'
+                                                            ? 'Open & receive'
+                                                            : 'Price & receive'}
+                                                    </Link>
+                                                </Button>
+                                            )}
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

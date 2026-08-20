@@ -174,7 +174,7 @@
         @endphp
         <span class="check">{{ $mark($checked) }} {{ $class }}</span>
         @if($class === 'Others' && $checked)
-            <span class="uline" style="display:inline-block; min-width:80px;">{{ $jobOrder->classification }}</span>
+            <span class="uline" style="display:inline-block; min-width:80px;">{{ preg_replace('/^others\s*:\s*/i', '', (string) $jobOrder->classification) }}</span>
         @endif
     @endforeach
 </div>
@@ -200,10 +200,20 @@
     </tr>
 </table>
 
+@php
+    $fieldDataText = trim((string) $jobOrder->field_data);
+    $sterileBottle = str_contains(mb_strtolower($fieldDataText), 'sterile bottle');
+    $sterileExtra = trim(preg_replace('/^water in sterile bottle\.?\s*/i', '', $fieldDataText) ?? '');
+@endphp
 <table class="line mt">
     <tr>
         <td style="width:20%;"><strong>Field Data (Potability):</strong></td>
-        <td class="uline">{{ $jobOrder->field_data }}</td>
+        <td class="uline">
+            <span class="check">{{ $mark($sterileBottle) }} Water in sterile bottle</span>
+            @if($sterileExtra !== '')
+                — {{ $sterileExtra }}
+            @endif
+        </td>
         <td style="width:28%;"><strong>Sample Storage Temp. (AS RECEIVED):</strong></td>
         <td class="uline">{{ $jobOrder->sample_storage_temp }}</td>
     </tr>
@@ -211,7 +221,16 @@
 <div class="mt">
     <strong>Field Data for Waste Water — Sample Source:</strong>
     @foreach(['Local water district','Tank','Faucet','Deepwell','Others'] as $source)
-        <span class="check">{{ $mark(strcasecmp((string) $jobOrder->wastewater_source, $source) === 0) }} {{ $source }}</span>
+        @php
+            $storedSource = (string) $jobOrder->wastewater_source;
+            $sourceChecked = $source === 'Others'
+                ? str_starts_with(mb_strtolower($storedSource), 'others')
+                : strcasecmp($storedSource, $source) === 0;
+        @endphp
+        <span class="check">{{ $mark($sourceChecked) }} {{ $source }}</span>
+        @if($source === 'Others' && $sourceChecked)
+            <span class="uline" style="display:inline-block; min-width:80px;">{{ preg_replace('/^others\s*:\s*/i', '', $storedSource) }}</span>
+        @endif
     @endforeach
 </div>
 

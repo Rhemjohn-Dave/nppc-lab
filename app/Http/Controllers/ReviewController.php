@@ -3,19 +3,29 @@
 namespace App\Http\Controllers;
 
 use App\Enums\JobOrderStatus;
+use App\Models\ControlledFormRevision;
 use App\Models\JobOrder;
+use App\Models\JobOrderAnalysis;
+use App\Services\AnalysisResultReportResolver;
+use App\Services\ControlledPdfFiller;
 use App\Services\JobOrderService;
+use App\Support\AnalysisResultPdfExporter;
+use App\Support\AnalysisResultReport;
 use App\Support\JobOrderFormPresenter;
-use App\Support\RfaPdfExporter;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ReviewController extends Controller
 {
-    public function __construct(private readonly JobOrderService $jobOrders) {}
+    public function __construct(
+        private readonly JobOrderService $jobOrders,
+        private readonly AnalysisResultReportResolver $reports,
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -23,7 +33,7 @@ class ReviewController extends Controller
         $search = trim($request->string('q')->toString());
 
         $unsignedQuery = JobOrder::query()
-            ->where('status', JobOrderStatus::ReadyForPickup)
+            ->where('status', JobOrderStatus::PendingReview)
             ->whereNull('reviewed_at');
 
         $signedTodayQuery = JobOrder::query()
@@ -139,19 +149,105 @@ class ReviewController extends Controller
 
     public function print(JobOrder $jobOrder): Response
     {
-        $jobOrder->load(['samples', 'analyses', 'receiver', 'reviewer']);
-
-        return Inertia::render('rfa/print', [
-            'jobOrder' => JobOrderFormPresenter::toArray($jobOrder, withResults: true),
-            'copies' => 1,
-            'showResults' => true,
-        ]);
+        abort(403, 'Receiving prints the reviewed RFA after Head releases the results.');
     }
 
     public function pdf(JobOrder $jobOrder): HttpResponse
     {
-        $jobOrder->load(['samples', 'analyses', 'receiver', 'reviewer']);
+        abort(403, 'Receiving prints the reviewed RFA after Head releases the results.');
+    }
 
-        return RfaPdfExporter::download($jobOrder, showResults: true);
+    public function resultReport(Request $request, JobOrder $jobOrder): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user !== null, 403);
+
+        $released = $resolved->canPrint();
+        $isOverlayCombined = $resolved->kind === AnalysisResultReport::KIND_COMBINED
+            && $resolved->isOverlay();
+
+        $templateUrl = $released
+            && $resolved->kind === AnalysisResultReport::KIND_COMBINED
+            && ! $isOverlayCombined
+            && $resolved->controlledRevision
+            ? "/head/{$jobOrder->id}/controlled-revisions/{$resolved->controlledRevision->id}"
+            : '';
+        $pdfUrl = $released && $isOverlayCombined
+            ? "/head/{$jobOrder->id}/combined-pdf"
+            : null;
+
+        $payload = $resolved->manifest(
+            $templateUrl,
+            $pdfUrl,
+            $resolved->fillMode(),
+        );
+
+        if (! $released) {
+            $payload['can_preview'] = false;
+            $payload['can_print'] = false;
+            $payload['message'] = $payload['message']
+                ?: 'The dated result form is available after you release the results.';
+        }
+
+        return response()->json($payload);
+    }
+
+    public function combinedPdf(Request $request, JobOrder $jobOrder): HttpResponse
+    {
+        $user = $request->user();
+        abort_unless($user !== null, 403);
+
+        $resolved = $this->reports->forJobOrder($jobOrder, $user);
+        abort_unless($resolved->canPrint(), 403);
+        abort_unless(
+            $resolved->kind === AnalysisResultReport::KIND_COMBINED
+            && $resolved->isOverlay(),
+            403,
+        );
+
+        abort_unless($resolved->controlledRevision instanceof ControlledFormRevision, 403);
+        $binary = app(ControlledPdfFiller::class)->fill(
+            $resolved->controlledRevision->load('fields'),
+            $resolved->values,
+        );
+
+        return response($binary, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="'.$resolved->filename.'"',
+        ]);
+    }
+
+    public function resultControlledRevision(Request $request, JobOrder $jobOrder, ControlledFormRevision $revision): BinaryFileResponse
+    {
+        $user = $request->user();
+        abort_unless($user !== null, 403);
+
+        $resolved = $this->reports->forJobOrder($jobOrder, $user);
+        abort_unless($resolved->canPrint(), 403);
+        abort_unless(
+            $resolved->kind === AnalysisResultReport::KIND_COMBINED
+            && $resolved->controlledRevision?->id === $revision->id
+            && $revision->hasCanonicalPdf(),
+            403,
+        );
+
+        return response()->file($revision->canonicalAbsolutePath(), [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="'.$revision->form->form_code.'.pdf"',
+        ]);
+    }
+
+    public function resultPdf(Request $request, JobOrder $jobOrder, JobOrderAnalysis $analysis): HttpResponse
+    {
+        abort_unless($analysis->job_order_id === $jobOrder->id, 404);
+
+        $user = $request->user();
+        abort_unless($user !== null, 403);
+
+        $resolved = $this->reports->forAnalysis($analysis, $user);
+        abort_unless($resolved->kind === AnalysisResultReport::KIND_INDIVIDUAL, 404);
+        abort_unless($resolved->canPrint(), 403);
+
+        return AnalysisResultPdfExporter::download($analysis, $request->boolean('inline'));
     }
 }

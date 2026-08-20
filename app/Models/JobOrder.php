@@ -6,6 +6,7 @@ use App\Enums\JobOrderStatus;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -25,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $field_data
  * @property string|null $sample_storage_temp
  * @property string|null $wastewater_source
+ * @property string|null $sampling_point
  * @property string|null $other_tests
  * @property JobOrderStatus $status
  * @property string $total_cost
@@ -57,6 +59,7 @@ class JobOrder extends Model
         'field_data',
         'sample_storage_temp',
         'wastewater_source',
+        'sampling_point',
         'other_tests',
         'status',
         'total_cost',
@@ -100,6 +103,38 @@ class JobOrder extends Model
     public function reviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    /** @return BelongsToMany<AnalysisPackage, $this> */
+    public function packages(): BelongsToMany
+    {
+        return $this->belongsToMany(AnalysisPackage::class, 'job_order_packages')
+            ->using(JobOrderPackage::class)
+            ->withPivot(['selected_type_ids', 'waived_type_ids'])
+            ->withTimestamps();
+    }
+
+    /**
+     * Package member analysis types the customer unchecked (print as "-").
+     *
+     * @return list<int>
+     */
+    public function waivedTypeIds(): array
+    {
+        $this->loadMissing('packages');
+
+        $ids = [];
+        foreach ($this->packages as $package) {
+            $raw = $package->pivot->waived_type_ids ?? null;
+            if (! is_array($raw)) {
+                continue;
+            }
+            foreach ($raw as $id) {
+                $ids[] = (int) $id;
+            }
+        }
+
+        return array_values(array_unique($ids));
     }
 
     public function recalculateTotal(): void

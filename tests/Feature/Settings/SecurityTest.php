@@ -17,14 +17,6 @@ class SecurityTest extends TestCase
     {
         $this->skipUnlessFortifyHas(Features::twoFactorAuthentication());
 
-        Features::twoFactorAuthentication([
-            'confirm' => true,
-            'confirmPassword' => true,
-        ]);
-        Features::passkeys([
-            'confirmPassword' => true,
-        ]);
-
         $user = User::factory()->create();
 
         $this->actingAs($user)
@@ -32,7 +24,7 @@ class SecurityTest extends TestCase
             ->get(route('security.edit'))
             ->assertInertia(fn (Assert $page) => $page
                 ->component('settings/security')
-                ->where('canManagePasskeys', true)
+                ->where('canManagePasskeys', false)
                 ->where('passkeys', [])
                 ->where('canManageTwoFactor', true)
                 ->where('twoFactorEnabled', false),

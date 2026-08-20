@@ -172,8 +172,9 @@ export default function AdminAssignments({ analysts, groups }: Props) {
                     <p className="text-sm text-muted-foreground">
                         Assign by category for fast setup (e.g. all
                         Microbiological procedures), then fine-tune individual
-                        tests. Receiving uses this when auto-assigning job
-                        lines.
+                        tests. When Receiving marks a job received, each line
+                        goes to the checked analyst with the fewest open
+                        tasks.
                     </p>
                     {flash?.success && (
                         <p className="mt-2 text-sm text-emerald-700">

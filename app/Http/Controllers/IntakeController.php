@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AnalysisPackage;
 use App\Models\AnalysisType;
+use App\Models\Customer;
 use App\Models\JobOrder;
 use App\Services\JobOrderService;
 use App\Support\OfficialAnalysisCatalog;
@@ -28,14 +30,25 @@ class IntakeController extends Controller
 
         $q = $data['query'];
 
-        $previous = JobOrder::query()
+        $previous = Customer::query()
             ->where(function ($builder) use ($q) {
                 $builder->where('customer_email', $q)
                     ->orWhere('customer_contact', $q)
                     ->orWhere('customer_name', 'like', "%{$q}%");
             })
-            ->latest()
+            ->latest('id')
             ->first();
+
+        if (! $previous) {
+            $previous = JobOrder::query()
+                ->where(function ($builder) use ($q) {
+                    $builder->where('customer_email', $q)
+                        ->orWhere('customer_contact', $q)
+                        ->orWhere('customer_name', 'like', "%{$q}%");
+                })
+                ->latest()
+                ->first();
+        }
 
         if (! $previous) {
             return back()->withErrors([
@@ -58,6 +71,7 @@ class IntakeController extends Controller
         $categories = AnalysisType::query()
             ->with('category')
             ->where('is_active', true)
+            ->where('show_on_kiosk', true)
             ->orderBy('sort_order')
             ->get()
             ->groupBy(fn (AnalysisType $type) => $type->category_id)
@@ -71,10 +85,37 @@ class IntakeController extends Controller
                     'default_price' => $type->default_price,
                 ])->values(),
             ])
+            ->filter(fn (array $group) => $group['items']->isNotEmpty())
+            ->values();
+
+        $packages = AnalysisPackage::query()
+            ->where('is_active', true)
+            ->with(['analysisTypes', 'category'])
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (AnalysisPackage $package) => [
+                'id' => $package->id,
+                'code' => $package->code,
+                'name' => $package->name,
+                'description' => $package->description,
+                'default_price' => $package->default_price,
+                'form_code' => $package->form_code,
+                'classifications' => $package->classifications ?? [],
+                'category_label' => $package->category?->name,
+                'analysis_type_ids' => $package->orderedTypeIds(),
+                'tests' => $package->analysisTypes->map(fn (AnalysisType $type) => [
+                    'id' => $type->id,
+                    'code' => $type->code,
+                    'name' => $type->name,
+                    'default_price' => $type->default_price,
+                ])->values(),
+            ])
             ->values();
 
         return Inertia::render('intake/wizard', [
             'categories' => $categories,
+            'packages' => $packages,
             'prefill' => [
                 'customer_name' => $request->string('customer_name')->toString() ?: null,
                 'customer_email' => $request->string('customer_email')->toString() ?: null,
@@ -112,7 +153,7 @@ class IntakeController extends Controller
             'sample_collected_by' => ['nullable', 'string', 'max:255'],
             'field_data' => ['nullable', 'string', 'max:2000'],
             'sample_storage_temp' => ['nullable', 'string', 'max:100'],
-            'wastewater_source' => ['nullable', 'string', 'max:100'],
+            'wastewater_source' => ['nullable', 'string', 'max:255'],
             'other_tests' => ['nullable', 'string', 'max:500'],
             'samples' => ['required', 'array', 'min:1'],
             'samples.*.sample_code' => ['nullable', 'string', 'max:100'],
@@ -123,11 +164,13 @@ class IntakeController extends Controller
             'samples.*.remarks' => ['nullable', 'string', 'max:500'],
             'analysis_type_ids' => ['nullable', 'array'],
             'analysis_type_ids.*' => ['integer', 'exists:analysis_types,id'],
+            'package_ids' => ['nullable', 'array'],
+            'package_ids.*' => ['integer', 'exists:analysis_packages,id'],
         ]);
 
-        if (empty($data['analysis_type_ids']) && empty($data['other_tests'])) {
+        if (empty($data['analysis_type_ids']) && empty($data['package_ids']) && empty($data['other_tests'])) {
             return back()->withErrors([
-                'analysis_type_ids' => 'Select at least one analysis or describe other tests.',
+                'analysis_type_ids' => 'Select at least one analysis, package, or describe other tests.',
             ])->withInput();
         }
 

@@ -84,13 +84,55 @@ export default function HistoryShow({ jobOrder, canSign }: Props) {
                     </div>
                 </div>
 
+                <div className="grid gap-4 lg:grid-cols-4">
+                    <div className="rounded-xl border bg-white p-4">
+                        <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                            Customer
+                        </p>
+                        <p className="mt-2 font-medium">{jobOrder.customer_name}</p>
+                        <p className="text-sm text-muted-foreground">
+                            {jobOrder.company_name || 'No company provided'}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border bg-white p-4">
+                        <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                            Status
+                        </p>
+                        <p className="mt-2 font-medium">
+                            {isSigned ? 'Signed archive record' : 'Unsigned archive record'}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                            {isSigned
+                                ? `Reviewed ${jobOrder.reviewed_at || 'date unavailable'}`
+                                : `Completed ${jobOrder.completed_at || 'date unavailable'}`}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border bg-white p-4">
+                        <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                            Samples
+                        </p>
+                        <p className="mt-2 font-heading text-3xl font-semibold text-[#1A3694]">
+                            {jobOrder.samples?.length ?? 0}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border bg-white p-4">
+                        <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                            Analyses
+                        </p>
+                        <p className="mt-2 font-heading text-3xl font-semibold text-[#1A3694]">
+                            {jobOrder.analyses.length}
+                        </p>
+                    </div>
+                </div>
+
                 <div className="overflow-hidden rounded-xl border bg-white">
                     <div className="border-b bg-[#f8fafc] px-4 py-3">
                         <h2 className="font-semibold text-[#1A3694]">
                             Official Request for Analysis
                         </h2>
                         <p className="text-xs text-muted-foreground">
-                            Read-only archive view with analyst results.
+                            Read-only archive view with analyst results and
+                            preserved provenance.
                         </p>
                     </div>
                     <div className="p-4">

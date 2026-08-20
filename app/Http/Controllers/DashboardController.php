@@ -42,7 +42,7 @@ class DashboardController extends Controller
                 'draft_submitted' => (int) ($statusCounts[JobOrderStatus::DraftSubmitted->value] ?? 0),
                 'in_analysis' => (int) ($statusCounts[JobOrderStatus::InAnalysis->value] ?? 0),
                 'awaiting_signature' => JobOrder::query()
-                    ->where('status', JobOrderStatus::ReadyForPickup)
+                    ->where('status', JobOrderStatus::PendingReview)
                     ->whereNull('reviewed_at')
                     ->count(),
                 'ready_for_pickup' => (int) ($statusCounts[JobOrderStatus::ReadyForPickup->value] ?? 0),

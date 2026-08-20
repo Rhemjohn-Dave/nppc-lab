@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $category_id
  * @property string $default_price
  * @property bool $is_active
+ * @property bool $show_on_kiosk
+ * @property string $result_mode
  * @property int $sort_order
  * @property-read AnalysisCategory $category
  */
@@ -25,6 +27,8 @@ class AnalysisType extends Model
         'category_id',
         'default_price',
         'is_active',
+        'show_on_kiosk',
+        'result_mode',
         'sort_order',
     ];
 
@@ -33,7 +37,17 @@ class AnalysisType extends Model
         return [
             'default_price' => 'decimal:2',
             'is_active' => 'boolean',
+            'show_on_kiosk' => 'boolean',
         ];
+    }
+
+    public const RESULT_MODE_VALUE = 'value';
+
+    public const RESULT_MODE_PASS_FAIL = 'pass_fail';
+
+    public function isPassFail(): bool
+    {
+        return $this->result_mode === self::RESULT_MODE_PASS_FAIL;
     }
 
     /** @return BelongsTo<AnalysisCategory, $this> */
@@ -52,5 +66,14 @@ class AnalysisType extends Model
     public function jobOrderAnalyses(): HasMany
     {
         return $this->hasMany(JobOrderAnalysis::class);
+    }
+
+    /** @return BelongsToMany<AnalysisPackage, $this> */
+    public function packages(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            AnalysisPackage::class,
+            'analysis_package_types',
+        )->withPivot('slot')->withTimestamps();
     }
 }

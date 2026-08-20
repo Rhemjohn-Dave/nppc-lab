@@ -9,7 +9,7 @@ use Illuminate\Support\Str;
 
 class AnalysisResultPdfExporter
 {
-    public static function download(JobOrderAnalysis $analysis): HttpResponse
+    public static function download(JobOrderAnalysis $analysis, bool $inline = false): HttpResponse
     {
         $analysis->loadMissing(['jobOrder.samples', 'analysisType', 'assignee']);
 
@@ -27,6 +27,10 @@ class AnalysisResultPdfExporter
                 'effective' => 'Pending official form',
             ],
         ])->setPaper('a4');
+
+        if ($inline) {
+            return $pdf->stream($filename);
+        }
 
         return $pdf->download($filename);
     }

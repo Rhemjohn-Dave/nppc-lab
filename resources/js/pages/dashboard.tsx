@@ -36,12 +36,53 @@ export default function Dashboard({
     recentOrders,
     roles,
 }: Props) {
+    const roleDestinations: Record<
+        string,
+        { label: string; href: string; description: string }
+    > = {
+        admin: {
+            label: 'Document Control',
+            href: '/admin/controlled-forms',
+            description: 'Manage forms, revisions, and audit trails.',
+        },
+        receiving: {
+            label: 'Receiving queue',
+            href: '/receiving',
+            description: 'Price and receive newly submitted requests.',
+        },
+        analyst: {
+            label: 'Analyst workspace',
+            href: '/analyst',
+            description: 'Enter and complete assigned results.',
+        },
+        head_analysis: {
+            label: 'Signing queue',
+            href: '/head',
+            description: 'Review and sign finished files.',
+        },
+    };
     const cards = [
-        ['Awaiting receive', summary.draft_submitted],
-        ['In analysis', summary.in_analysis],
-        ['Awaiting signature', summary.awaiting_signature],
-        ['Ready for pickup', summary.ready_for_pickup],
+        ['Awaiting receive', summary.draft_submitted, '/receiving?status=draft_submitted'],
+        ['In analysis', summary.in_analysis, '/analyst'],
+        ['Awaiting signature', summary.awaiting_signature, '/head?tab=unsigned'],
+        ['Ready for pickup', summary.ready_for_pickup, '/history?status=unsigned'],
     ] as const;
+
+    const quickLinks = roles
+        .map((role) => roleDestinations[role])
+        .filter(
+            (
+                item,
+            ): item is {
+                label: string;
+                href: string;
+                description: string;
+            } => Boolean(item),
+        )
+        .filter(
+            (item, index, list) =>
+                list.findIndex((entry) => entry.href === item.href) === index,
+        );
 
     return (
         <>
@@ -52,15 +93,40 @@ export default function Dashboard({
                         Laboratory dashboard
                     </h1>
                     <p className="text-sm text-muted-foreground">
-                        Roles: {roles.join(', ') || 'staff'} · {summary.total}{' '}
-                        total job orders
+                        {summary.total} total job orders across the laboratory
+                        workflow.
                     </p>
                 </div>
 
+                {quickLinks.length > 0 && (
+                    <div className="rounded-xl border bg-white p-4">
+                        <p className="text-sm font-medium text-[#1A3694]">
+                            You can work in
+                        </p>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                            {quickLinks.map((item) => (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    className="rounded-lg border bg-[#f8fafc] px-3 py-3 transition hover:border-[#1A3694]/30 hover:bg-[#eef3fb]"
+                                >
+                                    <p className="font-medium text-slate-900">
+                                        {item.label}
+                                    </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        {item.description}
+                                    </p>
+                                </Link>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    {cards.map(([label, value]) => (
-                        <div
+                    {cards.map(([label, value, href]) => (
+                        <Link
                             key={label}
+                            href={href}
                             className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4"
                         >
                             <p className="text-sm text-muted-foreground">
@@ -69,7 +135,10 @@ export default function Dashboard({
                             <p className="mt-2 font-heading text-3xl font-semibold text-[#1A3694]">
                                 {value}
                             </p>
-                        </div>
+                            <p className="mt-2 text-xs font-medium text-[#365BB0]">
+                                Open queue
+                            </p>
+                        </Link>
                     ))}
                 </div>
 
@@ -80,7 +149,7 @@ export default function Dashboard({
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={chartData}>
                                     <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="status" hide />
+                                    <XAxis dataKey="status" tickLine={false} axisLine={false} />
                                     <YAxis allowDecimals={false} />
                                     <Tooltip />
                                     <Bar dataKey="count" fill="#1A3694" />
@@ -106,9 +175,31 @@ export default function Dashboard({
                                             {order.status_label}
                                         </p>
                                     </div>
-                                    <p className="text-xs text-muted-foreground">
-                                        {order.created_at}
-                                    </p>
+                                    <div className="text-right">
+                                        <p className="text-xs text-muted-foreground">
+                                            {order.created_at}
+                                        </p>
+                                        <Link
+                                            href={
+                                                order.status === 'draft_submitted'
+                                                    ? `/receiving/${order.id}`
+                                                    : order.status === 'in_analysis'
+                                                      ? '/analyst'
+                                                      : order.status === 'ready_for_pickup'
+                                                        ? `/history/${order.id}`
+                                                        : '/dashboard'
+                                            }
+                                            className="mt-1 inline-block text-xs font-medium text-[#1A3694]"
+                                        >
+                                            {order.status === 'draft_submitted'
+                                                ? 'Open in Receiving'
+                                                : order.status === 'in_analysis'
+                                                  ? 'Open Analyst workspace'
+                                                  : order.status === 'ready_for_pickup'
+                                                    ? 'Open in History'
+                                                    : 'View workflow'}
+                                        </Link>
+                                    </div>
                                 </div>
                             ))}
                             {recentOrders.length === 0 && (

@@ -1,7 +1,10 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Search } from 'lucide-react';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import QueueFilterBar from '@/components/queue-filter-bar';
+import QueueRangeNote from '@/components/queue-range-note';
+import SummaryStat from '@/components/summary-stat';
 import TablePagination from '@/components/table-pagination';
+import WorkspaceHeader from '@/components/workspace-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -13,7 +16,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 type Order = {
@@ -61,6 +63,8 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
     const [selected, setSelected] = useState<number[]>([]);
     const [confirmBatch, setConfirmBatch] = useState(false);
     const [signing, setSigning] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [lastUpdated, setLastUpdated] = useState(() => new Date());
 
     const tab = filters.tab;
     const unsignedTab = tab === 'unsigned';
@@ -80,11 +84,32 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
 
     useEffect(() => {
         const id = window.setInterval(() => {
-            router.reload({ only: ['orders', 'counts'] });
+            setIsRefreshing(true);
+            router.reload({
+                only: ['orders', 'counts'],
+                onFinish: () => {
+                    setIsRefreshing(false);
+                    setLastUpdated(new Date());
+                },
+            });
         }, 20000);
 
         return () => window.clearInterval(id);
     }, []);
+
+    useEffect(() => {
+        const trimmed = query.trim();
+        const active = filters.q ?? '';
+        const id = window.setTimeout(() => {
+            if (trimmed === active) {
+                return;
+            }
+
+            applyFilters({ q: trimmed });
+        }, 350);
+
+        return () => window.clearTimeout(id);
+    }, [query, filters.q, filters.tab]);
 
     function applyFilters(next: { q?: string; tab?: string }) {
         setSelected([]);
@@ -101,8 +126,7 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
         );
     }
 
-    function submitSearch(event: FormEvent) {
-        event.preventDefault();
+    function submitSearch() {
         applyFilters({ q: query.trim() });
     }
 
@@ -145,35 +169,25 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
         <>
             <Head title="Head Analysis" />
             <div className="flex flex-col gap-5 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                            Head Analysis · End-of-day signing
-                        </h1>
-                        <p className="text-sm text-muted-foreground">
-                            Results already released when analysts finish.
-                            Sign today’s finished files here. The full
-                            finished-file archive is in sidebar{' '}
-                            <span className="font-medium text-slate-700">
-                                History
-                            </span>
-                            . Auto-refreshes every 20 seconds.
-                        </p>
-                        {flash?.success && (
-                            <p className="mt-2 text-sm text-emerald-700">
-                                {flash.success}
-                            </p>
-                        )}
-                    </div>
-                    {canSelect && selected.length > 0 && (
-                        <Button
-                            className="bg-[#1A3694] hover:bg-[#365BB0]"
-                            onClick={() => setConfirmBatch(true)}
-                        >
-                            Sign selected ({selected.length})
-                        </Button>
-                    )}
-                </div>
+                <WorkspaceHeader
+                    title="Head Analysis · Signing queue"
+                    description="Results already released when analysts finish. Sign today’s finished files here. The full archive is in History. Auto-refreshes every 20 seconds."
+                    flash={flash?.success}
+                    refreshing={isRefreshing}
+                    lastUpdated={lastUpdated}
+                    refreshLabel="Refreshing review queue…"
+                    hint="Use this screen for jobs sent by the designated analyst; use History for released files."
+                    actions={
+                        canSelect && selected.length > 0 ? (
+                            <Button
+                                className="bg-[#1A3694] hover:bg-[#365BB0]"
+                                onClick={() => setConfirmBatch(true)}
+                            >
+                                Sign selected ({selected.length})
+                            </Button>
+                        ) : undefined
+                    }
+                />
 
                 <div className="grid gap-2 rounded-xl border bg-[#f8fafc] p-3 text-sm sm:grid-cols-3">
                     <div className="rounded-lg bg-white px-3 py-2 text-slate-700">
@@ -195,7 +209,7 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
                         <p className="text-xs font-semibold tracking-wide uppercase opacity-80">
                             Step 2
                         </p>
-                        <p className="font-medium">Review & sign finished files</p>
+                        <p className="font-medium">Review & sign submitted files</p>
                     </div>
                     <div
                         className={cn(
@@ -213,97 +227,45 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
-                        <p className="text-sm text-muted-foreground">
-                            Awaiting signature
-                        </p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
-                            {counts.unsigned}
-                        </p>
-                    </div>
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-emerald-50/70 p-4">
-                        <p className="text-sm text-muted-foreground">
-                            Signed today
-                        </p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-emerald-800">
-                            {counts.signed_today}
-                        </p>
-                    </div>
+                    <SummaryStat
+                        label="Awaiting signature"
+                        value={counts.unsigned}
+                    />
+                    <SummaryStat
+                        label="Signed today"
+                        value={counts.signed_today}
+                        tone="success"
+                    />
                 </div>
 
-                <div className="flex flex-col gap-3 rounded-xl border bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex flex-wrap gap-2">
-                        {(
-                            [
-                                {
-                                    id: 'unsigned',
-                                    label: 'Awaiting signature',
-                                    count: counts.unsigned,
-                                },
-                                {
-                                    id: 'signed',
-                                    label: 'Signed today',
-                                    count: counts.signed_today,
-                                },
-                            ] as const
-                        ).map((chip) => {
-                            const active = filters.tab === chip.id;
-
-                            return (
-                                <button
-                                    key={chip.id}
-                                    type="button"
-                                    onClick={() =>
-                                        applyFilters({
-                                            tab: chip.id,
-                                            q: query.trim(),
-                                        })
-                                    }
-                                    className={cn(
-                                        'inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-sm font-medium transition',
-                                        active
-                                            ? 'border-[#1A3694] bg-[#1A3694] text-white'
-                                            : 'border-slate-200 bg-white text-slate-700 hover:border-[#5282D3]',
-                                    )}
-                                >
-                                    {chip.label}
-                                    <span
-                                        className={cn(
-                                            'rounded-full px-1.5 py-0.5 text-xs tabular-nums',
-                                            active
-                                                ? 'bg-white/20'
-                                                : 'bg-slate-100 text-slate-600',
-                                        )}
-                                    >
-                                        {chip.count}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    <form
-                        onSubmit={submitSearch}
-                        className="flex w-full max-w-md items-center gap-2"
-                    >
-                        <div className="relative flex-1">
-                            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
-                            <Input
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Search reference, customer…"
-                                className="h-10 pl-9"
-                            />
-                        </div>
-                        <Button
-                            type="submit"
-                            variant="outline"
-                            className="h-10"
-                        >
-                            Search
-                        </Button>
-                    </form>
-                </div>
+                <QueueFilterBar
+                    chips={[
+                        {
+                            id: 'unsigned',
+                            label: 'Awaiting signature',
+                            count: counts.unsigned,
+                        },
+                        {
+                            id: 'signed',
+                            label: 'Signed today',
+                            count: counts.signed_today,
+                        },
+                    ]}
+                    activeId={filters.tab}
+                    onChip={(id) =>
+                        applyFilters({
+                            tab: id,
+                            q: query.trim(),
+                        })
+                    }
+                    query={query}
+                    onQueryChange={setQuery}
+                    onSearch={submitSearch}
+                    onClear={() => {
+                        setQuery('');
+                        applyFilters({ q: '' });
+                    }}
+                />
 
                 {canSelect && selected.length > 0 && (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#1A3694]/20 bg-[#eef3fb] px-4 py-3">
@@ -331,9 +293,20 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
                     </div>
                 )}
 
+                <QueueRangeNote
+                    from={orders.from}
+                    to={orders.to}
+                    total={orders.total}
+                    suffix={
+                        unsignedTab
+                            ? 'finished files that are still awaiting signature.'
+                            : 'files signed today for end-of-day filing.'
+                    }
+                />
+
                 <div className="overflow-x-auto rounded-xl border bg-white">
                     <table className="w-full text-sm">
-                        <thead className="bg-[#f8fafc] text-left">
+                        <thead className="sticky top-0 z-10 bg-[#f8fafc] text-left">
                             <tr>
                                 {canSelect && (
                                     <th className="px-3 py-3">
@@ -371,7 +344,11 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
                             {orders.data.map((order) => (
                                 <tr
                                     key={order.id}
-                                    className="border-t transition hover:bg-[#f8fafc]"
+                                    className={cn(
+                                        'border-t transition hover:bg-[#f8fafc]',
+                                        !order.is_signed &&
+                                            'bg-[#eef3fb]/35',
+                                    )}
                                 >
                                     {canSelect && (
                                         <td className="px-3 py-3">

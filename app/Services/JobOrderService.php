@@ -6,7 +6,9 @@ use App\Enums\JobOrderAnalysisStatus;
 use App\Enums\JobOrderStatus;
 use App\Mail\ResultsReadyMail;
 use App\Models\AnalysisCategory;
+use App\Models\AnalysisPackage;
 use App\Models\AnalysisType;
+use App\Models\Customer;
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
 use App\Models\User;
@@ -21,6 +23,8 @@ class JobOrderService
 {
     public function __construct(
         private readonly ReferenceNumberService $referenceNumbers,
+        private readonly AnalystAssignmentPicker $assignments,
+        private readonly AnalysisResultReportResolver $reports,
     ) {}
 
     /**
@@ -29,6 +33,8 @@ class JobOrderService
     public function createFromIntake(array $data): JobOrder
     {
         return DB::transaction(function () use ($data) {
+            Customer::rememberFromIntake($data);
+
             $jobOrder = JobOrder::create([
                 'reference_no' => $this->referenceNumbers->next(),
                 'customer_name' => $data['customer_name'],
@@ -44,6 +50,7 @@ class JobOrderService
                 'field_data' => $data['field_data'] ?? null,
                 'sample_storage_temp' => $data['sample_storage_temp'] ?? null,
                 'wastewater_source' => $data['wastewater_source'] ?? null,
+                'sampling_point' => $data['sampling_point'] ?? null,
                 'other_tests' => $data['other_tests'] ?? null,
                 'status' => JobOrderStatus::DraftSubmitted,
                 'total_cost' => 0,
@@ -64,10 +71,61 @@ class JobOrderService
                 ]);
             }
 
-            /** @var list<int> $analysisTypeIds */
-            $analysisTypeIds = array_values(array_unique(array_map(
+            /** @var list<int> $requestedTypeIds */
+            $requestedTypeIds = array_values(array_unique(array_map(
                 'intval',
                 $data['analysis_type_ids'] ?? [],
+            )));
+
+            /** @var list<int> $packageIds */
+            $packageIds = array_values(array_unique(array_map(
+                'intval',
+                $data['package_ids'] ?? [],
+            )));
+
+            $packages = AnalysisPackage::query()
+                ->whereIn('id', $packageIds)
+                ->where('is_active', true)
+                ->with('analysisTypes')
+                ->get();
+
+            $typesExplicitlyListed = array_key_exists('analysis_type_ids', $data);
+            $analysisTypeIds = $requestedTypeIds;
+            $waivedAll = [];
+
+            foreach ($packages as $package) {
+                $memberIds = $package->orderedTypeIds();
+                $selected = $typesExplicitlyListed
+                    ? array_values(array_intersect($memberIds, $requestedTypeIds))
+                    : $memberIds;
+
+                if ($selected === []) {
+                    throw ValidationException::withMessages([
+                        'package_ids' => "Select at least one test in package \"{$package->name}\".",
+                    ]);
+                }
+
+                $waived = array_values(array_diff($memberIds, $selected));
+                foreach ($waived as $waivedId) {
+                    $waivedAll[] = $waivedId;
+                }
+
+                $jobOrder->packages()->syncWithoutDetaching([
+                    $package->id => [
+                        'selected_type_ids' => $selected,
+                        'waived_type_ids' => $waived,
+                    ],
+                ]);
+
+                foreach ($selected as $typeId) {
+                    $analysisTypeIds[] = $typeId;
+                }
+            }
+
+            $waivedAll = array_values(array_unique($waivedAll));
+            $analysisTypeIds = array_values(array_unique(array_filter(
+                $analysisTypeIds,
+                fn (int $id): bool => ! in_array($id, $waivedAll, true),
             )));
 
             $types = AnalysisType::query()
@@ -156,9 +214,10 @@ class JobOrderService
 
         return DB::transaction(function () use ($jobOrder, $receiver) {
             $jobOrder->load('analyses.analysisType.analysts');
+            $loads = $this->assignments->openLoads();
 
             foreach ($jobOrder->analyses as $analysis) {
-                $analyst = $analysis->analysisType?->analysts->first();
+                $analyst = $this->assignments->pick($analysis->analysisType, $loads);
 
                 $analysis->update([
                     'assigned_to' => $analyst?->id,
@@ -183,11 +242,22 @@ class JobOrderService
     }
 
     /**
-     * @param  array{result_value?: ?string, result_unit?: ?string, result_remarks?: ?string}  $data
+     * @param  array{result_value?: ?string, result_measurement?: ?string, result_unit?: ?string, result_remarks?: ?string}  $data
      */
     public function saveAnalysisDraft(JobOrderAnalysis $analysis, array $data, User $analyst): JobOrderAnalysis
     {
         $this->assertAnalystCanWorkOn($analysis, $analyst);
+        $analysis->loadMissing('analysisType');
+
+        $value = $this->normalizedResultValue($analysis, $data['result_value'] ?? null);
+        $measurement = $this->optionalText($data['result_measurement'] ?? null);
+        $unit = $this->optionalText($data['result_unit'] ?? null);
+
+        if ($analysis->analysisType?->isPassFail() && $value !== null && ! in_array($value, ['Passed', 'Failed'], true)) {
+            throw ValidationException::withMessages([
+                'result_value' => 'Select Passed or Failed.',
+            ]);
+        }
 
         if (in_array($analysis->status, [
             JobOrderAnalysisStatus::Completed,
@@ -199,8 +269,9 @@ class JobOrderService
 
         $analysis->update([
             'assigned_to' => $analysis->assigned_to ?? $analyst->id,
-            'result_value' => $data['result_value'] ?? null,
-            'result_unit' => $data['result_unit'] ?? null,
+            'result_value' => $value,
+            'result_measurement' => $measurement,
+            'result_unit' => $unit,
             'result_remarks' => $data['result_remarks'] ?? null,
             'status' => $analysis->status === JobOrderAnalysisStatus::Returned
                 ? JobOrderAnalysisStatus::Returned
@@ -212,51 +283,262 @@ class JobOrderService
     }
 
     /**
-     * @param  array{result_value: string, result_unit?: ?string, result_remarks?: ?string}  $data
+     * @param  array{result_value: string, result_measurement?: ?string, result_unit?: ?string, result_remarks?: ?string}  $data
      */
     public function completeAnalysis(JobOrderAnalysis $analysis, array $data, User $analyst): JobOrderAnalysis
     {
         $this->assertAnalystCanWorkOn($analysis, $analyst);
+        $analysis->loadMissing('analysisType');
 
-        if (blank($data['result_value'])) {
+        $value = $this->normalizedResultValue($analysis, $data['result_value'] ?? null);
+        $measurement = $this->optionalText($data['result_measurement'] ?? null);
+        $unit = $this->optionalText($data['result_unit'] ?? null);
+
+        if (blank($value)) {
             throw ValidationException::withMessages([
-                'result_value' => 'A result value is required to complete this analysis.',
+                'result_value' => $analysis->analysisType?->isPassFail()
+                    ? 'Select Passed or Failed to complete this analysis.'
+                    : 'A result value is required to complete this analysis.',
             ]);
         }
 
-        return DB::transaction(function () use ($analysis, $data, $analyst) {
+        if ($analysis->analysisType?->isPassFail() && ! in_array($value, ['Passed', 'Failed'], true)) {
+            throw ValidationException::withMessages([
+                'result_value' => 'Select Passed or Failed.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($analysis, $data, $analyst, $value, $measurement, $unit) {
             $analysis->update([
                 'assigned_to' => $analysis->assigned_to ?? $analyst->id,
-                'result_value' => $data['result_value'],
-                'result_unit' => $data['result_unit'] ?? null,
+                'result_value' => $value,
+                'result_measurement' => $measurement,
+                'result_unit' => $unit,
                 'result_remarks' => $data['result_remarks'] ?? null,
                 'status' => JobOrderAnalysisStatus::Completed,
                 'completed_at' => now(),
             ]);
 
-            $jobOrder = $analysis->jobOrder()->with('analyses')->firstOrFail();
-            $allDone = $jobOrder->analyses->every(
-                fn (JobOrderAnalysis $line) => $line->status === JobOrderAnalysisStatus::Completed
-            );
-
-            if ($allDone) {
-                $becomingReady = $jobOrder->status !== JobOrderStatus::ReadyForPickup;
-
-                $jobOrder->update(['status' => JobOrderStatus::ReadyForPickup]);
-
-                if ($becomingReady && filled($jobOrder->customer_email)) {
-                    Mail::to($jobOrder->customer_email)->send(new ResultsReadyMail($jobOrder));
-                }
-
-                if ($becomingReady) {
-                    User::role(['head_analysis', 'admin'])->get()->each(
-                        fn (User $user) => $user->notify(new JobOrderPendingReview($jobOrder))
-                    );
-                }
-            }
-
             return $analysis->fresh(['jobOrder', 'analysisType', 'assignee']) ?? $analysis;
         });
+    }
+
+    public function submitForReview(JobOrder $jobOrder, User $analyst): JobOrder
+    {
+        if ($jobOrder->status !== JobOrderStatus::InAnalysis) {
+            throw ValidationException::withMessages([
+                'job_order' => 'Only jobs still in analysis can be sent to Head.',
+            ]);
+        }
+
+        $jobOrder->load(['analyses.assignee', 'packages']);
+        $this->assertUserCanSubmitForReview($jobOrder, $analyst);
+
+        $incomplete = $jobOrder->analyses->reject(
+            fn (JobOrderAnalysis $line) => $line->status === JobOrderAnalysisStatus::Completed
+                && filled($line->result_value)
+        );
+
+        if ($incomplete->isNotEmpty()) {
+            $names = $incomplete->pluck('name')->filter()->implode(', ');
+
+            throw ValidationException::withMessages([
+                'job_order' => 'Encode all results before sending to Head'
+                    .($names !== '' ? ': '.$names : '.'),
+            ]);
+        }
+
+        $jobOrder->update(['status' => JobOrderStatus::PendingReview]);
+
+        User::role(['head_analysis', 'admin'])->get()->each(
+            fn (User $user) => $user->notify(new JobOrderPendingReview($jobOrder))
+        );
+
+        return $jobOrder->fresh(['analyses.assignee', 'packages']) ?? $jobOrder;
+    }
+
+    public function userCanSubmitForReview(JobOrder $jobOrder, User $user): bool
+    {
+        try {
+            $this->assertUserCanSubmitForReview($jobOrder, $user);
+
+            return true;
+        } catch (ValidationException) {
+            return false;
+        }
+    }
+
+    public function assertUserCanSubmitForReview(JobOrder $jobOrder, User $user): void
+    {
+        $jobOrder->loadMissing(['packages', 'analyses']);
+
+        if ($user->hasRole('admin')) {
+            return;
+        }
+
+        if ($jobOrder->packages->isNotEmpty()) {
+            $signatories = $jobOrder->packages
+                ->pluck('signatory_user_id')
+                ->filter()
+                ->unique()
+                ->values();
+
+            if ($signatories->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'job_order' => 'This package has no designated analyst. Ask Admin to set one on the package.',
+                ]);
+            }
+
+            if ($signatories->count() > 1) {
+                throw ValidationException::withMessages([
+                    'job_order' => 'This job has packages with different designated analysts. An admin must send it to Head.',
+                ]);
+            }
+
+            if ((int) $signatories->first() !== (int) $user->id) {
+                throw ValidationException::withMessages([
+                    'job_order' => 'Only the designated package analyst can send this job to Head.',
+                ]);
+            }
+
+            return;
+        }
+
+        $assignees = $jobOrder->analyses->pluck('assigned_to')->filter()->unique();
+
+        if (! $assignees->contains($user->id)) {
+            throw ValidationException::withMessages([
+                'job_order' => 'You are not assigned to this job.',
+            ]);
+        }
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function consolidationsFor(User $user): array
+    {
+        $jobs = JobOrder::query()
+            ->where('status', JobOrderStatus::InAnalysis)
+            ->with(['analyses.assignee', 'packages.signatory'])
+            ->latest('id')
+            ->limit(40)
+            ->get()
+            ->filter(fn (JobOrder $job) => $this->userCanSubmitForReview($job, $user))
+            ->values();
+
+        return $jobs->map(function (JobOrder $job) use ($user) {
+            $incomplete = $job->analyses->reject(
+                fn (JobOrderAnalysis $line) => $line->status === JobOrderAnalysisStatus::Completed
+                    && filled($line->result_value)
+            );
+            $summary = $this->reports->forJobOrder($job, $user)->summary();
+            $previewLine = $job->analyses->first();
+
+            return [
+                'id' => $job->id,
+                'reference_no' => $job->reference_no,
+                'customer_name' => $job->customer_name,
+                'can_submit' => $incomplete->isEmpty(),
+                'can_preview' => $summary['can_preview'],
+                'preview_message' => $summary['message'],
+                'preview_url' => $previewLine
+                    ? "/analyst/tasks/{$previewLine->id}/report"
+                    : null,
+                'missing' => $incomplete->pluck('name')->values()->all(),
+                'lines' => $job->analyses->map(fn (JobOrderAnalysis $line) => [
+                    'id' => $line->id,
+                    'name' => $line->name,
+                    'assignee_name' => $line->assignee?->name,
+                    'status' => $line->status->value,
+                    'status_label' => $line->status->label(),
+                    'result_value' => $line->result_value,
+                    'completed' => $line->status === JobOrderAnalysisStatus::Completed
+                        && filled($line->result_value),
+                ])->values()->all(),
+            ];
+        })->all();
+    }
+
+    /**
+     * Result forms the designated analyst may print after Head release.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function releasedResultPrintsFor(User $user): array
+    {
+        $jobs = JobOrder::query()
+            ->where('status', JobOrderStatus::ReadyForPickup)
+            ->whereNotNull('reviewed_at')
+            ->with(['analyses', 'packages'])
+            ->latest('reviewed_at')
+            ->limit(40)
+            ->get()
+            ->filter(function (JobOrder $job) use ($user) {
+                if ($user->hasRole('admin')) {
+                    return true;
+                }
+
+                if ($this->reports->userIsPackageSignatory($job, $user)) {
+                    return true;
+                }
+
+                return $job->packages->isEmpty()
+                    && $job->analyses->contains(
+                        fn (JobOrderAnalysis $line) => (int) $line->assigned_to === (int) $user->id,
+                    );
+            })
+            ->values();
+
+        return $jobs->map(function (JobOrder $job) use ($user) {
+            $summary = $this->reports->forJobOrder($job, $user)->summary();
+            $previewLine = $job->analyses->first();
+
+            return [
+                'id' => $job->id,
+                'reference_no' => $job->reference_no,
+                'customer_name' => $job->customer_name,
+                'can_print' => $summary['can_print'],
+                'print_url' => $previewLine
+                    ? "/analyst/tasks/{$previewLine->id}/report"
+                    : null,
+            ];
+        })->all();
+    }
+
+    private function normalizedResultValue(JobOrderAnalysis $analysis, mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $text = trim((string) $value);
+        if ($text === '') {
+            return null;
+        }
+
+        if (! $analysis->analysisType?->isPassFail()) {
+            return $text;
+        }
+
+        $normalized = mb_strtolower($text);
+
+        return match (true) {
+            in_array($normalized, ['passed', 'pass'], true) => 'Passed',
+            in_array($normalized, ['failed', 'fail'], true) => 'Failed',
+            default => $text,
+        };
+    }
+
+    private function optionalText(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $text = trim((string) $value);
+
+        return $text === '' ? null : $text;
     }
 
     private function assertAnalystCanWorkOn(JobOrderAnalysis $analysis, User $analyst): void
@@ -278,9 +560,9 @@ class JobOrderService
 
     public function sign(JobOrder $jobOrder, User $reviewer, ?string $notes = null): JobOrder
     {
-        if ($jobOrder->status !== JobOrderStatus::ReadyForPickup) {
+        if ($jobOrder->status !== JobOrderStatus::PendingReview) {
             throw ValidationException::withMessages([
-                'job_order' => 'Only finished jobs ready for pickup can be signed.',
+                'job_order' => 'Only jobs sent by the designated analyst can be signed.',
             ]);
         }
 
@@ -291,10 +573,15 @@ class JobOrderService
         }
 
         $jobOrder->update([
+            'status' => JobOrderStatus::ReadyForPickup,
             'reviewed_by' => $reviewer->id,
             'reviewed_at' => now(),
             'review_notes' => $notes,
         ]);
+
+        if (filled($jobOrder->customer_email)) {
+            Mail::to($jobOrder->customer_email)->send(new ResultsReadyMail($jobOrder));
+        }
 
         return $jobOrder->fresh(['samples', 'analyses', 'reviewer']) ?? $jobOrder;
     }
@@ -308,7 +595,7 @@ class JobOrderService
 
         $orders = JobOrder::query()
             ->whereIn('id', $ids)
-            ->where('status', JobOrderStatus::ReadyForPickup)
+            ->where('status', JobOrderStatus::PendingReview)
             ->whereNull('reviewed_at')
             ->get();
 
@@ -324,7 +611,16 @@ class JobOrderService
      */
     public function returnAnalyses(JobOrder $jobOrder, iterable $analysisIds, User $reviewer, ?string $notes = null): JobOrder
     {
-        return DB::transaction(function () use ($jobOrder, $analysisIds, $reviewer, $notes) {
+        if (! in_array($jobOrder->status, [
+            JobOrderStatus::PendingReview,
+            JobOrderStatus::ReadyForPickup,
+        ], true)) {
+            throw ValidationException::withMessages([
+                'job_order' => 'Only jobs pending Head review can be returned.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($jobOrder, $analysisIds, $notes) {
             $ids = collect($analysisIds)->unique()->values()->all();
 
             $analyses = $jobOrder->analyses()->whereIn('id', $ids)->get();
@@ -332,6 +628,7 @@ class JobOrderService
             $analyses->each(function (JobOrderAnalysis $analysis) {
                 $analysis->update([
                     'result_value' => null,
+                    'result_measurement' => null,
                     'result_unit' => null,
                     'result_remarks' => null,
                     'completed_at' => null,

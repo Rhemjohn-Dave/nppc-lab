@@ -16,7 +16,8 @@ class OfficialAnalysisCatalog
         return [
             AnalysisCategory::Microbiological->value => [
                 ['MB-01', 'Aerobic Plate Count (HPC)', 450],
-                ['MB-02', 'Total & Fecal Coliform', 450],
+                ['MB-02A', 'Total Coliform (MPN/100ml)', 225],
+                ['MB-02B', 'Thermotolerant Coliform (MPN/100ml)', 225],
                 ['MB-03', 'E. coli', 500],
                 ['MB-04', 'S. aureus', 550],
                 ['MB-05', 'V. parahaemolyticus', 650],

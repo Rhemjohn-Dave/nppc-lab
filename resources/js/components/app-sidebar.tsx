@@ -7,6 +7,8 @@ import {
     History,
     LayoutGrid,
     PackageOpen,
+    Printer,
+    ScrollText,
     Settings2,
     Shield,
     Users,
@@ -61,7 +63,7 @@ export function AppSidebar() {
         ...(can('head_analysis')
             ? [
                   {
-                      title: 'Head Analysis',
+                      title: 'Signing queue',
                       href: '/head',
                       icon: ClipboardCheck,
                   } satisfies NavItem,
@@ -70,7 +72,7 @@ export function AppSidebar() {
         ...(canAccessHistory
             ? [
                   {
-                      title: 'History',
+                      title: 'History archive',
                       href: '/history',
                       icon: History,
                   } satisfies NavItem,
@@ -89,6 +91,11 @@ export function AppSidebar() {
                       icon: Settings2,
                   } satisfies NavItem,
                   {
+                      title: 'Packages',
+                      href: '/admin/packages',
+                      icon: PackageOpen,
+                  } satisfies NavItem,
+                  {
                       title: 'Assignments',
                       href: '/admin/assignments',
                       icon: Beaker,
@@ -103,14 +110,29 @@ export function AppSidebar() {
                       href: '/admin/control-number',
                       icon: Hash,
                   } satisfies NavItem,
-                  {
-                      title: 'Form templates',
-                      href: '/admin/form-templates',
-                      icon: FileText,
-                  } satisfies NavItem,
               ]
             : []),
     ];
+
+    const documentNavItems: NavItem[] = isAdmin
+        ? [
+              {
+                  title: 'Controlled Forms',
+                  href: '/admin/controlled-forms',
+                  icon: FileText,
+              },
+              {
+                  title: 'Print History',
+                  href: '/admin/print-history',
+                  icon: Printer,
+              },
+              {
+                  title: 'Audit Logs',
+                  href: '/admin/document-audit',
+                  icon: ScrollText,
+              },
+          ]
+        : [];
 
     return (
         <Sidebar collapsible="icon" variant="inset">
@@ -128,6 +150,7 @@ export function AppSidebar() {
 
             <SidebarContent>
                 <NavMain items={mainNavItems} />
+                <NavMain items={documentNavItems} label="Document Control" />
             </SidebarContent>
 
             <SidebarFooter>

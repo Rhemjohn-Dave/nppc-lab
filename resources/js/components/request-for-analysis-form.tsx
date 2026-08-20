@@ -23,6 +23,7 @@ export type FormAnalysis = {
     status_label?: string;
     assigned_to_name?: string | null;
     result_value?: string | null;
+    result_measurement?: string | null;
     result_unit?: string | null;
     result_remarks?: string | null;
     analysis_type_id?: number | null;
@@ -88,6 +89,46 @@ const CLASSIFICATIONS = [
     'Academic/Research',
     'Others',
 ] as const;
+
+const SAMPLE_SOURCES = [
+    'Local water district',
+    'Tank',
+    'Faucet',
+    'Deepwell',
+    'Others',
+] as const;
+
+function specifiedOther(value: string | null | undefined): string {
+    if (!value) {
+        return '';
+    }
+
+    const match = value.match(/^others\s*:\s*(.+)$/i);
+
+    return match ? match[1] : value;
+}
+
+function potabilityFieldData(fieldData?: string | null): {
+    sterile: boolean;
+    extra: string;
+} {
+    const text = (fieldData || '').trim();
+    const sterile = /sterile bottle/i.test(text);
+    const extra = text
+        .replace(/^water in sterile bottle\.?\s*/i, '')
+        .trim();
+
+    return { sterile, extra };
+}
+
+function isListedChoice(stored: string, item: string): boolean {
+    const value = stored.toLowerCase();
+    if (item === 'Others') {
+        return value === 'others' || value.startsWith('others:');
+    }
+
+    return value === item.toLowerCase();
+}
 
 const OWNERSHIP = ['Private', 'Commercial', 'Public'] as const;
 
@@ -235,7 +276,7 @@ function LinedBillingColumn({
                         {line.name
                             ? `${line.name}${
                                   showResults && line.result_value
-                                      ? ` → ${line.result_value}${line.result_unit ? ` ${line.result_unit}` : ''}`
+                                      ? ` → ${[line.result_value, line.result_measurement, line.result_unit].filter(Boolean).join(' ')}`
                                       : ''
                               }`
                             : '\u00A0'}
@@ -302,6 +343,7 @@ export default function RequestForAnalysisForm({
         };
     });
 
+    const potability = potabilityFieldData(jobOrder.field_data);
     const leftSamples = sampleRows.slice(0, 5);
     const rightSamples = sampleRows.slice(5, 9);
 
@@ -430,7 +472,9 @@ export default function RequestForAnalysisForm({
                             <Mark checked={checked} /> {item}
                             {item === 'Others' ? (
                                 <span className="ml-1 inline-block min-w-24 border-b border-black px-1">
-                                    {checked ? jobOrder.classification : ''}
+                                    {checked
+                                        ? specifiedOther(jobOrder.classification)
+                                        : ''}
                                 </span>
                             ) : null}
                         </span>
@@ -446,10 +490,16 @@ export default function RequestForAnalysisForm({
             </section>
 
             <div className="mb-1 grid grid-cols-2 gap-x-6 gap-y-1 text-[10px]">
-                <FillLine
-                    label="Field Data (Potability):"
-                    value={jobOrder.field_data}
-                />
+                <div className="flex min-w-0 items-end gap-1 text-[10px]">
+                    <span className="shrink-0 font-bold">
+                        Field Data (Potability):
+                    </span>
+                    <span className="inline-flex min-w-0 flex-1 items-end gap-1 border-b border-black px-1 leading-tight">
+                        <Mark checked={potability.sterile} />
+                        Water in sterile bottle
+                        {potability.extra ? ` — ${potability.extra}` : ''}
+                    </span>
+                </div>
                 <FillLine
                     label="Sample Storage Temp. (AS RECEIVED):"
                     value={jobOrder.sample_storage_temp || ''}
@@ -459,27 +509,24 @@ export default function RequestForAnalysisForm({
                 <span className="font-bold">
                     Field Data for Waste Water — Sample Source:{' '}
                 </span>
-                {[
-                    'Local water district',
-                    'Tank',
-                    'Faucet',
-                    'Deepwell',
-                    'Others',
-                ].map((item) => (
-                    <span
-                        key={item}
-                        className="mr-2 inline-flex items-center gap-0.5"
-                    >
-                        <Mark
-                            checked={
-                                (
-                                    jobOrder.wastewater_source || ''
-                                ).toLowerCase() === item.toLowerCase()
-                            }
-                        />{' '}
-                        {item}
-                    </span>
-                ))}
+                {SAMPLE_SOURCES.map((item) => {
+                    const stored = jobOrder.wastewater_source || '';
+                    const checked = isListedChoice(stored, item);
+
+                    return (
+                        <span
+                            key={item}
+                            className="mr-2 inline-flex items-center gap-0.5"
+                        >
+                            <Mark checked={checked} /> {item}
+                            {item === 'Others' ? (
+                                <span className="ml-1 inline-block min-w-24 border-b border-black px-1">
+                                    {checked ? specifiedOther(stored) : ''}
+                                </span>
+                            ) : null}
+                        </span>
+                    );
+                })}
             </div>
 
             <section className="mb-2 grid grid-cols-2 gap-4 text-[9px]">

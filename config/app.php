@@ -62,10 +62,14 @@ return [
     | Here you may specify the default timezone for your application, which
     | will be used by the PHP date and date-time functions. The timezone
     | is set to "UTC" by default as it is suitable for most use cases.
+    | Printed laboratory documents use `lab_timezone` (Asia/Manila) so
+    | receiving and analysis clocks match Bacolod wall time.
     |
     */
 
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'UTC'),
+
+    'lab_timezone' => env('NPPC_LAB_TIMEZONE', 'Asia/Manila'),
 
     /*
     |--------------------------------------------------------------------------

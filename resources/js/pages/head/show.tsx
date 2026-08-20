@@ -2,6 +2,7 @@ import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import RequestForAnalysisForm from '@/components/request-for-analysis-form';
 import type { RequestForAnalysisData } from '@/components/request-for-analysis-form';
+import ResultReportPreview from '@/components/result-report-preview';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,6 +25,17 @@ type Props = {
     };
 };
 
+function encodedResultLabel(task: {
+    result_value?: string | null;
+    result_measurement?: string | null;
+    result_unit?: string | null;
+}): string {
+    return [task.result_value, task.result_measurement, task.result_unit]
+        .map((part) => (part ?? '').trim())
+        .filter(Boolean)
+        .join(' ');
+}
+
 function money(value: string | number) {
     return `₱${Number(value || 0).toFixed(2)}`;
 }
@@ -34,6 +46,7 @@ export default function HeadShow({ jobOrder }: Props) {
     const [confirmSign, setConfirmSign] = useState(false);
     const [confirmReturn, setConfirmReturn] = useState(false);
     const [returning, setReturning] = useState(false);
+    const [previewOpen, setPreviewOpen] = useState(false);
     const form = useForm({
         review_notes: '',
     });
@@ -102,7 +115,7 @@ export default function HeadShow({ jobOrder }: Props) {
                             >
                                 {isSigned
                                     ? 'Signed'
-                                    : 'Ready for pickup · awaiting signature'}
+                                    : 'Pending review · awaiting Head signature'}
                             </Badge>
                         </div>
                         <p className="mt-1 text-sm text-muted-foreground">
@@ -120,15 +133,18 @@ export default function HeadShow({ jobOrder }: Props) {
                         )}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <Button asChild variant="outline">
-                            <Link href={`/head/${jobOrder.id}/print`}>
-                                Print form
-                            </Link>
-                        </Button>
-                        <Button asChild variant="outline">
-                            <a href={`/head/${jobOrder.id}/pdf`}>
-                                Download PDF
-                            </a>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={!isSigned}
+                            title={
+                                isSigned
+                                    ? 'Open the dated result form'
+                                    : 'Available after you release the results'
+                            }
+                            onClick={() => setPreviewOpen(true)}
+                        >
+                            Preview result report
                         </Button>
                     </div>
                 </div>
@@ -267,7 +283,8 @@ export default function HeadShow({ jobOrder }: Props) {
                                     <span className="truncate">{line.name}</span>
                                     <span className="shrink-0 tabular-nums text-slate-600">
                                         {line.result_value
-                                            ? `${line.result_value}${line.result_unit ? ` ${line.result_unit}` : ''}`
+                                            ? encodedResultLabel(line)
+                                            : '—'}
                                             : '—'}
                                     </span>
                                 </li>
@@ -275,6 +292,58 @@ export default function HeadShow({ jobOrder }: Props) {
                         </ul>
                     </section>
                 </div>
+
+                <div className="grid gap-4 xl:grid-cols-4">
+                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
+                        <p className="text-sm text-muted-foreground">
+                            Completed
+                        </p>
+                        <p className="mt-1 font-medium text-slate-900">
+                            {jobOrder.completed_at || '—'}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
+                        <p className="text-sm text-muted-foreground">
+                            Result lines
+                        </p>
+                        <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
+                            {jobOrder.analyses.length}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border bg-gradient-to-br from-white to-amber-50/70 p-4">
+                        <p className="text-sm text-muted-foreground">
+                            Selected for return
+                        </p>
+                        <p className="mt-1 font-heading text-3xl font-semibold text-amber-800">
+                            {selectedIds.length}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border bg-gradient-to-br from-white to-emerald-50/70 p-4">
+                        <p className="text-sm text-muted-foreground">
+                            Signature state
+                        </p>
+                        <p className="mt-1 font-medium text-slate-900">
+                            {isSigned
+                                ? `Signed${jobOrder.reviewed_at ? ` on ${jobOrder.reviewed_at}` : ''}`
+                                : 'Awaiting signature'}
+                        </p>
+                    </div>
+                </div>
+
+                {selectedIds.length > 0 && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                        <p className="text-sm font-medium text-amber-900">
+                            {selectedIds.length} analysis line
+                            {selectedIds.length === 1 ? '' : 's'} selected for
+                            correction
+                        </p>
+                        <p className="mt-1 text-xs text-amber-800">
+                            Review notes will be sent with the return action.
+                            Returned lines leave the ready-for-pickup queue
+                            until analysts complete them again.
+                        </p>
+                    </div>
+                )}
 
                 <div className="overflow-hidden rounded-xl border bg-white">
                     <div className="border-b bg-[#f8fafc] px-4 py-3">
@@ -428,6 +497,12 @@ export default function HeadShow({ jobOrder }: Props) {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            <ResultReportPreview
+                open={previewOpen}
+                onOpenChange={setPreviewOpen}
+                reportUrl={`/head/${jobOrder.id}/result-report`}
+            />
         </>
     );
 }

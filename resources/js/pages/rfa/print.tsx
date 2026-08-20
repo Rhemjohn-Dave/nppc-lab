@@ -1,7 +1,9 @@
-import { Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
+import { useState } from 'react';
 import RequestForAnalysisForm from '@/components/request-for-analysis-form';
 import type { RequestForAnalysisData } from '@/components/request-for-analysis-form';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 type Props = {
     jobOrder: RequestForAnalysisData;
@@ -14,6 +16,8 @@ export default function RfaPrint({
     copies = 1,
     showResults = false,
 }: Props) {
+    const [copyCount, setCopyCount] = useState(copies);
+
     return (
         <>
             <Head title={`Print ${jobOrder.reference_no}`} />
@@ -31,7 +35,40 @@ export default function RfaPrint({
                             {' · Long bond 8.5×13 · 1″ margins'}
                         </p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <label className="flex items-center gap-2 text-sm">
+                            Copies
+                            <Input
+                                type="number"
+                                min={1}
+                                max={20}
+                                className="w-20"
+                                value={copyCount}
+                                onChange={(event) =>
+                                    setCopyCount(
+                                        Math.min(
+                                            20,
+                                            Math.max(
+                                                1,
+                                                Number(event.target.value) || 1,
+                                            ),
+                                        ),
+                                    )
+                                }
+                            />
+                        </label>
+                        <Button
+                            variant="outline"
+                            onClick={() =>
+                                router.get(
+                                    window.location.pathname,
+                                    { copies: copyCount },
+                                    { preserveState: false },
+                                )
+                            }
+                        >
+                            Apply copies
+                        </Button>
                         <Button
                             variant="outline"
                             onClick={() => window.history.back()}

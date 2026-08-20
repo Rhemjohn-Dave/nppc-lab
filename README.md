@@ -52,3 +52,10 @@ Password for all: `password`
 ## Ops
 
 See [docs/DEPLOY.md](docs/DEPLOY.md) for Ubuntu + Nginx + PHP-FPM + Redis + queue/scheduler notes.
+
+## Additional Docs
+
+- [System Overview](docs/SYSTEM_OVERVIEW.md)
+- [UI Performance Guardrails](docs/UI_PERFORMANCE.md)
+- [Controlled Forms Technical Overview](docs/CONTROLLED_FORMS.md)
+- [Controlled Forms Guide for Non-Technical Staff](docs/CONTROLLED_FORMS_NON_TECHNICAL.md)

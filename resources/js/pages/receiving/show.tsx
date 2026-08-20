@@ -18,6 +18,7 @@ type Props = {
     jobOrder: RequestForAnalysisData & {
         id: number;
         status: string;
+        reviewed_at?: string | null;
     };
 };
 
@@ -29,6 +30,8 @@ export default function ReceivingShow({ jobOrder }: Props) {
     const { flash } = usePage().props as { flash?: { success?: string } };
     const [confirmReceive, setConfirmReceive] = useState(false);
     const [receiving, setReceiving] = useState(false);
+    const isReviewed = Boolean(jobOrder.reviewed_at);
+    const [copies, setCopies] = useState(isReviewed ? 3 : 2);
 
     const form = useForm({
         lines: jobOrder.analyses.map((line) => ({
@@ -50,6 +53,15 @@ export default function ReceivingShow({ jobOrder }: Props) {
 
     const needsPricing = jobOrder.status === 'draft_submitted';
     const isPriced = jobOrder.status === 'priced';
+    const hasUnsavedPricing =
+        JSON.stringify(form.data.lines) !==
+        JSON.stringify(
+            jobOrder.analyses.map((line) => ({
+                id: line.id,
+                quantity: line.quantity,
+                unit_price: Number(line.unit_price),
+            })),
+        );
 
     function updateLine(
         index: number,
@@ -122,29 +134,64 @@ export default function ReceivingShow({ jobOrder }: Props) {
                         )}
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                        <Button asChild variant="outline">
-                            <Link href={`/receiving/${jobOrder.id}/print`}>
-                                Print form
-                            </Link>
-                        </Button>
-                        <Button asChild variant="outline">
-                            <a href={`/receiving/${jobOrder.id}/pdf`}>
-                                Download PDF
-                            </a>
-                        </Button>
-                        <Button
-                            className="bg-[#1A3694] hover:bg-[#365BB0]"
-                            onClick={() => setConfirmReceive(true)}
-                            disabled={!isPriced}
-                            title={
-                                !isPriced
-                                    ? 'Save pricing first'
-                                    : undefined
-                            }
-                        >
-                            Mark received
-                        </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                        {isReviewed ? (
+                            <>
+                                <label className="flex items-center gap-2 text-sm">
+                                    Copies
+                                    <Input
+                                        type="number"
+                                        min={1}
+                                        max={20}
+                                        className="w-20"
+                                        value={copies}
+                                        onChange={(event) =>
+                                            setCopies(
+                                                Math.min(
+                                                    20,
+                                                    Math.max(
+                                                        1,
+                                                        Number(event.target.value) ||
+                                                            1,
+                                                    ),
+                                                ),
+                                            )
+                                        }
+                                    />
+                                </label>
+                                <Button asChild variant="outline">
+                                    <Link
+                                        href={`/receiving/${jobOrder.id}/print?copies=${copies}`}
+                                    >
+                                        Print reviewed RFA
+                                    </Link>
+                                </Button>
+                                <Button asChild variant="outline">
+                                    <a href={`/receiving/${jobOrder.id}/pdf`}>
+                                        Download PDF
+                                    </a>
+                                </Button>
+                            </>
+                        ) : (
+                            <p className="text-sm text-muted-foreground">
+                                RFA printing is available after Head releases
+                                the results.
+                            </p>
+                        )}
+                        {!isReviewed && (
+                            <Button
+                                className="bg-[#1A3694] hover:bg-[#365BB0]"
+                                onClick={() => setConfirmReceive(true)}
+                                disabled={!isPriced}
+                                title={
+                                    !isPriced
+                                        ? 'Save pricing first'
+                                        : undefined
+                                }
+                            >
+                                Mark received
+                            </Button>
+                        )}
                     </div>
                 </div>
 
@@ -280,6 +327,37 @@ export default function ReceivingShow({ jobOrder }: Props) {
                     </section>
                 </div>
 
+                <div className="grid gap-4 xl:grid-cols-4">
+                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
+                        <p className="text-sm text-muted-foreground">
+                            Submitted
+                        </p>
+                        <p className="mt-1 font-medium text-slate-900">
+                            {jobOrder.created_at ?? '—'}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
+                        <p className="text-sm text-muted-foreground">Samples</p>
+                        <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
+                            {jobOrder.samples?.length ?? 0}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
+                        <p className="text-sm text-muted-foreground">Tests</p>
+                        <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
+                            {jobOrder.analyses.length}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border bg-gradient-to-br from-white to-emerald-50/70 p-4">
+                        <p className="text-sm text-muted-foreground">
+                            Current total
+                        </p>
+                        <p className="mt-1 font-heading text-3xl font-semibold text-emerald-800">
+                            {money(estimatedTotal)}
+                        </p>
+                    </div>
+                </div>
+
                 <form
                     className="overflow-hidden rounded-xl border bg-white"
                     onSubmit={(e) => {
@@ -297,9 +375,16 @@ export default function ReceivingShow({ jobOrder }: Props) {
                                 before marking received.
                             </p>
                         </div>
-                        <p className="text-sm font-semibold text-[#1A3694]">
-                            Estimated total: {money(estimatedTotal)}
-                        </p>
+                        <div className="text-right">
+                            <p className="text-sm font-semibold text-[#1A3694]">
+                                Estimated total: {money(estimatedTotal)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                                {hasUnsavedPricing
+                                    ? 'You have unsaved pricing changes.'
+                                    : 'Pricing matches the saved job order total.'}
+                            </p>
+                        </div>
                     </div>
 
                     <div className="overflow-x-auto">
@@ -388,12 +473,26 @@ export default function ReceivingShow({ jobOrder }: Props) {
                     </div>
 
                     <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-[#f8fafc] px-4 py-3">
-                        <p className="text-sm text-muted-foreground">
-                            Saved total on record:{' '}
-                            <span className="font-medium text-slate-800">
-                                {money(Number(jobOrder.total_cost || 0))}
-                            </span>
-                        </p>
+                        <div className="space-y-1 text-sm">
+                            <p className="text-muted-foreground">
+                                Saved total on record:{' '}
+                                <span className="font-medium text-slate-800">
+                                    {money(Number(jobOrder.total_cost || 0))}
+                                </span>
+                            </p>
+                            <p
+                                className={cn(
+                                    'text-xs',
+                                    hasUnsavedPricing
+                                        ? 'text-amber-700'
+                                        : 'text-emerald-700',
+                                )}
+                            >
+                                {hasUnsavedPricing
+                                    ? 'Unsaved changes are visible only on this screen until you save pricing.'
+                                    : 'All pricing changes are saved.'}
+                            </p>
+                        </div>
                         <Button
                             type="submit"
                             disabled={form.processing}
