@@ -7,7 +7,8 @@ These rules keep workspace polish from making the app feel slower.
 - Do not replace those lists with large always-mounted client tables.
 - Search is **debounced** (~350ms). Prefer that over live filtering of already-paginated server data.
 - Auto-refresh via Reverb (`LabQueueUpdated` → `router.reload` of list props) should not remount heavy row components or run extra animations on each update.
-- Analyst result-entry and report preview pause live queue reloads while those dialogs are open.
+- Analyst result-entry, job-order sheet, and report preview pause live queue reloads while those surfaces are open (including complete/discard confirms).
+- Analyst workspace is a **compact test work queue table** (not job-order cards); Job Order drawer and result modal hold detail. Completed results are view-only; corrections require Head return.
 
 ## Heavy views stay lazy
 - PDF/report previews fetch only when opened.
@@ -25,4 +26,5 @@ These rules keep workspace polish from making the app feel slower.
 
 ## Shared UI
 - Queue screens reuse `WorkspaceHeader`, `QueueFilterBar`, `SummaryStat`, and `QueueRangeNote`.
+- Analyst job sheet, status badges, and work-queue table live under `resources/js/components/analyst/`.
 - Add visual polish through those primitives instead of copying heavier markup into each page.

@@ -31,7 +31,7 @@ class TaskAssigned extends Notification
             'reference_no' => $this->jobOrder->reference_no,
             'analysis_name' => $this->analysis->name,
             'message' => "You were assigned {$this->analysis->name} on {$this->jobOrder->reference_no}.",
-            'href' => '/analyst',
+            'href' => '/analyst?job='.$this->jobOrder->id,
         ];
     }
 

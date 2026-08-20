@@ -256,7 +256,65 @@ class LabWorkflowTest extends TestCase
                 ->where('filters.status', 'returned')
                 ->has('tasks', 1)
                 ->where('tasks.0.status', JobOrderAnalysisStatus::Returned->value)
+                ->where('tasks.0.job_order.review_notes', 'Please recheck the pH reading.')
                 ->where('jobs.total', 1));
+    }
+
+    public function test_completed_analysis_cannot_be_overwritten_without_return(): void
+    {
+        Mail::fake();
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+        $type = AnalysisType::query()->where('code', 'PC-07')->firstOrFail();
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'Guard Customer',
+            'customer_email' => 'guard@example.com',
+            'customer_contact' => '09170000000',
+            'samples' => [
+                ['description' => 'Guard sample', 'matrix' => 'Liquid'],
+            ],
+            'analysis_type_ids' => [$type->id],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $line = $job->analyses()->firstOrFail();
+
+        $this->actingAs($receiving)
+            ->patch("/receiving/{$job->id}/pricing", [
+                'lines' => [
+                    ['id' => $line->id, 'unit_price' => 250, 'quantity' => 1],
+                ],
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($receiving)
+            ->post("/receiving/{$job->id}/receive")
+            ->assertRedirect('/receiving');
+
+        $this->actingAs($analyst)
+            ->post("/analyst/tasks/{$line->id}/complete", [
+                'result_value' => '10',
+                'result_unit' => 'mg/L',
+            ])
+            ->assertRedirect();
+
+        $line->refresh();
+        $this->assertSame(JobOrderAnalysisStatus::Completed, $line->status);
+
+        $this->actingAs($analyst)
+            ->from('/analyst')
+            ->post("/analyst/tasks/{$line->id}/complete", [
+                'result_value' => '99',
+                'result_unit' => 'mg/L',
+            ])
+            ->assertRedirect('/analyst')
+            ->assertSessionHasErrors('analysis');
+
+        $line->refresh();
+        $this->assertSame('10', $line->result_value);
     }
 
     public function test_filtered_queue_links_return_expected_filters(): void

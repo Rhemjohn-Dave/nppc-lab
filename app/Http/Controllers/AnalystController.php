@@ -33,6 +33,11 @@ class AnalystController extends Controller
         $user = $request->user();
         $statusFilter = $request->string('status')->toString();
         $search = trim($request->string('q')->toString());
+        $sort = $request->string('sort')->toString();
+        $allowedSorts = ['needs_action', 'newest', 'oldest'];
+        if (! in_array($sort, $allowedSorts, true)) {
+            $sort = 'needs_action';
+        }
 
         $openStatuses = [
             JobOrderAnalysisStatus::Assigned,
@@ -58,24 +63,29 @@ class AnalystController extends Controller
         $showingCompleted = $statusFilter === JobOrderAnalysisStatus::Completed->value;
         $baseQuery = $showingCompleted ? $completedQuery : $openQuery;
 
+        $assignedCount = (clone $openQuery)
+            ->whereIn('status', [
+                JobOrderAnalysisStatus::Assigned,
+                JobOrderAnalysisStatus::Pending,
+            ])
+            ->count();
+        $returnedCount = (clone $openQuery)
+            ->where('status', JobOrderAnalysisStatus::Returned)
+            ->count();
+
         $counts = [
             'all' => (clone $openQuery)->count(),
-            'returned' => (clone $openQuery)
-                ->where('status', JobOrderAnalysisStatus::Returned)
-                ->count(),
+            'needs_action' => $assignedCount + $returnedCount,
+            'returned' => $returnedCount,
             'in_progress' => (clone $openQuery)
                 ->where('status', JobOrderAnalysisStatus::InProgress)
                 ->count(),
-            'assigned' => (clone $openQuery)
-                ->whereIn('status', [
-                    JobOrderAnalysisStatus::Assigned,
-                    JobOrderAnalysisStatus::Pending,
-                ])
-                ->count(),
+            'assigned' => $assignedCount,
             'completed' => (clone $completedQuery)->count(),
         ];
 
         $allowedStatusFilters = [
+            'needs_action',
             JobOrderAnalysisStatus::Returned->value,
             JobOrderAnalysisStatus::InProgress->value,
             JobOrderAnalysisStatus::Assigned->value,
@@ -87,7 +97,13 @@ class AnalystController extends Controller
             ->when(
                 in_array($statusFilter, $allowedStatusFilters, true) && ! $showingCompleted,
                 function ($query) use ($statusFilter) {
-                    if ($statusFilter === JobOrderAnalysisStatus::Assigned->value) {
+                    if ($statusFilter === 'needs_action') {
+                        $query->whereIn('status', [
+                            JobOrderAnalysisStatus::Assigned,
+                            JobOrderAnalysisStatus::Pending,
+                            JobOrderAnalysisStatus::Returned,
+                        ]);
+                    } elseif ($statusFilter === JobOrderAnalysisStatus::Assigned->value) {
                         $query->whereIn('status', [
                             JobOrderAnalysisStatus::Assigned,
                             JobOrderAnalysisStatus::Pending,
@@ -100,37 +116,56 @@ class AnalystController extends Controller
             ->when($search !== '', function ($query) use ($search) {
                 $query->where(function ($inner) use ($search) {
                     $inner->where('name', 'like', "%{$search}%")
+                        ->orWhere('category_label', 'like', "%{$search}%")
                         ->orWhereHas('jobOrder', function ($job) use ($search) {
                             $job->where('reference_no', 'like', "%{$search}%")
                                 ->orWhere('customer_name', 'like', "%{$search}%")
-                                ->orWhere('company_name', 'like', "%{$search}%");
+                                ->orWhere('company_name', 'like', "%{$search}%")
+                                ->orWhere('classification', 'like', "%{$search}%")
+                                ->orWhereHas('samples', function ($samples) use ($search) {
+                                    $samples->where('sample_code', 'like', "%{$search}%")
+                                        ->orWhere('description', 'like', "%{$search}%");
+                                });
                         });
                 });
             });
 
         $returnedValue = JobOrderAnalysisStatus::Returned->value;
-        $jobs = JobOrder::query()
-            ->whereIn('id', (clone $filteredQuery)->select('job_order_id'))
-            ->orderByRaw(
-                '(select min(case when status = ? then 0 else 1 end) from job_order_analyses where job_order_id = job_orders.id) asc',
-                [$returnedValue],
-            )
-            ->orderBy('reference_no')
-            ->paginate(10)
-            ->withQueryString();
+        $jobsQuery = JobOrder::query()
+            ->whereIn('id', (clone $filteredQuery)->select('job_order_id'));
+
+        if ($sort === 'newest') {
+            $jobsQuery->orderByDesc('id');
+        } elseif ($sort === 'oldest') {
+            $jobsQuery->orderBy('id');
+        } else {
+            $jobsQuery
+                ->orderByRaw(
+                    '(select min(case when status = ? then 0 else 1 end) from job_order_analyses where job_order_id = job_orders.id) asc',
+                    [$returnedValue],
+                )
+                ->orderByDesc('id');
+        }
+
+        $jobs = $jobsQuery->paginate(10)->withQueryString();
 
         $pageJobIds = $jobs->getCollection()->pluck('id');
+        $isAdmin = $user->hasRole('admin');
 
-        $tasks = (clone $filteredQuery)
-            ->with(['jobOrder.samples', 'analysisType'])
+        // Include every line on page jobs so analysts can see teammate assignments.
+        $tasks = JobOrderAnalysis::query()
+            ->with(['jobOrder.samples', 'analysisType', 'assignee:id,name'])
             ->whereIn('job_order_id', $pageJobIds)
             ->get()
-            ->sortBy(function (JobOrderAnalysis $task) {
-                $priority = $task->status === JobOrderAnalysisStatus::Returned ? 0 : 1;
+            ->sortBy(function (JobOrderAnalysis $task) use ($user, $isAdmin) {
+                $isMine = $isAdmin || (int) $task->assigned_to === (int) $user->id;
+                $returned = $task->status === JobOrderAnalysisStatus::Returned ? 0 : 1;
+                $mineRank = $isMine ? 0 : 1;
 
                 return sprintf(
-                    '%d-%s-%s',
-                    $priority,
+                    '%d-%d-%s-%s',
+                    $returned,
+                    $mineRank,
                     $task->jobOrder->reference_no,
                     $task->name,
                 );
@@ -145,34 +180,46 @@ class AnalystController extends Controller
             }
         }
 
-        $tasks = $tasks->map(fn (JobOrderAnalysis $task) => [
-            'id' => $task->id,
-            'name' => $task->name,
-            'analysis_type_id' => $task->analysis_type_id,
-            'category_label' => $task->resolvedCategoryLabel(),
-            'status' => $task->status->value,
-            'status_label' => $task->status->label(),
-            'result_value' => $task->result_value,
-            'result_measurement' => $task->result_measurement,
-            'result_unit' => $task->result_unit,
-            'result_remarks' => $task->result_remarks,
-            'result_mode' => $task->analysisType?->isPassFail() ? 'pass_fail' : 'value',
-            'report' => $this->taskReportSummary($reportByJob[$task->job_order_id] ?? null, $task->jobOrder),
-            'job_order' => [
-                'id' => $task->jobOrder->id,
-                'reference_no' => $task->jobOrder->reference_no,
-                'customer_name' => $task->jobOrder->customer_name,
-                'company_name' => $task->jobOrder->company_name,
-                'classification' => $task->jobOrder->classification,
-                'sample_storage_temp' => $task->jobOrder->sample_storage_temp,
-                'field_data' => $task->jobOrder->field_data,
-                'samples' => $task->jobOrder->samples->map(fn ($sample) => [
-                    'sample_code' => $sample->sample_code,
-                    'description' => $sample->description,
-                    'matrix' => $sample->matrix,
-                ])->values()->all(),
-            ],
-        ]);
+        $tasks = $tasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin, $reportByJob) {
+            $isMine = $isAdmin || (int) $task->assigned_to === (int) $user->id;
+
+            return [
+                'id' => $task->id,
+                'name' => $task->name,
+                'analysis_type_id' => $task->analysis_type_id,
+                'category_label' => $task->resolvedCategoryLabel(),
+                'status' => $task->status->value,
+                'status_label' => $task->status->label(),
+                'result_value' => $task->result_value,
+                'result_measurement' => $task->result_measurement,
+                'result_unit' => $task->result_unit,
+                'result_remarks' => $task->result_remarks,
+                'result_mode' => $task->analysisType?->isPassFail() ? 'pass_fail' : 'value',
+                'updated_at' => $task->updated_at?->toIso8601String(),
+                'assigned_to' => $task->assigned_to,
+                'assignee_name' => $task->assignee?->name,
+                'is_mine' => $isMine,
+                'report' => $this->taskReportSummary($reportByJob[$task->job_order_id] ?? null, $task->jobOrder),
+                'job_order' => [
+                    'id' => $task->jobOrder->id,
+                    'reference_no' => $task->jobOrder->reference_no,
+                    'customer_name' => $task->jobOrder->customer_name,
+                    'company_name' => $task->jobOrder->company_name,
+                    'classification' => $task->jobOrder->classification,
+                    'sample_storage_temp' => $task->jobOrder->sample_storage_temp,
+                    'field_data' => $task->jobOrder->field_data,
+                    'status' => $task->jobOrder->status->value,
+                    'received_at' => $task->jobOrder->received_at?->toIso8601String(),
+                    'reviewed_at' => $task->jobOrder->reviewed_at?->toIso8601String(),
+                    'review_notes' => $task->jobOrder->review_notes,
+                    'samples' => $task->jobOrder->samples->map(fn ($sample) => [
+                        'sample_code' => $sample->sample_code,
+                        'description' => $sample->description,
+                        'matrix' => $sample->matrix,
+                    ])->values()->all(),
+                ],
+            ];
+        });
 
         return Inertia::render('analyst/index', [
             'tasks' => $tasks,
@@ -188,6 +235,7 @@ class AnalystController extends Controller
             'filters' => [
                 'q' => $search,
                 'status' => $statusFilter,
+                'sort' => $sort,
             ],
         ]);
     }

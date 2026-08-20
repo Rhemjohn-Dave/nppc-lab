@@ -46,7 +46,7 @@ class NotificationBroadcastTest extends TestCase
         $this->assertSame(['database', 'broadcast'], $pending->via($user));
 
         $this->assertSame('/receiving/'.$job->id, $submitted->toArray($user)['href']);
-        $this->assertSame('/analyst', $assigned->toArray($user)['href']);
+        $this->assertSame('/analyst?job='.$job->id, $assigned->toArray($user)['href']);
         $this->assertSame('/head/'.$job->id, $pending->toArray($user)['href']);
     }
 

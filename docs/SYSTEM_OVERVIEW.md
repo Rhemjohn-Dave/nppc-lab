@@ -136,6 +136,8 @@ RFA print in the system is blocked until Head has released (`reviewed_at`).
 ### 4. Analyst Module
 Used to encode assigned tests and, for the designated analyst, to send the job to Head.
 
+The workspace is a **compact test work queue**: clickable summary counts, filters/sort, then a sticky-header table of assigned tests. Enter Result opens the result modal directly; the Job Order reference opens a side sheet for full context (workflow, samples, Send to Head / Print). `?job={id}` deep-links open that sheet (e.g. from assignment notifications).
+
 It handles:
 - task lists (your lines only, unless admin)
 - drafts and completion

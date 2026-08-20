@@ -53,7 +53,9 @@ function notificationHref(data: NotificationData): string | null {
         case 'job_order_submitted':
             return `/receiving/${data.job_order_id}`;
         case 'task_assigned':
-            return '/analyst';
+            return data.job_order_id
+                ? `/analyst?job=${data.job_order_id}`
+                : '/analyst';
         case 'job_order_ready_to_sign':
             return `/head/${data.job_order_id}`;
         default:

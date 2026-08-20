@@ -324,6 +324,12 @@ class JobOrderService
             ]);
         }
 
+        if ($analysis->status === JobOrderAnalysisStatus::Completed) {
+            throw ValidationException::withMessages([
+                'analysis' => 'Completed analyses cannot be edited here. Ask Head to return the line if a correction is needed.',
+            ]);
+        }
+
         return DB::transaction(function () use ($analysis, $data, $analyst, $value, $measurement, $unit) {
             $analysis->update([
                 'assigned_to' => $analysis->assigned_to ?? $analyst->id,
@@ -468,6 +474,7 @@ class JobOrderService
                     ? "/analyst/tasks/{$previewLine->id}/report"
                     : null,
                 'missing' => $incomplete->pluck('name')->values()->all(),
+                'review_notes' => $job->review_notes,
                 'lines' => $job->analyses->map(fn (JobOrderAnalysis $line) => [
                     'id' => $line->id,
                     'name' => $line->name,
