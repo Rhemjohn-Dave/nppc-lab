@@ -5,6 +5,7 @@ namespace App\Notifications;
 use App\Models\JobOrder;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Notification;
 
 class JobOrderSubmitted extends Notification implements ShouldQueue
@@ -16,7 +17,7 @@ class JobOrderSubmitted extends Notification implements ShouldQueue
     /** @return array<int, string> */
     public function via(object $notifiable): array
     {
-        return ['database'];
+        return ['database', 'broadcast'];
     }
 
     /** @return array<string, mixed> */
@@ -28,6 +29,12 @@ class JobOrderSubmitted extends Notification implements ShouldQueue
             'reference_no' => $this->jobOrder->reference_no,
             'customer_name' => $this->jobOrder->customer_name,
             'message' => "New job order {$this->jobOrder->reference_no} submitted by {$this->jobOrder->customer_name}.",
+            'href' => "/receiving/{$this->jobOrder->id}",
         ];
+    }
+
+    public function toBroadcast(object $notifiable): BroadcastMessage
+    {
+        return new BroadcastMessage($this->toArray($notifiable));
     }
 }

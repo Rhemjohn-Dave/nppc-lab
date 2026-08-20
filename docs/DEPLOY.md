@@ -66,6 +66,21 @@ CACHE_STORE=redis
 SESSION_DRIVER=redis
 SESSION_SECURE_COOKIE=true
 
+BROADCAST_CONNECTION=reverb
+REVERB_APP_ID=
+REVERB_APP_KEY=
+REVERB_APP_SECRET=
+REVERB_HOST=lab.example.com
+REVERB_PORT=443
+REVERB_SCHEME=https
+REVERB_SERVER_HOST=0.0.0.0
+REVERB_SERVER_PORT=8080
+
+VITE_REVERB_APP_KEY="${REVERB_APP_KEY}"
+VITE_REVERB_HOST="${REVERB_HOST}"
+VITE_REVERB_PORT="${REVERB_PORT}"
+VITE_REVERB_SCHEME="${REVERB_SCHEME}"
+
 MAIL_MAILER=smtp
 MAIL_HOST=smtp.office365.com
 MAIL_PORT=587
@@ -82,7 +97,7 @@ Use Microsoft 365 / Google Workspace SMTP for customer “results ready” mail.
 php artisan nppc:production-check
 ```
 
-The app forces HTTPS and trusts `X-Forwarded-*` headers from Nginx. Health check: `GET /up`.
+The app forces HTTPS and trusts `X-Forwarded-*` headers from Nginx. Health check: `GET /up`. Generate Reverb credentials with `php artisan reverb:install` (or set `REVERB_*` manually) and rebuild front-end assets so `VITE_REVERB_*` are baked in.
 
 ## Nginx
 
@@ -105,6 +120,18 @@ server {
 
     location / {
         try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location /app {
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header Scheme $scheme;
+        proxy_set_header SERVER_PORT $server_port;
+        proxy_set_header REMOTE_ADDR $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_pass http://127.0.0.1:8080;
     }
 
     location ~ \.php$ {
@@ -136,7 +163,7 @@ memory_limit = 256M
 
 ## Queue worker (Supervisor)
 
-Database notifications need a running worker. Customer `ResultsReadyMail` is sent synchronously when a job becomes ready for pickup.
+Database notifications need a running worker. Customer `ResultsReadyMail` is sent synchronously when a job becomes ready for pickup. Broadcast channels (`database` + `broadcast`) also need the worker so Reverb delivers bell updates.
 
 ```ini
 [program:nppc-lab-worker]
@@ -149,6 +176,22 @@ numprocs=1
 redirect_stderr=true
 stdout_logfile=/var/www/nppc-lab/storage/logs/worker.log
 ```
+
+## Reverb (real-time notifications)
+
+Run Reverb beside the queue worker so the header bell updates without a page reload.
+
+```ini
+[program:nppc-lab-reverb]
+command=php /var/www/nppc-lab/artisan reverb:start --host=0.0.0.0 --port=8080
+autostart=true
+autorestart=true
+user=www-data
+redirect_stderr=true
+stdout_logfile=/var/www/nppc-lab/storage/logs/reverb.log
+```
+
+Locally, `composer dev` starts Reverb with the app server, queue listener, and Vite.
 
 ## Scheduler
 

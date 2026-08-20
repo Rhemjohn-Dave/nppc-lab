@@ -6,6 +6,7 @@ use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Notification;
 
 class TaskAssigned extends Notification implements ShouldQueue
@@ -20,7 +21,7 @@ class TaskAssigned extends Notification implements ShouldQueue
     /** @return array<int, string> */
     public function via(object $notifiable): array
     {
-        return ['database'];
+        return ['database', 'broadcast'];
     }
 
     /** @return array<string, mixed> */
@@ -33,6 +34,12 @@ class TaskAssigned extends Notification implements ShouldQueue
             'reference_no' => $this->jobOrder->reference_no,
             'analysis_name' => $this->analysis->name,
             'message' => "You were assigned {$this->analysis->name} on {$this->jobOrder->reference_no}.",
+            'href' => '/analyst',
         ];
+    }
+
+    public function toBroadcast(object $notifiable): BroadcastMessage
+    {
+        return new BroadcastMessage($this->toArray($notifiable));
     }
 }

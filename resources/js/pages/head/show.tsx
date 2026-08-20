@@ -285,7 +285,6 @@ export default function HeadShow({ jobOrder }: Props) {
                                         {line.result_value
                                             ? encodedResultLabel(line)
                                             : '—'}
-                                            : '—'}
                                     </span>
                                 </li>
                             ))}
