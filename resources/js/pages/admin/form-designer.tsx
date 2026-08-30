@@ -12,8 +12,10 @@ import {
     RulerCorner,
     VerticalRuler,
 } from '@/components/form-designer/designer-rulers';
+import DynamicTestMatrixPreview from '@/components/form-designer/dynamic-test-matrix-preview';
 import FieldLibrary from '@/components/form-designer/field-library';
 import PropertiesPanel from '@/components/form-designer/properties-panel';
+import { DEFAULT_MATRIX_CONFIG, type MatrixCellSelection, type MatrixTableConfig } from '@/lib/dynamic-test-matrix';
 import {
     snapMove,
     snapPoint,
@@ -110,6 +112,7 @@ export default function FormDesigner({
     const [fields, setFields] = useState<DesignerField[]>(() => cloneFields(initialFields));
     const [savedFields, setSavedFields] = useState<DesignerField[]>(() => cloneFields(initialFields));
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [matrixCellSelection, setMatrixCellSelection] = useState<MatrixCellSelection | null>(null);
     const [pendingSource, setPendingSource] = useState<DataSource | null>(null);
     const [page, setPage] = useState(1);
     const [zoom, setZoom] = useState(0.75);
@@ -214,6 +217,10 @@ export default function FormDesigner({
         if (patch.name) {
             setSelectedId(patch.name);
         }
+    }
+
+    function updateMatrixTableConfig(config: MatrixTableConfig, recordHistory = false) {
+        updateSelected({ table_config: config }, recordHistory);
     }
 
     useEffect(() => {
@@ -388,7 +395,9 @@ export default function FormDesigner({
             table_config:
                 type.value === 'table'
                     ? { row_height: 4.5, max_rows: 9, columns: [] }
-                    : null,
+                    : type.value === 'dynamic_test_matrix'
+                      ? { ...DEFAULT_MATRIX_CONFIG }
+                      : null,
             z_order: index,
         };
         pushHistory([...fields, field]);
@@ -516,7 +525,7 @@ export default function FormDesigner({
         };
     }
 
-    function handleCanvasClick(event: React.MouseEvent<HTMLDivElement>) {
+        function handleCanvasClick(event: React.MouseEvent<HTMLDivElement>) {
         if (pendingSource && canEdit) {
             const point = canvasPointFromEvent(event.clientX, event.clientY);
 
@@ -528,6 +537,7 @@ export default function FormDesigner({
         }
 
         setSelectedId(null);
+        setMatrixCellSelection(null);
     }
 
     function handleCanvasDrop(event: React.DragEvent<HTMLDivElement>) {
@@ -897,13 +907,14 @@ export default function FormDesigner({
                                         const id = clientId(field, index);
                                         const active = id === selectedId;
                                         const isTable = field.field_type === 'table';
+                                        const isMatrix = field.field_type === 'dynamic_test_matrix';
 
                                         return (
                                             <div
                                                 key={`${id}-${index}`}
-                                                className={`absolute z-10 overflow-visible text-[10px] leading-tight select-none ${
-                                                    canEdit ? 'cursor-move' : 'cursor-default'
-                                                }`}
+                                                className={`absolute z-10 overflow-visible text-[10px] leading-tight ${
+                                                    isMatrix ? '' : 'select-none'
+                                                } ${canEdit && !isMatrix ? 'cursor-move' : canEdit ? '' : 'cursor-default'}`}
                                                 style={{
                                                     left: px(field.x),
                                                     top: px(field.y),
@@ -913,39 +924,76 @@ export default function FormDesigner({
                                                 onClick={(event) => {
                                                     event.stopPropagation();
                                                     setSelectedId(id);
+                                                    if (!isMatrix) {
+                                                        setMatrixCellSelection(null);
+                                                    }
                                                     setPendingSource(null);
                                                     setMobilePropertiesOpen(true);
                                                 }}
-                                                onPointerDown={(event) =>
-                                                    canEdit &&
-                                                    onPointerDown(event, field, index, 'move')
-                                                }
+                                                onPointerDown={(event) => {
+                                                    if (isMatrix) {
+                                                        const target = event.target as HTMLElement;
+                                                        if (!target.closest('[data-matrix-drag]')) {
+                                                            return;
+                                                        }
+                                                    }
+                                                    canEdit && onPointerDown(event, field, index, 'move');
+                                                }}
                                             >
                                                 <div
                                                     className={`relative h-full w-full overflow-hidden ${
                                                         active
-                                                            ? 'bg-[#1A3694]/8'
-                                                            : 'bg-emerald-500/8'
+                                                            ? isMatrix
+                                                                ? 'ring-2 ring-[#1A3694] ring-inset'
+                                                                : 'bg-[#1A3694]/8'
+                                                            : isMatrix
+                                                              ? 'bg-white'
+                                                              : 'bg-emerald-500/8'
                                                     }`}
                                                 >
-                                                    <div
-                                                        className={`pointer-events-none absolute inset-0 ${
-                                                            active
-                                                                ? 'ring-2 ring-[#1A3694] ring-inset'
-                                                                : 'border border-emerald-600/70'
-                                                        }`}
-                                                    />
-                                                    <span
-                                                        className="pointer-events-none flex h-full items-start px-1 py-0.5"
-                                                        style={{
-                                                            fontFamily: cssFontFamily(field.font_family),
-                                                            fontSize: `${Math.max(8, field.font_size)}px`,
-                                                        }}
-                                                    >
-                                                        <span className="truncate font-medium text-slate-800">
-                                                            {isTable ? `▦ ${field.label}` : field.label}
+                                                    {!isMatrix && (
+                                                        <div
+                                                            className={`pointer-events-none absolute inset-0 ${
+                                                                active
+                                                                    ? 'ring-2 ring-[#1A3694] ring-inset'
+                                                                    : 'border border-emerald-600/70'
+                                                            }`}
+                                                        />
+                                                    )}
+                                                    {isMatrix ? (
+                                                        <DynamicTestMatrixPreview
+                                                            field={field}
+                                                            widthPx={px(field.width)}
+                                                            heightPx={px(field.height)}
+                                                            canEdit={canEdit}
+                                                            selection={
+                                                                active ? matrixCellSelection : null
+                                                            }
+                                                            onSelectCell={(cell) => {
+                                                                setSelectedId(id);
+                                                                setMatrixCellSelection(cell);
+                                                                setPendingSource(null);
+                                                                setMobilePropertiesOpen(true);
+                                                            }}
+                                                            onUpdateTableConfig={(config, record) =>
+                                                                updateMatrixTableConfig(config, record)
+                                                            }
+                                                        />
+                                                    ) : (
+                                                        <span
+                                                            className="pointer-events-none flex h-full items-start px-1 py-0.5"
+                                                            style={{
+                                                                fontFamily: cssFontFamily(field.font_family),
+                                                                fontSize: `${Math.max(8, field.font_size)}px`,
+                                                            }}
+                                                        >
+                                                            <span className="truncate font-medium text-slate-800">
+                                                                {isTable
+                                                                    ? `▦ ${field.label}`
+                                                                    : field.label}
+                                                            </span>
                                                         </span>
-                                                    </span>
+                                                    )}
                                                 </div>
                                                 {active && canEdit && (
                                                     <>
@@ -994,6 +1042,12 @@ export default function FormDesigner({
                             selected={selected}
                             groupedSources={groupedSources}
                             canEdit={canEdit}
+                            matrixCellSelection={
+                                selected?.field_type === 'dynamic_test_matrix'
+                                    ? matrixCellSelection
+                                    : null
+                            }
+                            onClearMatrixCell={() => setMatrixCellSelection(null)}
                             onUpdate={updateSelected}
                             onDuplicate={duplicateSelected}
                             onDelete={deleteSelected}

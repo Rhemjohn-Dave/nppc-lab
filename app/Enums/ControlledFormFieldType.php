@@ -13,6 +13,7 @@ enum ControlledFormFieldType: string
     case Radio = 'radio';
     case Signature = 'signature';
     case Table = 'table';
+    case DynamicTestMatrix = 'dynamic_test_matrix';
 
     public function label(): string
     {
@@ -26,6 +27,7 @@ enum ControlledFormFieldType: string
             self::Radio => 'Radio / Selection',
             self::Signature => 'Signature',
             self::Table => 'Table / Repeating Rows',
+            self::DynamicTestMatrix => 'Dynamic test matrix',
         };
     }
 
@@ -36,6 +38,7 @@ enum ControlledFormFieldType: string
             self::Radio => 3.5,
             self::Signature => 40.0,
             self::Table => 80.0,
+            self::DynamicTestMatrix => 120.0,
             self::Multiline => 80.0,
             default => 50.0,
         };
@@ -48,6 +51,7 @@ enum ControlledFormFieldType: string
             self::Multiline => 16.0,
             self::Signature => 14.0,
             self::Table => 20.0,
+            self::DynamicTestMatrix => 60.0,
             default => 5.0,
         };
     }

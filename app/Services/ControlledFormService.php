@@ -11,6 +11,7 @@ use App\Models\ControlledForm;
 use App\Models\ControlledFormField;
 use App\Models\ControlledFormRevision;
 use App\Models\User;
+use App\Support\DynamicTestMatrix;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -171,14 +172,26 @@ class ControlledFormService
         DB::transaction(function () use ($revision, $payload, $allowed): void {
             $revision->fields()->delete();
 
+            $matrixCount = 0;
+
             foreach (array_values($payload) as $index => $field) {
                 $type = ControlledFormFieldType::tryFrom((string) ($field['field_type'] ?? 'text'))
                     ?? ControlledFormFieldType::Text;
+
+                if ($type === ControlledFormFieldType::DynamicTestMatrix) {
+                    $matrixCount++;
+                }
+
                 $source = isset($field['data_source_key']) && is_string($field['data_source_key']) && $field['data_source_key'] !== ''
                     ? $field['data_source_key']
                     : null;
 
-                if ($source !== null && ! FieldValueResolver::isAllowedKey($source) && ! in_array($source, $allowed, true)) {
+                if (
+                    $source !== null
+                    && $type !== ControlledFormFieldType::DynamicTestMatrix
+                    && ! FieldValueResolver::isAllowedKey($source)
+                    && ! in_array($source, $allowed, true)
+                ) {
                     throw ValidationException::withMessages([
                         "fields.{$index}.data_source_key" => 'That data source is not on the approved mapping list.',
                     ]);
@@ -187,6 +200,11 @@ class ControlledFormService
                 $name = (string) ($field['name'] ?? '');
                 if ($name === '') {
                     $name = Str::slug((string) ($field['label'] ?? 'field'), '_').'_'.($index + 1);
+                }
+
+                $tableConfig = $field['table_config'] ?? null;
+                if ($type === ControlledFormFieldType::DynamicTestMatrix && ! is_array($tableConfig)) {
+                    $tableConfig = DynamicTestMatrix::defaultConfig();
                 }
 
                 ControlledFormField::query()->create([
@@ -207,8 +225,14 @@ class ControlledFormService
                     'format' => $field['format'] ?? null,
                     'checkbox_true_value' => $field['checkbox_true_value'] ?? null,
                     'options' => $field['options'] ?? null,
-                    'table_config' => $field['table_config'] ?? null,
+                    'table_config' => $tableConfig,
                     'z_order' => (int) ($field['z_order'] ?? $index),
+                ]);
+            }
+
+            if ($matrixCount > 1) {
+                throw ValidationException::withMessages([
+                    'fields' => 'Only one Dynamic test matrix region is allowed per revision.',
                 ]);
             }
         });

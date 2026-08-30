@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\AnalysisPackageReportLayout;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -18,6 +19,7 @@ use Illuminate\Support\Carbon;
  * @property string $default_price
  * @property list<string>|null $classifications
  * @property string|null $form_code
+ * @property AnalysisPackageReportLayout $report_layout
  * @property int|null $signatory_user_id
  * @property bool $is_active
  * @property int $sort_order
@@ -37,6 +39,7 @@ class AnalysisPackage extends Model
         'default_price',
         'classifications',
         'form_code',
+        'report_layout',
         'signatory_user_id',
         'is_active',
         'sort_order',
@@ -48,6 +51,7 @@ class AnalysisPackage extends Model
             'default_price' => 'decimal:2',
             'classifications' => 'array',
             'is_active' => 'boolean',
+            'report_layout' => AnalysisPackageReportLayout::class,
         ];
     }
 

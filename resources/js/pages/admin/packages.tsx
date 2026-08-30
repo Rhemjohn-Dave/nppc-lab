@@ -34,6 +34,8 @@ type PackageRow = {
     } | null;
     signatory_user_id: number | null;
     signatory_name: string | null;
+    report_layout: 'controlled_form' | 'dynamic_matrix';
+    report_layout_label: string;
     is_active: boolean;
     analysis_type_ids: number[];
     tests: Array<{ id: number; code: string; name: string }>;
@@ -55,6 +57,7 @@ const emptyForm = {
     default_price: '0',
     classifications: [] as string[],
     signatory_user_id: '' as number | '',
+    report_layout: 'controlled_form' as 'controlled_form' | 'dynamic_matrix',
     is_active: true,
     analysis_type_ids: [] as number[],
 };
@@ -88,6 +91,7 @@ export default function AdminPackages({
             default_price: String(row.default_price),
             classifications: row.classifications,
             signatory_user_id: row.signatory_user_id ?? '',
+            report_layout: row.report_layout,
             is_active: row.is_active,
             analysis_type_ids: row.analysis_type_ids,
         });
@@ -175,6 +179,9 @@ export default function AdminPackages({
                                             {row.result_form
                                                 ? ` · ${row.result_form.form_code}`
                                                 : ' · Result form not linked'}
+                                            {row.report_layout === 'dynamic_matrix'
+                                                ? ' · Dynamic matrix'
+                                                : ''}
                                             {row.signatory_name
                                                 ? ` · Signatory ${row.signatory_name}`
                                                 : ''}
@@ -306,6 +313,38 @@ export default function AdminPackages({
                                         ? `${editing.result_form.form_code} — ${editing.result_form.name}`
                                         : 'Not linked. Bind this package on the Analysis Result controlled form in Document Control.'}
                                 </p>
+                            </div>
+                            <div className="grid gap-2">
+                                <Label>Result report layout</Label>
+                                <select
+                                    className="h-9 rounded-md border px-3 text-sm"
+                                    value={form.data.report_layout}
+                                    onChange={(event) =>
+                                        form.setData(
+                                            'report_layout',
+                                            event.target.value as
+                                                | 'controlled_form'
+                                                | 'dynamic_matrix',
+                                        )
+                                    }
+                                >
+                                    <option value="controlled_form">
+                                        Fixed slots (water / FO4–FO5)
+                                    </option>
+                                    <option value="dynamic_matrix">
+                                        Dynamic test matrix (food / special)
+                                    </option>
+                                </select>
+                                <p className="text-xs text-muted-foreground">
+                                    Dynamic matrix prints only selected tests as
+                                    table rows. Add a Dynamic test matrix region
+                                    on the bound controlled form.
+                                </p>
+                                {form.errors.report_layout && (
+                                    <p className="text-sm text-red-600">
+                                        {form.errors.report_layout}
+                                    </p>
+                                )}
                             </div>
                             <div className="grid gap-2">
                                 <Label>Designated analyst (signatory)</Label>

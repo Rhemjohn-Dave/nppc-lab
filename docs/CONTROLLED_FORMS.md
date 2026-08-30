@@ -48,7 +48,8 @@ Main responsibilities:
 | Category | Bind | Runtime resolve |
 |----------|------|-----------------|
 | Job Order | None (global RFA) | `ControlledForm::jobOrderForm()` |
-| Analysis Result | Package | Job package → `analysis_package_id` (partial selection still matches; waived slots print `-`) |
+| Analysis Result | Package | Job package → `analysis_package_id` (partial selection still matches; waived slots print `-` on **fixed-slot** packages) |
+| Analysis Result | Package + `dynamic_matrix` | Same binding; form includes one **Dynamic test matrix** region — only selected tests render as rows (see `docs/DYNAMIC_FOOD_ANALYSIS_RESULT_PDF.md`) |
 | Analysis Result | Analysis types only | Exact `combination_key` when no package form applies |
 
 Packages admin shows the linked form read-only. Tag forms in Controlled Forms, not via free-text package form codes.
@@ -89,6 +90,8 @@ Responsibilities:
 - edit field properties
 - preserve coordinates in PDF space
 - save field mappings back to the backend
+
+**Dynamic test matrix (food / special analysis):** add field type **Dynamic test matrix** from the field library (one per revision). Draw the region where the test table should print. Map header and signature fields as usual. Row count follows selected intake tests at runtime.
 
 ### 4. Field Mapping and Persistence
 Field overlays are stored as controlled form fields attached to a specific revision.

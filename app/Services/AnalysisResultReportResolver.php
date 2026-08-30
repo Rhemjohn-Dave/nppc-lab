@@ -10,6 +10,7 @@ use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
 use App\Models\User;
 use App\Support\AnalysisResultReport;
+use App\Support\DynamicTestMatrix;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
@@ -169,8 +170,17 @@ class AnalysisResultReportResolver
 
     private function fromControlledForm(JobOrder $jobOrder, User $user, ControlledForm $form): AnalysisResultReport
     {
+        $form->loadMissing('analysisPackage');
         $revision = $form->activeRevision();
-        $ordered = $this->orderedAnalysesForIds($jobOrder, $form->orderedTypeIds());
+        $revision?->loadMissing('fields');
+        $package = $form->analysisPackage;
+
+        if ($package && DynamicTestMatrix::packageUsesMatrix($package)) {
+            $ordered = DynamicTestMatrix::orderedSelectedAnalyses($jobOrder, $package);
+        } else {
+            $ordered = $this->orderedAnalysesForIds($jobOrder, $form->orderedTypeIds());
+        }
+
         $filename = $this->combinedFilenameFor($jobOrder, $form->name);
 
         if (! $revision?->hasCanonicalPdf()) {
@@ -179,6 +189,20 @@ class AnalysisResultReportResolver
                 filename: $filename,
                 title: $form->name,
                 message: 'The active controlled form is missing its canonical PDF.',
+                jobOrder: $jobOrder,
+                analyses: $ordered,
+                values: [],
+                controlledForm: $form,
+                controlledRevision: $revision,
+            );
+        }
+
+        if ($package && DynamicTestMatrix::packageUsesMatrix($package) && ! DynamicTestMatrix::revisionUsesMatrix($revision)) {
+            return new AnalysisResultReport(
+                kind: AnalysisResultReport::KIND_UNAVAILABLE,
+                filename: $filename,
+                title: $form->name,
+                message: 'This package uses a dynamic test matrix report. Add a Dynamic test matrix region on the bound controlled form in Form Designer.',
                 jobOrder: $jobOrder,
                 analyses: $ordered,
                 values: [],
@@ -219,7 +243,12 @@ class AnalysisResultReportResolver
             );
         }
 
-        $values = app(FieldValueResolver::class)->forResult($revision->load('fields'), $jobOrder, $ordered, $form);
+        $values = app(FieldValueResolver::class)->forResult(
+            $revision->load('fields'),
+            $jobOrder,
+            $ordered,
+            $form->load('analysisPackage'),
+        );
 
         return new AnalysisResultReport(
             kind: AnalysisResultReport::KIND_COMBINED,

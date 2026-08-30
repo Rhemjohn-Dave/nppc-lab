@@ -10,6 +10,7 @@ use App\Models\ControlledFormField;
 use App\Models\ControlledFormRevision;
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
+use App\Support\DynamicTestMatrix;
 use DateTimeInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -39,6 +40,7 @@ class FieldValueResolver
         $bag = $this->jobOrderBag($jobOrder, true);
         $ordered = $orderedAnalyses?->values() ?? $jobOrder->analyses->values();
         $form ??= $revision->form;
+        $form?->loadMissing('analysisPackage');
 
         $bag['results.issued_date'] = $this->officialDate($jobOrder->reviewed_at);
         $bag['results.release_date'] = $bag['results.issued_date'];
@@ -46,6 +48,10 @@ class FieldValueResolver
         $bag['results.analyst_name'] = $this->resultAnalystName($jobOrder, $ordered);
         $bag['issued_date'] = $bag['results.issued_date'];
         $bag['analyst_name'] = $bag['results.analyst_name'];
+
+        $revision->loadMissing('fields');
+        $usesMatrix = DynamicTestMatrix::revisionUsesMatrix($revision)
+            || DynamicTestMatrix::packageUsesMatrix($form?->analysisPackage);
 
         $sampleCount = (int) config('analysis_result_form_fields.sample_count', 9);
         $samples = $jobOrder->samples->values();
@@ -59,9 +65,17 @@ class FieldValueResolver
             $bag["samples.{$i}.matrix"] = $sample?->matrix;
         }
 
-        $this->fillResultTestSlots($bag, $jobOrder, $ordered, $form);
+        if (! $usesMatrix) {
+            $this->fillResultTestSlots($bag, $jobOrder, $ordered, $form);
+        } else {
+            foreach ($revision->fields as $field) {
+                if ($field->field_type !== ControlledFormFieldType::DynamicTestMatrix) {
+                    continue;
+                }
 
-        $revision->loadMissing('fields');
+                $bag[$field->name] = DynamicTestMatrix::buildRows($ordered);
+            }
+        }
 
         if ($revision->fields->isEmpty()) {
             return $bag;
@@ -203,6 +217,13 @@ class FieldValueResolver
             ],
         ];
 
+        $revision->loadMissing('fields');
+        foreach ($revision->fields as $field) {
+            if ($field->field_type === ControlledFormFieldType::DynamicTestMatrix) {
+                $bag[$field->name] = DynamicTestMatrix::sampleRows();
+            }
+        }
+
         return $this->mapFields($revision, $bag, null);
     }
 
@@ -230,6 +251,10 @@ class FieldValueResolver
 
         if ($field->field_type === ControlledFormFieldType::Table) {
             return $bag[$key] ?? [];
+        }
+
+        if ($field->field_type === ControlledFormFieldType::DynamicTestMatrix) {
+            return $bag[$field->name] ?? DynamicTestMatrix::sampleRows();
         }
 
         if ($field->field_type === ControlledFormFieldType::Checkbox) {

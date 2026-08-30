@@ -28,6 +28,7 @@ const typeIcons: Record<string, typeof Type> = {
     radio: CircleDot,
     signature: PenLine,
     table: Table2,
+    dynamic_test_matrix: Table2,
 };
 
 // Groups that start collapsed by default because they can be very long.

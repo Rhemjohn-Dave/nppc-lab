@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\AnalysisPackageReportLayout;
 use App\Http\Controllers\Controller;
 use App\Models\AnalysisCategory;
 use App\Models\AnalysisPackage;
@@ -55,6 +56,7 @@ class AnalysisPackageAdminController extends Controller
             'default_price' => $data['default_price'],
             'classifications' => $data['classifications'] ?? [],
             'signatory_user_id' => $data['signatory_user_id'] ?? null,
+            'report_layout' => $data['report_layout'] ?? AnalysisPackageReportLayout::ControlledForm->value,
             'is_active' => $data['is_active'] ?? true,
             'sort_order' => ((int) AnalysisPackage::query()->max('sort_order')) + 1,
         ]);
@@ -76,6 +78,7 @@ class AnalysisPackageAdminController extends Controller
             'default_price' => $data['default_price'],
             'classifications' => $data['classifications'] ?? [],
             'signatory_user_id' => $data['signatory_user_id'] ?? null,
+            'report_layout' => $data['report_layout'] ?? AnalysisPackageReportLayout::ControlledForm->value,
             'is_active' => $data['is_active'] ?? true,
         ]);
 
@@ -111,6 +114,7 @@ class AnalysisPackageAdminController extends Controller
             'classifications' => ['nullable', 'array'],
             'classifications.*' => ['string', 'max:80'],
             'signatory_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'report_layout' => ['required', Rule::enum(AnalysisPackageReportLayout::class)],
             'is_active' => ['sometimes', 'boolean'],
             'analysis_type_ids' => ['required', 'array', 'min:1'],
             'analysis_type_ids.*' => ['integer', 'exists:analysis_types,id'],
@@ -143,6 +147,8 @@ class AnalysisPackageAdminController extends Controller
                 : null,
             'signatory_user_id' => $package->signatory_user_id,
             'signatory_name' => $package->signatory?->name,
+            'report_layout' => $package->report_layout->value,
+            'report_layout_label' => $package->report_layout->label(),
             'is_active' => $package->is_active,
             'analysis_type_ids' => $package->orderedTypeIds(),
             'tests' => $package->analysisTypes->map(fn (AnalysisType $type) => [
