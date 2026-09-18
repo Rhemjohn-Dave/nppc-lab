@@ -76,6 +76,8 @@ class ControlledFormField extends Model
      */
     public function toDesignerArray(): array
     {
+        $this->loadMissing('revision.form');
+
         return [
             'id' => $this->id,
             'name' => $this->name,
@@ -94,7 +96,12 @@ class ControlledFormField extends Model
             'format' => $this->format,
             'checkbox_true_value' => $this->checkbox_true_value,
             'options' => $this->options,
-            'table_config' => $this->table_config,
+            'table_config' => \App\Support\DynamicTestMatrix::normalizeStoredTableConfig(
+                (string) $this->name,
+                $this->field_type,
+                $this->table_config,
+                $this->revision?->form,
+            ),
             'z_order' => $this->z_order,
         ];
     }
@@ -106,7 +113,9 @@ class ControlledFormField extends Model
      */
     public function toOverlayArray(): array
     {
-        return [
+        $this->loadMissing('revision.form');
+
+        $payload = [
             'name' => $this->name,
             'type' => $this->field_type->value,
             'page' => $this->page_number,
@@ -118,7 +127,18 @@ class ControlledFormField extends Model
             'align' => $this->alignment ?: 'L',
             'font_family' => $this->font_family ?: 'calibri',
             'font_color' => $this->font_color ?: '#000000',
-            'table_config' => $this->table_config,
+            'table_config' => \App\Support\DynamicTestMatrix::normalizeStoredTableConfig(
+                (string) $this->name,
+                $this->field_type,
+                $this->table_config,
+                $this->revision?->form,
+            ),
         ];
+
+        if (is_array($this->options) && $this->options !== []) {
+            $payload['options'] = $this->options;
+        }
+
+        return $payload;
     }
 }

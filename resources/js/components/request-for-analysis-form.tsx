@@ -10,6 +10,7 @@ export type FormSample = {
     quantity?: string | number | null;
     unit?: string | null;
     remarks?: string | null;
+    control_number?: string | null;
 };
 
 export type FormAnalysis = {
@@ -34,6 +35,7 @@ export type CatalogItem = {
     code: string;
     name: string;
     category: string;
+    category_label?: string | null;
 };
 
 export type RequestForAnalysisData = {
@@ -51,6 +53,11 @@ export type RequestForAnalysisData = {
     sample_collected_by?: string | null;
     sample_storage_temp?: string | null;
     wastewater_source?: string | null;
+    sampling_site?: string | null;
+    payment_mode?: string | null;
+    payment_mode_label?: string | null;
+    payment_terms?: string | null;
+    payment_terms_label?: string | null;
     other_tests?: string | null;
     status_label: string;
     total_cost: string | number;
@@ -68,6 +75,7 @@ export type RequestForAnalysisData = {
         code: string;
         revision: string;
         effective: string;
+        variant?: string;
     };
 };
 
@@ -90,11 +98,25 @@ const CLASSIFICATIONS = [
     'Others',
 ] as const;
 
+const AQUA_CLASSIFICATIONS = [
+    'Aqua',
+    'Agriculture',
+    'Academic/Research',
+    'Others',
+] as const;
+
 const SAMPLE_SOURCES = [
     'Local water district',
     'Tank',
     'Faucet',
     'Deepwell',
+    'Others',
+] as const;
+
+const AQUA_SAMPLE_SOURCES = [
+    'Sea Water',
+    'Brackish Water',
+    'River Water',
     'Others',
 ] as const;
 
@@ -315,21 +337,46 @@ export default function RequestForAnalysisForm({
             .filter((id): id is number => typeof id === 'number'),
     );
 
+    const classification = (jobOrder.classification || '').toLowerCase();
+    const isAquaVariant =
+        jobOrder.document_control.variant === 'aqua' ||
+        (classification.includes('aqua') &&
+            !classification.includes('potability') &&
+            !classification.includes('wastewater'));
+    const classificationOptions = isAquaVariant
+        ? AQUA_CLASSIFICATIONS
+        : CLASSIFICATIONS;
+    const sampleSources = isAquaVariant
+        ? AQUA_SAMPLE_SOURCES
+        : SAMPLE_SOURCES;
+
     const catalog = jobOrder.catalog ?? [];
-    const micro = catalog.filter((item) => item.category === 'microbiological');
-    const physico = catalog.filter(
-        (item) => item.category === 'physico_chemical',
-    );
-    const metals = catalog.filter(
-        (item) => item.category === 'trace_heavy_metals',
-    );
-    const lime = catalog.filter((item) => item.category === 'lime');
+    const catalogGroups = catalog.reduce<
+        Array<{ category: string; label: string; items: CatalogItem[] }>
+    >((groups, item) => {
+        const existing = groups.find((group) => group.category === item.category);
+        if (existing) {
+            existing.items.push(item);
+            return groups;
+        }
+
+        groups.push({
+            category: item.category,
+            label:
+                item.category_label ||
+                item.category
+                    .replace(/_/g, ' ')
+                    .replace(/\b\w/g, (c) => c.toUpperCase()),
+            items: [item],
+        });
+
+        return groups;
+    }, []);
 
     const isChecked = (item: CatalogItem) =>
         selectedTypeIds.has(item.id) ||
         selectedNames.has(item.name.toLowerCase());
 
-    const classification = (jobOrder.classification || '').toLowerCase();
     const sampleRows = Array.from({ length: 9 }, (_, index) => {
         const sample = jobOrder.samples[index];
 
@@ -339,7 +386,9 @@ export default function RequestForAnalysisForm({
                       .filter(Boolean)
                       .join(' — ')
                 : '',
-            control: sample ? jobOrder.reference_no : '',
+            control: sample
+                ? sample.control_number || jobOrder.reference_no
+                : '',
         };
     });
 
@@ -396,6 +445,7 @@ export default function RequestForAnalysisForm({
                     </p>
                     <p className="mt-1 text-[12px] font-bold uppercase">
                         Request for Analysis Form / Job Order
+                        {isAquaVariant ? ' (Aqua)' : ''}
                         {showResults ? ' — with Results' : ''}
                     </p>
                 </div>
@@ -455,14 +505,16 @@ export default function RequestForAnalysisForm({
 
             <div className="mb-2 text-[10px]">
                 <span className="font-bold">Sample Classification: </span>
-                {CLASSIFICATIONS.map((item) => {
+                {classificationOptions.map((item) => {
                     const checked =
                         classification.includes(item.toLowerCase()) ||
                         (item === 'Others' &&
                             !!jobOrder.classification &&
-                            !CLASSIFICATIONS.slice(0, 5).some((c) =>
-                                classification.includes(c.toLowerCase()),
-                            ));
+                            !classificationOptions
+                                .slice(0, -1)
+                                .some((c) =>
+                                    classification.includes(c.toLowerCase()),
+                                ));
 
                     return (
                         <span
@@ -489,27 +541,39 @@ export default function RequestForAnalysisForm({
                 </div>
             </section>
 
-            <div className="mb-1 grid grid-cols-2 gap-x-6 gap-y-1 text-[10px]">
-                <div className="flex min-w-0 items-end gap-1 text-[10px]">
-                    <span className="shrink-0 font-bold">
-                        Field Data (Potability):
-                    </span>
-                    <span className="inline-flex min-w-0 flex-1 items-end gap-1 border-b border-black px-1 leading-tight">
-                        <Mark checked={potability.sterile} />
-                        Water in sterile bottle
-                        {potability.extra ? ` — ${potability.extra}` : ''}
-                    </span>
+            {!isAquaVariant && (
+                <div className="mb-1 grid grid-cols-2 gap-x-6 gap-y-1 text-[10px]">
+                    <div className="flex min-w-0 items-end gap-1 text-[10px]">
+                        <span className="shrink-0 font-bold">
+                            Field Data (Potability):
+                        </span>
+                        <span className="inline-flex min-w-0 flex-1 items-end gap-1 border-b border-black px-1 leading-tight">
+                            <Mark checked={potability.sterile} />
+                            Water in sterile bottle
+                            {potability.extra ? ` — ${potability.extra}` : ''}
+                        </span>
+                    </div>
+                    <FillLine
+                        label="Sample Storage Temp. (AS RECEIVED):"
+                        value={jobOrder.sample_storage_temp || ''}
+                    />
                 </div>
-                <FillLine
-                    label="Sample Storage Temp. (AS RECEIVED):"
-                    value={jobOrder.sample_storage_temp || ''}
-                />
-            </div>
+            )}
+            {isAquaVariant && (
+                <div className="mb-1 text-[10px]">
+                    <FillLine
+                        label="Sample Storage Temp. (AS RECEIVED):"
+                        value={jobOrder.sample_storage_temp || ''}
+                    />
+                </div>
+            )}
             <div className="mb-2 text-[10px]">
                 <span className="font-bold">
-                    Field Data for Waste Water — Sample Source:{' '}
+                    {isAquaVariant
+                        ? 'Field Data — Sample Source: '
+                        : 'Field Data for Waste Water — Sample Source: '}
                 </span>
-                {SAMPLE_SOURCES.map((item) => {
+                {sampleSources.map((item) => {
                     const stored = jobOrder.wastewater_source || '';
                     const checked = isListedChoice(stored, item);
 
@@ -530,59 +594,22 @@ export default function RequestForAnalysisForm({
             </div>
 
             <section className="mb-2 grid grid-cols-2 gap-4 text-[9px]">
-                <div>
-                    <p className="mb-1 font-bold">Microbiological Analysis</p>
-                    <ul className="space-y-px">
-                        {micro.map((item) => (
-                            <li
-                                key={item.id}
-                                className="flex items-start gap-0.5"
-                            >
-                                <Mark checked={isChecked(item)} />
-                                <span>{item.name}</span>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-                <div>
-                    <p className="mb-1 font-bold">Physico-Chemical Analysis</p>
-                    <div className="mb-1.5 columns-2 gap-x-3 space-y-px">
-                        {physico.map((item) => (
-                            <div
-                                key={item.id}
-                                className="flex break-inside-avoid items-start gap-0.5"
-                            >
-                                <Mark checked={isChecked(item)} />
-                                <span>{item.name}</span>
-                            </div>
-                        ))}
+                {catalogGroups.map((group) => (
+                    <div key={group.category}>
+                        <p className="mb-1 font-bold">{group.label}</p>
+                        <ul className="columns-2 gap-x-3 space-y-px">
+                            {group.items.map((item) => (
+                                <li
+                                    key={item.id}
+                                    className="flex break-inside-avoid items-start gap-0.5"
+                                >
+                                    <Mark checked={isChecked(item)} />
+                                    <span>{item.name}</span>
+                                </li>
+                            ))}
+                        </ul>
                     </div>
-                    <p className="mb-0.5 font-bold">
-                        Trace/Heavy Metals (Water/Food)
-                    </p>
-                    <div className="mb-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
-                        {metals.map((item) => (
-                            <span
-                                key={item.id}
-                                className="inline-flex items-center gap-0.5"
-                            >
-                                <Mark checked={isChecked(item)} />
-                                {item.name.replace(/.*\((.+)\)/, '$1')}
-                            </span>
-                        ))}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                        {lime.map((item) => (
-                            <span
-                                key={item.id}
-                                className="inline-flex items-center gap-0.5"
-                            >
-                                <Mark checked={isChecked(item)} />
-                                {item.name}
-                            </span>
-                        ))}
-                    </div>
-                </div>
+                ))}
             </section>
 
             <FillLine
@@ -683,7 +710,7 @@ export default function RequestForAnalysisForm({
                             jobOrder.document_control.code}
                     </div>
                     <div className="font-bold">
-                        {jobOrder.document_control.form ?? 'LSP 7.1 F01'}
+                        {jobOrder.document_control.form ?? 'LSP 7.1 FO1'}
                     </div>
                 </div>
                 <div className="text-right">

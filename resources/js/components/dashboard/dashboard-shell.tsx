@@ -8,6 +8,11 @@ import {
     Shield,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+    limsPageBackground,
+    limsPageShellFluid,
+    limsPageShellWide,
+} from '@/lib/lims-page-shell';
 import type { ReactNode } from 'react';
 import DashboardHeader from '@/components/dashboard/dashboard-header';
 import type {
@@ -29,7 +34,8 @@ type Props = {
     header: DashboardHeaderData;
     links: DashboardLinks;
     children: ReactNode;
-    layout?: 'default' | 'wide';
+    layout?: 'default' | 'wide' | 'fluid';
+    density?: 'default' | 'compact';
 };
 
 export default function DashboardShell({
@@ -38,23 +44,18 @@ export default function DashboardShell({
     links,
     children,
     layout = 'default',
+    density = 'compact',
 }: Props) {
     const Icon = roleIcons[role];
-    const isWide = layout === 'wide';
+    const isFluid = layout === 'fluid';
+    const compact = density === 'compact' || isFluid || layout === 'default';
 
     return (
-        <div className="bg-[#f4f7fb]">
-            <div
-                className={cn(
-                    'mx-auto flex w-full flex-col',
-                    isWide
-                        ? 'max-w-[1680px] gap-4 px-4 sm:px-5 lg:px-6 xl:px-8'
-                        : 'max-w-6xl gap-6 p-4 md:p-6',
-                )}
-            >
+        <div className={limsPageBackground}>
+            <div className={cn(isFluid ? limsPageShellFluid : limsPageShellWide)}>
                 <DashboardHeader
                     variant="hero"
-                    density={isWide ? 'compact' : 'default'}
+                    density={compact ? 'compact' : 'default'}
                     title={header.title}
                     subtitle={header.subtitle}
                     greetingName={header.greeting_name}
@@ -80,7 +81,7 @@ export function DashboardSection({
     return (
         <section className={className}>
             {title && (
-                <h2 className="mb-3 text-xs font-semibold tracking-wide text-[#1A3694] uppercase">
+                <h2 className="mb-2 text-xs font-semibold tracking-wide text-[#1A3694] uppercase">
                     {title}
                 </h2>
             )}
@@ -99,7 +100,7 @@ export function DashboardViewAllLink({
     label: string;
 }) {
     return (
-        <div className="border-t border-slate-100 px-4 py-3 text-right">
+        <div className="border-t border-slate-100 px-3 py-2 text-right">
             <Link
                 href={href}
                 className="text-sm font-medium text-[#1A3694] hover:underline"

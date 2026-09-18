@@ -1,4 +1,5 @@
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
+import LimsWorkspace from '@/components/lims/lims-workspace';
 import { useEffect, useMemo, useState } from 'react';
 import TablePagination from '@/components/table-pagination';
 import { Button } from '@/components/ui/button';
@@ -36,7 +37,6 @@ const ANALYSTS_PAGE_SIZE = 10;
 const CATEGORIES_PAGE_SIZE = 5;
 
 export default function AdminAssignments({ analysts, groups }: Props) {
-    const { flash } = usePage().props as { flash?: { success?: string } };
     const [selectedAnalyst, setSelectedAnalyst] = useState<Analyst | null>(
         analysts[0] ?? null,
     );
@@ -164,7 +164,7 @@ export default function AdminAssignments({ analysts, groups }: Props) {
     return (
         <>
             <Head title="Assignments" />
-            <div className="flex flex-col gap-5 p-4">
+            <LimsWorkspace>
                 <div>
                     <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
                         Analyst assignments
@@ -176,11 +176,6 @@ export default function AdminAssignments({ analysts, groups }: Props) {
                         goes to the checked analyst with the fewest open
                         tasks.
                     </p>
-                    {flash?.success && (
-                        <p className="mt-2 text-sm text-emerald-700">
-                            {flash.success}
-                        </p>
-                    )}
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
@@ -462,7 +457,7 @@ export default function AdminAssignments({ analysts, groups }: Props) {
                         )}
                     </section>
                 </div>
-            </div>
+            </LimsWorkspace>
         </>
     );
 }

@@ -4,21 +4,24 @@ import AnalystStatusBadge from '@/components/analyst/analyst-status-badge';
 import DashboardEmptyState from '@/components/dashboard/dashboard-empty-state';
 import { DashboardViewAllLink } from '@/components/dashboard/dashboard-shell';
 import type { DashboardQueue } from '@/components/dashboard/types';
+import { cn } from '@/lib/utils';
 
 type Props = {
     data: DashboardQueue;
     viewAllHref: string;
     viewAllLabel: string;
+    compact?: boolean;
 };
 
 export default function DashboardPreviewList({
     data,
     viewAllHref,
     viewAllLabel,
+    compact = false,
 }: Props) {
     if (data.rows.length === 0) {
         return (
-            <section className="space-y-3">
+            <section className={compact ? 'space-y-2' : 'space-y-3'}>
                 <h2 className="text-xs font-semibold tracking-wide text-[#1A3694] uppercase">
                     {data.title}
                 </h2>
@@ -28,7 +31,7 @@ export default function DashboardPreviewList({
     }
 
     return (
-        <section className="space-y-3">
+        <section className={compact ? 'space-y-2' : 'space-y-3'}>
             <h2 className="text-xs font-semibold tracking-wide text-[#1A3694] uppercase">
                 {data.title}
             </h2>
@@ -46,9 +49,7 @@ export default function DashboardPreviewList({
                                 ? row.customer_name
                                 : '';
                         const status =
-                            typeof row.status === 'string'
-                                ? row.status
-                                : '';
+                            typeof row.status === 'string' ? row.status : '';
                         const statusLabel =
                             typeof row.status_label === 'string'
                                 ? row.status_label
@@ -64,11 +65,32 @@ export default function DashboardPreviewList({
                                   ? `${row.tests} tests`
                                   : null;
                         const key =
-                            typeof row.id === 'number' || typeof row.id === 'string'
+                            typeof row.id === 'number' ||
+                            typeof row.id === 'string'
                                 ? String(row.id)
                                 : String(index);
 
-                        const content = (
+                        const content = compact ? (
+                            <>
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <p className="font-semibold text-[#1A3694]">
+                                            {reference}
+                                        </p>
+                                        <AnalystStatusBadge
+                                            status={status}
+                                            label={statusLabel}
+                                        />
+                                    </div>
+                                    <p className="mt-0.5 truncate text-sm text-slate-700">
+                                        {customer}
+                                        {meta ? ` · ${meta}` : ''}
+                                        {updated ? ` · ${updated}` : ''}
+                                    </p>
+                                </div>
+                                <ChevronRight className="size-4 shrink-0 text-slate-400" />
+                            </>
+                        ) : (
                             <>
                                 <div className="min-w-0 flex-1">
                                     <p className="font-semibold text-[#1A3694]">
@@ -99,12 +121,24 @@ export default function DashboardPreviewList({
                                 {href ? (
                                     <Link
                                         href={href}
-                                        className="flex items-center gap-3 px-4 py-3.5 transition hover:bg-[#f8fafc]"
+                                        className={cn(
+                                            'flex items-center gap-3 transition hover:bg-[#f8fafc]',
+                                            compact
+                                                ? 'px-3 py-2.5'
+                                                : 'px-4 py-3.5',
+                                        )}
                                     >
                                         {content}
                                     </Link>
                                 ) : (
-                                    <div className="flex items-center gap-3 px-4 py-3.5">
+                                    <div
+                                        className={cn(
+                                            'flex items-center gap-3',
+                                            compact
+                                                ? 'px-3 py-2.5'
+                                                : 'px-4 py-3.5',
+                                        )}
+                                    >
                                         {content}
                                     </div>
                                 )}

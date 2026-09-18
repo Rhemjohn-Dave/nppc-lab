@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Enums\ControlledFormCategory;
 use App\Enums\ControlledFormFieldType;
 use App\Enums\ControlledFormRevisionStatus;
+use App\Enums\JobOrderVariant;
 use App\Http\Controllers\Controller;
 use App\Models\AnalysisCategory;
 use App\Models\AnalysisPackage;
@@ -14,10 +15,12 @@ use App\Models\ControlledFormRevision;
 use App\Models\JobOrder;
 use App\Services\ControlledDocumentGenerator;
 use App\Services\ControlledFormService;
+use App\Services\ControlledFormStorage;
 use App\Services\ControlledPdfFiller;
 use App\Services\DocumentAuditLogger;
 use App\Services\FieldValueResolver;
 use App\Services\RevisionWorkflow;
+use App\Support\DynamicTestMatrix;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
@@ -32,6 +35,7 @@ class ControlledFormAdminController extends Controller
     public function __construct(
         private readonly ControlledFormService $forms,
         private readonly RevisionWorkflow $workflow,
+        private readonly ControlledFormStorage $storage,
     ) {}
 
     public function index(): Response
@@ -52,6 +56,37 @@ class ControlledFormAdminController extends Controller
             ]),
             'analysisGroups' => $this->analysisGroups(),
             'packages' => $this->packages(),
+        ]);
+    }
+
+    public function resultPanels(): Response
+    {
+        $panels = ControlledForm::query()
+            ->where('category', ControlledFormCategory::AnalysisResult)
+            ->whereNull('analysis_package_id')
+            ->with(['currentRevision', 'analysisTypes'])
+            ->withCount('revisions')
+            ->orderBy('form_code')
+            ->get()
+            ->map(function (ControlledForm $form): array {
+                $payload = $this->serializeForm($form, false);
+                $types = $form->analysisTypes
+                    ->sortBy(fn (AnalysisType $type) => (int) ($type->pivot->slot ?? 0))
+                    ->values();
+
+                $payload['analysis_types'] = $types->map(fn (AnalysisType $type) => [
+                    'id' => $type->id,
+                    'code' => $type->code,
+                    'name' => $type->name,
+                ])->values()->all();
+                $payload['analysis_type_count'] = $types->count();
+
+                return $payload;
+            })
+            ->values();
+
+        return Inertia::render('admin/result-panels', [
+            'panels' => $panels,
         ]);
     }
 
@@ -116,6 +151,8 @@ class ControlledFormAdminController extends Controller
             'analysis_package_id' => ['nullable', 'integer', 'exists:analysis_packages,id'],
             'analysis_type_ids' => $resultBindings,
             'analysis_type_ids.*' => ['integer', 'exists:analysis_types,id'],
+            'analyst_signatory_slots' => ['nullable', 'integer', 'in:1,2,3,4'],
+            'analyst_require_prc' => ['sometimes', 'boolean'],
         ]);
         $data = $this->normalizePackageBindings($data);
 
@@ -214,12 +251,41 @@ class ControlledFormAdminController extends Controller
         $revision->load(['fields', 'form', 'creator']);
         $controlledForm->load(['analysisTypes', 'analysisPackage.analysisTypes']);
 
+        // Keep DB page mm in sync with FPDI (same source as ControlledPdfFiller).
+        $canonicalPage = $this->storage->syncRevisionPageMetrics($revision);
+        $revision = $revision->fresh(['fields', 'form', 'creator']) ?? $revision;
+
+        if ($canonicalPage === null && $revision->page_width_mm !== null && $revision->page_height_mm !== null) {
+            $canonicalPage = [
+                'width_mm' => (float) $revision->page_width_mm,
+                'height_mm' => (float) $revision->page_height_mm,
+                'page_count' => (int) ($revision->page_count ?: 1),
+            ];
+        }
+
+        $matrixPreviewRows = collect(
+            DynamicTestMatrix::previewRowsForForm($controlledForm),
+        )->map(fn (array $row) => [
+            'test' => (string) ($row['test'] ?? ''),
+            'test_method' => (string) ($row['test_method'] ?? ''),
+            'test_detail' => (string) ($row['test_detail'] ?? ''),
+            'method' => (string) ($row['method'] ?? ''),
+            'acceptable_values' => (string) ($row['acceptable_values'] ?? ''),
+            'result' => (string) ($row['result'] ?? ''),
+            'remarks' => (string) ($row['remarks'] ?? ''),
+            'control_no' => (string) ($row['control_no'] ?? ''),
+            'sample_description' => (string) ($row['sample_description'] ?? ''),
+        ])->values()->all();
+
         return Inertia::render('admin/form-designer', [
             'form' => $this->serializeForm($controlledForm, false),
             'revision' => $this->serializeRevision($revision, true),
+            'canonical_page' => $canonicalPage,
             'next_revision' => $this->forms->nextRevisionNumber($controlledForm),
             'sources' => FieldValueResolver::catalog($controlledForm->category->value, $controlledForm),
             'packages' => $this->packages(),
+            'matrix_preview_rows' => $matrixPreviewRows,
+            'matrix_default_config' => DynamicTestMatrix::configForForm($controlledForm),
             'fieldTypes' => collect(ControlledFormFieldType::cases())->map(fn ($t) => [
                 'value' => $t->value,
                 'label' => $t->label(),
@@ -273,13 +339,16 @@ class ControlledFormAdminController extends Controller
     {
         abort_unless($revision->controlled_form_id === $controlledForm->id, 404);
 
-        $this->forms->importRfaBlueprint($revision);
+        $configKey = $this->forms->blueprintConfigKey($controlledForm);
+        abort_unless($configKey !== null, 404);
+
+        $this->forms->importBlueprint($revision);
 
         app(DocumentAuditLogger::class)->record('field.added', $revision, $request->user(), null, [
-            'source' => 'rfa_form_fields',
+            'source' => $configKey,
         ]);
 
-        return back()->with('success', 'RFA field blueprint imported. Recalibrate positions in the designer.');
+        return back()->with('success', 'Field blueprint imported. Recalibrate positions in the designer if the PDF page size differs.');
     }
 
     public function canonical(ControlledForm $controlledForm, ControlledFormRevision $revision): BinaryFileResponse
@@ -313,7 +382,38 @@ class ControlledFormAdminController extends Controller
             ? JobOrder::query()->find($request->integer('job_order_id'))
             : null;
 
-        $result = $generator->preview($revision->load('fields', 'form'), $jobOrder);
+        if ($request->has('fields')) {
+            $data = $request->validate([
+                'fields' => ['required', 'array'],
+                'fields.*.id' => ['nullable', 'integer'],
+                'fields.*.name' => ['nullable', 'string', 'max:80'],
+                'fields.*.label' => ['required', 'string', 'max:120'],
+                'fields.*.field_type' => ['required', 'string', 'max:30'],
+                'fields.*.page_number' => ['required', 'integer', 'min:1'],
+                'fields.*.x' => ['required', 'numeric'],
+                'fields.*.y' => ['required', 'numeric'],
+                'fields.*.width' => ['required', 'numeric', 'min:0.5'],
+                'fields.*.height' => ['required', 'numeric', 'min:0.5'],
+                'fields.*.font_size' => ['nullable', 'numeric'],
+                'fields.*.font_family' => ['nullable', 'string', Rule::in(['calibri', 'helvetica', 'times', 'courier'])],
+                'fields.*.font_color' => ['nullable', 'string', 'max:20'],
+                'fields.*.alignment' => ['nullable', 'string', 'max:5'],
+                'fields.*.data_source_key' => ['nullable', 'string', 'max:120'],
+                'fields.*.format' => ['nullable', 'string', 'max:40'],
+                'fields.*.checkbox_true_value' => ['nullable', 'string', 'max:80'],
+                'fields.*.options' => ['nullable', 'array'],
+                'fields.*.table_config' => ['nullable', 'array'],
+                'fields.*.z_order' => ['nullable', 'integer'],
+            ]);
+
+            $revision->setRelation('fields', $this->forms->ephemeralFields($data['fields'], $controlledForm));
+            $revision->unsetRelation('form');
+            $revision->setRelation('form', $controlledForm);
+        } else {
+            $revision->load('fields', 'form');
+        }
+
+        $result = $generator->preview($revision, $jobOrder);
 
         return response($result['binary'], 200, [
             'Content-Type' => 'application/pdf',
@@ -349,6 +449,8 @@ class ControlledFormAdminController extends Controller
             'department' => $form->department,
             'category' => $form->category->value,
             'category_label' => $form->category->label(),
+            'job_order_variant' => $form->job_order_variant?->value,
+            'job_order_variant_label' => $form->job_order_variant?->label(),
             'combination_key' => $form->combination_key,
             'current_revision' => $current ? self::serializeRevision($current, false) : null,
             'status' => $current?->status->value,
@@ -357,6 +459,9 @@ class ControlledFormAdminController extends Controller
             'revisions_count' => $form->revisions_count ?? $form->revisions()->count(),
             'analysis_type_ids' => $form->orderedTypeIds(),
             'analysis_package_id' => $form->analysis_package_id,
+            'analyst_signatory_slots' => max(1, min(4, (int) ($form->analyst_signatory_slots ?? 1))),
+            'analyst_require_prc' => (bool) ($form->analyst_require_prc ?? false),
+            'has_blueprint' => app(ControlledFormService::class)->hasBlueprint($form),
         ];
 
         if ($withRevisions) {
@@ -497,6 +602,7 @@ class ControlledFormAdminController extends Controller
             'description' => ['nullable', 'string', 'max:2000'],
             'department' => ['nullable', 'string', 'max:120'],
             'category' => ['required', Rule::enum(ControlledFormCategory::class)],
+            'job_order_variant' => ['nullable', Rule::enum(JobOrderVariant::class)],
             'revision' => ['nullable', 'string', 'max:20'],
             'effective_date' => ['nullable', 'date'],
             'notes' => ['nullable', 'string', 'max:2000'],

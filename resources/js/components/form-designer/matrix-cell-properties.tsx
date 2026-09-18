@@ -9,6 +9,7 @@ import {
     patchSelectedColumn,
     readCellText,
     selectionLabel,
+    columnWidthPctSum,
     type MatrixCellSelection,
     type MatrixTableConfig,
 } from '@/lib/dynamic-test-matrix';
@@ -19,6 +20,7 @@ type Props = {
     canEdit: boolean;
     onUpdate: (patch: Partial<DesignerField>, recordHistory?: boolean) => void;
     onClearSelection: () => void;
+    packagePreviewRows?: Array<Record<string, string>>;
 };
 
 export default function MatrixCellProperties({
@@ -27,19 +29,22 @@ export default function MatrixCellProperties({
     canEdit,
     onUpdate,
     onClearSelection,
+    packagePreviewRows,
 }: Props) {
     const config = matrixConfig(field);
     const column = findColumn(config, selection.columnKey);
-    const text = readCellText(config, config.columns ?? [], selection);
+    const text = readCellText(config, config.columns ?? [], selection, packagePreviewRows);
     const isHeader = selection.area === 'header';
     const isPreviewBody = selection.area === 'body';
+    const widthPctSum = columnWidthPctSum(config.columns ?? []);
+    const widthPctNeedsNormalize = widthPctSum > 0 && Math.abs(widthPctSum - 100) >= 0.05;
 
     function updateConfig(next: MatrixTableConfig, recordHistory = true) {
         onUpdate({ table_config: next }, recordHistory);
     }
 
     function updateText(value: string) {
-        updateConfig(patchCellText(config, selection, value));
+        updateConfig(patchCellText(config, selection, value, packagePreviewRows));
     }
 
     function updateColumn(patch: Parameters<typeof patchSelectedColumn>[2]) {
@@ -47,7 +52,12 @@ export default function MatrixCellProperties({
     }
 
     const fontSize = isHeader ? column?.header_font_size : column?.font_size;
-    const align = isHeader ? column?.header_align ?? 'C' : column?.align ?? (selection.columnKey === 'test' ? 'L' : 'C');
+    const isHeaderSublabel = isHeader && selection.part === 'sublabel';
+    const align = isHeaderSublabel
+        ? (column?.sublabel_align ?? column?.header_align ?? 'C')
+        : isHeader
+          ? (column?.header_align ?? 'C')
+          : (column?.align ?? (selection.columnKey === 'test' ? 'L' : 'C'));
 
     return (
         <section className="space-y-3 rounded-md border border-[#1A3694]/25 bg-[#1A3694]/5 p-3">
@@ -76,7 +86,9 @@ export default function MatrixCellProperties({
 
             {isHeader && (
                 <p className="text-[10px] leading-snug text-muted-foreground">
-                    Header text is printed on every report using this form.
+                    {isHeaderSublabel
+                        ? 'Sublabel alignment is separate from the column title (e.g. Sample Description / SS).'
+                        : 'Header text is printed on every report using this form.'}
                 </p>
             )}
 
@@ -128,13 +140,18 @@ export default function MatrixCellProperties({
                         className="h-9 w-full rounded-md border bg-white px-2 text-sm"
                         disabled={!canEdit}
                         value={align}
-                        onChange={(event) =>
-                            updateColumn(
-                                isHeader
-                                    ? { header_align: event.target.value as 'L' | 'C' | 'R' }
-                                    : { align: event.target.value as 'L' | 'C' | 'R' },
-                            )
-                        }
+                        onChange={(event) => {
+                            const next = event.target.value as 'L' | 'C' | 'R';
+                            if (isHeaderSublabel) {
+                                updateColumn({ sublabel_align: next });
+                                return;
+                            }
+                            if (isHeader) {
+                                updateColumn({ header_align: next });
+                                return;
+                            }
+                            updateColumn({ align: next });
+                        }}
                     >
                         <option value="L">Left</option>
                         <option value="C">Center</option>
@@ -187,6 +204,12 @@ export default function MatrixCellProperties({
                         }
                         onBlur={() => onUpdate({}, true)}
                     />
+                    {widthPctNeedsNormalize && (
+                        <p className="mt-1 text-[11px] text-amber-700">
+                            Column widths sum to {Math.round(widthPctSum)}%. Preview and PDF normalize
+                            to 100% so the table still fills the field box.
+                        </p>
+                    )}
                 </div>
             )}
         </section>

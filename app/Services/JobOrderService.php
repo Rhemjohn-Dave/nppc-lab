@@ -13,9 +13,12 @@ use App\Models\Customer;
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
 use App\Models\User;
+use App\Notifications\AnalysisReturned;
+use App\Notifications\JobOrderJoApproved;
 use App\Notifications\JobOrderPendingReview;
 use App\Notifications\JobOrderSubmitted;
-use App\Notifications\TaskAssigned;
+use App\Notifications\ResultsReleased;
+use App\Support\ResultSignatories;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
@@ -52,6 +55,10 @@ class JobOrderService
                 'sample_storage_temp' => $data['sample_storage_temp'] ?? null,
                 'wastewater_source' => $data['wastewater_source'] ?? null,
                 'sampling_point' => $data['sampling_point'] ?? null,
+                'sampling_site' => $data['sampling_site'] ?? null,
+                'specimen' => $data['specimen'] ?? null,
+                'payment_mode' => $data['payment_mode'] ?? null,
+                'payment_terms' => $data['payment_terms'] ?? null,
                 'other_tests' => $data['other_tests'] ?? null,
                 'status' => JobOrderStatus::DraftSubmitted,
                 'total_cost' => 0,
@@ -61,9 +68,11 @@ class JobOrderService
             $samples = $data['samples'];
 
             foreach ($samples as $index => $sample) {
+                $description = trim((string) ($sample['description'] ?? ''));
+
                 $jobOrder->samples()->create([
                     'sample_code' => $sample['sample_code'] ?? null,
-                    'description' => $sample['description'],
+                    'description' => $description,
                     'matrix' => $sample['matrix'] ?? null,
                     'quantity' => $sample['quantity'] ?? null,
                     'unit' => $sample['unit'] ?? null,
@@ -186,38 +195,186 @@ class JobOrderService
 
     /**
      * @param  array<int, array{id: int, unit_price: float|int|string, quantity?: int}>  $lines
+     * @return array{job: JobOrder, outcome: 'queued_for_approval'|'awaiting_approval'|'pricing_updated'}
      */
-    public function updatePricing(JobOrder $jobOrder, array $lines): JobOrder
-    {
-        $jobOrder = DB::transaction(function () use ($jobOrder, $lines) {
+    public function updatePricing(
+        JobOrder $jobOrder,
+        array $lines,
+        User $actor,
+        float|int|string|null $discountPercent = null,
+    ): array {
+        $previousStatus = $jobOrder->status;
+        $queuedForApproval = false;
+        $resolvedPercent = $discountPercent !== null
+            ? max(0, min(100, (float) $discountPercent))
+            : max(0, min(100, (float) $jobOrder->discount_percent));
+
+        $jobOrder = DB::transaction(function () use (
+            $jobOrder,
+            $lines,
+            $previousStatus,
+            $actor,
+            $resolvedPercent,
+            &$queuedForApproval,
+        ) {
             foreach ($lines as $line) {
                 $analysis = $jobOrder->analyses()->whereKey($line['id'])->firstOrFail();
                 $quantity = (int) ($line['quantity'] ?? $analysis->quantity);
                 $unitPrice = (float) $line['unit_price'];
+                $lineTotal = max(1, $quantity) * $unitPrice;
 
                 $analysis->update([
                     'quantity' => max(1, $quantity),
                     'unit_price' => $unitPrice,
-                    'total_cost' => max(1, $quantity) * $unitPrice,
+                    'total_cost' => $lineTotal,
                 ]);
             }
 
-            $jobOrder->update(['status' => JobOrderStatus::Priced]);
+            $attributes = [
+                'discount_percent' => $resolvedPercent,
+            ];
+
+            // Stamp sample-received time when Receiving first handles costing (not at send-to-analysts).
+            if ($jobOrder->received_at === null) {
+                $attributes['received_at'] = now();
+                $attributes['received_by'] = $actor->id;
+            }
+
+            // Never regress JO-approved / analysis / review statuses when repricing.
+            if (in_array($previousStatus, [
+                JobOrderStatus::DraftSubmitted,
+                JobOrderStatus::Priced,
+            ], true)) {
+                $attributes['status'] = JobOrderStatus::PendingJoApproval;
+                $queuedForApproval = true;
+            }
+
+            $jobOrder->update($attributes);
             $jobOrder->recalculateTotal();
 
-            return $jobOrder->fresh(['samples', 'analyses.analysisType', 'analyses.assignee']) ?? $jobOrder;
+            return $jobOrder->fresh(['samples', 'analyses.analysisType', 'analyses.assignee', 'receiver']) ?? $jobOrder;
         });
 
-        LabQueueUpdated::notify([LabQueueUpdated::SCOPE_RECEIVING], $jobOrder->id);
+        LabQueueUpdated::notify([
+            LabQueueUpdated::SCOPE_RECEIVING,
+            LabQueueUpdated::SCOPE_HEAD,
+        ], $jobOrder->id);
 
-        return $jobOrder;
+        $outcome = match (true) {
+            $queuedForApproval => 'queued_for_approval',
+            $jobOrder->status === JobOrderStatus::PendingJoApproval => 'awaiting_approval',
+            default => 'pricing_updated',
+        };
+
+        return ['job' => $jobOrder, 'outcome' => $outcome];
+    }
+
+    /**
+     * Repair rows where pricing re-save forced pending_jo_approval while jo_approved_at stayed set.
+     */
+    public static function healJoApprovalStatusDesync(): int
+    {
+        // Already assigned to analysts → restore in_analysis.
+        $inAnalysisIds = DB::table('job_orders')
+            ->whereIn('job_orders.status', [
+                JobOrderStatus::PendingJoApproval->value,
+                JobOrderStatus::Priced->value,
+            ])
+            ->whereNotNull('jo_approved_at')
+            ->whereExists(function ($query): void {
+                $query->select(DB::raw(1))
+                    ->from('job_order_analyses')
+                    ->whereColumn('job_order_analyses.job_order_id', 'job_orders.id')
+                    ->whereNotNull('job_order_analyses.assigned_to');
+            })
+            ->pluck('id');
+
+        $received = 0;
+        if ($inAnalysisIds->isNotEmpty()) {
+            $received = DB::table('job_orders')
+                ->whereIn('id', $inAnalysisIds)
+                ->update(['status' => JobOrderStatus::InAnalysis->value]);
+        }
+
+        $approved = DB::table('job_orders')
+            ->whereIn('status', [
+                JobOrderStatus::PendingJoApproval->value,
+                JobOrderStatus::Priced->value,
+            ])
+            ->whereNotNull('jo_approved_at')
+            ->when(
+                $inAnalysisIds->isNotEmpty(),
+                fn ($query) => $query->whereNotIn('id', $inAnalysisIds),
+            )
+            ->update(['status' => JobOrderStatus::JoApproved->value]);
+
+        return $received + $approved;
+    }
+
+    public function approveJobOrder(JobOrder $jobOrder, User $approver): JobOrder
+    {
+        if (! in_array($jobOrder->status, [
+            JobOrderStatus::PendingJoApproval,
+            JobOrderStatus::Priced,
+        ], true)) {
+            throw ValidationException::withMessages([
+                'job_order' => 'Only priced job orders waiting for Head approval can be approved.',
+            ]);
+        }
+
+        if ($jobOrder->jo_approved_at) {
+            throw ValidationException::withMessages([
+                'job_order' => 'This job order has already been approved.',
+            ]);
+        }
+
+        $jobOrder->update([
+            'status' => JobOrderStatus::JoApproved,
+            'jo_approved_by' => $approver->id,
+            'jo_approved_at' => now(),
+        ]);
+
+        $fresh = $jobOrder->fresh(['samples', 'analyses', 'joApprover']) ?? $jobOrder;
+        LabQueueUpdated::notify([
+            LabQueueUpdated::SCOPE_HEAD,
+            LabQueueUpdated::SCOPE_RECEIVING,
+        ], $fresh->id);
+
+        User::role(['receiving', 'admin'])->get()->each(
+            fn (User $user) => $user->notify(new JobOrderJoApproved($fresh))
+        );
+
+        return $fresh;
+    }
+
+    /**
+     * @param  iterable<int, int>  $jobOrderIds
+     */
+    public function approveJobOrders(iterable $jobOrderIds, User $approver): int
+    {
+        $ids = collect($jobOrderIds)->unique()->values()->all();
+
+        $orders = JobOrder::query()
+            ->whereIn('id', $ids)
+            ->whereIn('status', [
+                JobOrderStatus::PendingJoApproval,
+                JobOrderStatus::Priced,
+            ])
+            ->whereNull('jo_approved_at')
+            ->get();
+
+        foreach ($orders as $order) {
+            $this->approveJobOrder($order, $approver);
+        }
+
+        return $orders->count();
     }
 
     public function receive(JobOrder $jobOrder, User $receiver): JobOrder
     {
-        if ($jobOrder->status !== JobOrderStatus::Priced) {
+        if (! $jobOrder->status->canReceiveSamples()) {
             throw ValidationException::withMessages([
-                'job_order' => 'Save and finalize pricing before marking this job order as received.',
+                'job_order' => 'Head must approve this Job Order before it can be sent to analysts.',
             ]);
         }
 
@@ -234,17 +391,19 @@ class JobOrderService
                         ? JobOrderAnalysisStatus::Assigned
                         : JobOrderAnalysisStatus::Pending,
                 ]);
-
-                if ($analyst instanceof User) {
-                    $analyst->notify(new TaskAssigned($jobOrder, $analysis));
-                }
             }
 
-            $jobOrder->update([
+            $acceptance = [
                 'status' => JobOrderStatus::InAnalysis,
-                'received_by' => $receiver->id,
-                'received_at' => now(),
-            ]);
+            ];
+
+            // Keep earlier sample-received stamp from first pricing; only fill if missing.
+            if ($jobOrder->received_at === null) {
+                $acceptance['received_by'] = $receiver->id;
+                $acceptance['received_at'] = now();
+            }
+
+            $jobOrder->update($acceptance);
 
             return $jobOrder->fresh(['samples', 'analyses.assignee', 'analyses.analysisType']) ?? $jobOrder;
         });
@@ -258,20 +417,24 @@ class JobOrderService
     }
 
     /**
-     * @param  array{result_value?: ?string, result_measurement?: ?string, result_unit?: ?string, result_remarks?: ?string}  $data
+     * @param  array{result_value?: ?string, result_pass_fail?: ?string, result_measurement?: ?string, result_unit?: ?string, result_remarks?: ?string, result_method?: ?string}  $data
      */
     public function saveAnalysisDraft(JobOrderAnalysis $analysis, array $data, User $analyst): JobOrderAnalysis
     {
         $this->assertAnalystCanWorkOn($analysis, $analyst);
         $analysis->loadMissing('analysisType');
 
-        $value = $this->normalizedResultValue($analysis, $data['result_value'] ?? null);
+        $value = $this->optionalText($data['result_value'] ?? null);
+        $passFail = $this->normalizedPassFail($data['result_pass_fail'] ?? null);
         $measurement = $this->optionalText($data['result_measurement'] ?? null);
         $unit = $this->optionalText($data['result_unit'] ?? null);
+        $method = $this->optionalText($data['result_method'] ?? null);
 
-        if ($analysis->analysisType?->isPassFail() && $value !== null && ! in_array($value, ['Passed', 'Failed'], true)) {
+        if (($data['result_pass_fail'] ?? null) !== null
+            && trim((string) $data['result_pass_fail']) !== ''
+            && $passFail === null) {
             throw ValidationException::withMessages([
-                'result_value' => 'Select Passed or Failed.',
+                'result_pass_fail' => 'Select Passed or Failed.',
             ]);
         }
 
@@ -284,68 +447,91 @@ class JobOrderService
         }
 
         $analysis->update([
-            'assigned_to' => $analysis->assigned_to ?? $analyst->id,
+            'assigned_to' => $analyst->id,
             'result_value' => $value,
+            'result_pass_fail' => $passFail,
             'result_measurement' => $measurement,
             'result_unit' => $unit,
             'result_remarks' => $data['result_remarks'] ?? null,
+            'result_method' => $method,
             'status' => $analysis->status === JobOrderAnalysisStatus::Returned
                 ? JobOrderAnalysisStatus::Returned
                 : JobOrderAnalysisStatus::InProgress,
             'completed_at' => null,
         ]);
 
-        return $analysis->fresh(['jobOrder', 'analysisType', 'assignee']) ?? $analysis;
+        $fresh = $analysis->fresh(['jobOrder', 'analysisType', 'assignee']) ?? $analysis;
+
+        LabQueueUpdated::notify([
+            LabQueueUpdated::SCOPE_ANALYST,
+        ], $fresh->job_order_id);
+
+        return $fresh;
     }
 
     /**
-     * @param  array{result_value: string, result_measurement?: ?string, result_unit?: ?string, result_remarks?: ?string}  $data
+     * @param  array{result_value: string, result_pass_fail?: ?string, result_measurement?: ?string, result_unit?: ?string, result_remarks?: ?string, result_method?: ?string}  $data
      */
     public function completeAnalysis(JobOrderAnalysis $analysis, array $data, User $analyst): JobOrderAnalysis
     {
         $this->assertAnalystCanWorkOn($analysis, $analyst);
-        $analysis->loadMissing('analysisType');
+        $analysis->loadMissing(['analysisType', 'jobOrder.packages', 'jobOrder.analyses']);
 
-        $value = $this->normalizedResultValue($analysis, $data['result_value'] ?? null);
+        $value = $this->optionalText($data['result_value'] ?? null);
+        $passFail = $this->normalizedPassFail($data['result_pass_fail'] ?? null);
         $measurement = $this->optionalText($data['result_measurement'] ?? null);
         $unit = $this->optionalText($data['result_unit'] ?? null);
+        $method = $this->optionalText($data['result_method'] ?? null);
+        $requiresPassFail = $this->reports->requiresPassFail($analysis->jobOrder);
 
+        $errors = [];
         if (blank($value)) {
-            throw ValidationException::withMessages([
-                'result_value' => $analysis->analysisType?->isPassFail()
-                    ? 'Select Passed or Failed to complete this analysis.'
-                    : 'A result value is required to complete this analysis.',
-            ]);
+            $errors['result_value'] = 'A result value is required to complete this analysis.';
+        }
+        if ($requiresPassFail && $passFail === null) {
+            $errors['result_pass_fail'] = 'Select Passed or Failed to complete this analysis.';
+        }
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
         }
 
-        if ($analysis->analysisType?->isPassFail() && ! in_array($value, ['Passed', 'Failed'], true)) {
-            throw ValidationException::withMessages([
-                'result_value' => 'Select Passed or Failed.',
-            ]);
-        }
+        $wasCompleted = $analysis->status === JobOrderAnalysisStatus::Completed;
 
-        if ($analysis->status === JobOrderAnalysisStatus::Completed) {
-            throw ValidationException::withMessages([
-                'analysis' => 'Completed analyses cannot be edited here. Ask Head to return the line if a correction is needed.',
-            ]);
-        }
-
-        return DB::transaction(function () use ($analysis, $data, $analyst, $value, $measurement, $unit) {
-            $analysis->update([
-                'assigned_to' => $analysis->assigned_to ?? $analyst->id,
+        $fresh = DB::transaction(function () use ($analysis, $data, $analyst, $value, $passFail, $measurement, $unit, $method, $wasCompleted) {
+            $payload = [
                 'result_value' => $value,
+                'result_pass_fail' => $passFail,
                 'result_measurement' => $measurement,
                 'result_unit' => $unit,
                 'result_remarks' => $data['result_remarks'] ?? null,
+                'result_method' => $method,
                 'status' => JobOrderAnalysisStatus::Completed,
-                'completed_at' => now(),
-            ]);
+                'completed_at' => $wasCompleted
+                    ? ($analysis->completed_at ?? now())
+                    : now(),
+            ];
+
+            // First completion takes ownership; later corrections keep the original assignee.
+            if (! $wasCompleted) {
+                $payload['assigned_to'] = $analyst->id;
+            }
+
+            $analysis->update($payload);
 
             return $analysis->fresh(['jobOrder', 'analysisType', 'assignee']) ?? $analysis;
         });
+
+        LabQueueUpdated::notify([
+            LabQueueUpdated::SCOPE_ANALYST,
+        ], $fresh->job_order_id);
+
+        return $fresh;
     }
 
-    public function submitForReview(JobOrder $jobOrder, User $analyst): JobOrder
+    /**
+     * @param  list<array{name?: mixed, prc_id?: mixed}>|null  $signatories
+     */
+    public function submitForReview(JobOrder $jobOrder, User $analyst, ?array $signatories = null): JobOrder
     {
         if ($jobOrder->status !== JobOrderStatus::InAnalysis) {
             throw ValidationException::withMessages([
@@ -370,7 +556,23 @@ class JobOrderService
             ]);
         }
 
-        $jobOrder->update(['status' => JobOrderStatus::PendingReview]);
+        $resultForm = $this->reports->matchingControlledForm($jobOrder);
+        $updates = ['status' => JobOrderStatus::PendingReview];
+
+        if ($resultForm !== null) {
+            if ($signatories === null || $signatories === []) {
+                throw ValidationException::withMessages([
+                    'signatories' => 'Enter the analyst name and PRC before sending to Head.',
+                ]);
+            }
+
+            $updates['result_signatories'] = ResultSignatories::normalizeForStorage(
+                $signatories,
+                $resultForm,
+            );
+        }
+
+        $jobOrder->update($updates);
 
         User::role(['head_analysis', 'admin'])->get()->each(
             fn (User $user) => $user->notify(new JobOrderPendingReview($jobOrder))
@@ -460,7 +662,7 @@ class JobOrderService
                 fn (JobOrderAnalysis $line) => $line->status === JobOrderAnalysisStatus::Completed
                     && filled($line->result_value)
             );
-            $summary = $this->reports->forJobOrder($job, $user)->summary();
+            $summary = $this->reports->forJobOrder($job, $user, withValues: false)->summary();
             $previewLine = $job->analyses->first();
 
             return [
@@ -475,6 +677,7 @@ class JobOrderService
                     : null,
                 'missing' => $incomplete->pluck('name')->values()->all(),
                 'review_notes' => $job->review_notes,
+                'signatory' => $this->consolidationSignatoryPayload($job),
                 'lines' => $job->analyses->map(fn (JobOrderAnalysis $line) => [
                     'id' => $line->id,
                     'name' => $line->name,
@@ -490,17 +693,41 @@ class JobOrderService
     }
 
     /**
-     * Result forms the designated analyst may print after Head release.
+     * @return array<string, mixed>|null
+     */
+    private function consolidationSignatoryPayload(JobOrder $job): ?array
+    {
+        $form = $this->reports->matchingControlledForm($job);
+        if ($form === null) {
+            return null;
+        }
+
+        $payload = ResultSignatories::manifestPayload(
+            $job,
+            $form,
+            "/analyst/job-orders/{$job->id}/result-signatories",
+            $job->analyses,
+        );
+
+        // Submit posts signatories with send-to-head; save_url is only for later edits.
+        return $payload;
+    }
+
+    /**
+     * Result forms the designated analyst may preview/print and edit signatories
+     * after Send to Head (pending review) or after Head release.
      *
      * @return list<array<string, mixed>>
      */
     public function releasedResultPrintsFor(User $user): array
     {
         $jobs = JobOrder::query()
-            ->where('status', JobOrderStatus::ReadyForPickup)
-            ->whereNotNull('reviewed_at')
+            ->whereIn('status', [
+                JobOrderStatus::PendingReview,
+                JobOrderStatus::ReadyForPickup,
+            ])
             ->with(['analyses', 'packages'])
-            ->latest('reviewed_at')
+            ->latest('id')
             ->limit(40)
             ->get()
             ->filter(function (JobOrder $job) use ($user) {
@@ -520,22 +747,35 @@ class JobOrderService
             ->values();
 
         return $jobs->map(function (JobOrder $job) use ($user) {
-            $summary = $this->reports->forJobOrder($job, $user)->summary();
+            $summary = $this->reports->forJobOrder($job, $user, withValues: false)->summary();
             $previewLine = $job->analyses->first();
+            $form = $this->reports->matchingControlledForm($job);
+            $previewUrl = $previewLine
+                ? "/analyst/tasks/{$previewLine->id}/report"
+                : null;
 
             return [
                 'id' => $job->id,
                 'reference_no' => $job->reference_no,
                 'customer_name' => $job->customer_name,
-                'can_print' => $summary['can_print'],
-                'print_url' => $previewLine
-                    ? "/analyst/tasks/{$previewLine->id}/report"
+                'job_status' => $job->status->value,
+                'can_print' => (bool) ($summary['can_print'] ?? false),
+                'can_preview' => (bool) ($summary['can_preview'] ?? false),
+                'print_url' => $previewUrl,
+                'preview_url' => $previewUrl,
+                'signatory' => $form
+                    ? ResultSignatories::manifestPayload(
+                        $job,
+                        $form,
+                        "/analyst/job-orders/{$job->id}/result-signatories",
+                        $job->analyses,
+                    )
                     : null,
             ];
         })->all();
     }
 
-    private function normalizedResultValue(JobOrderAnalysis $analysis, mixed $value): ?string
+    private function normalizedPassFail(mixed $value): ?string
     {
         if ($value === null) {
             return null;
@@ -546,16 +786,12 @@ class JobOrderService
             return null;
         }
 
-        if (! $analysis->analysisType?->isPassFail()) {
-            return $text;
-        }
-
         $normalized = mb_strtolower($text);
 
         return match (true) {
             in_array($normalized, ['passed', 'pass'], true) => 'Passed',
             in_array($normalized, ['failed', 'fail'], true) => 'Failed',
-            default => $text,
+            default => null,
         };
     }
 
@@ -572,19 +808,37 @@ class JobOrderService
 
     private function assertAnalystCanWorkOn(JobOrderAnalysis $analysis, User $analyst): void
     {
-        $analysis->loadMissing('jobOrder');
+        $analysis->loadMissing(['jobOrder', 'analysisType']);
 
-        if ($analysis->jobOrder?->status !== JobOrderStatus::InAnalysis) {
+        $jobStatus = $analysis->jobOrder?->status;
+        $allowed = [
+            JobOrderStatus::InAnalysis,
+            JobOrderStatus::PendingReview,
+            JobOrderStatus::ReadyForPickup,
+        ];
+
+        if (! in_array($jobStatus, $allowed, true)) {
             throw ValidationException::withMessages([
-                'analysis' => 'This job is not available for analysis yet. Receiving must finalize pricing and mark it received first.',
+                'analysis' => 'This job is not available for analysis encoding. Receiving must finalize pricing and mark it received first.',
             ]);
         }
 
-        if ($analysis->assigned_to && $analysis->assigned_to !== $analyst->id && ! $analyst->hasRole('admin')) {
-            throw ValidationException::withMessages([
-                'analysis' => 'This task is assigned to another analyst.',
-            ]);
+        if ($analyst->hasRole('admin')) {
+            return;
         }
+
+        if ((int) $analysis->assigned_to === (int) $analyst->id) {
+            return;
+        }
+
+        $typeId = $analysis->analysis_type_id;
+        if ($typeId && $analyst->analysisTypes()->where('analysis_types.id', $typeId)->exists()) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'analysis' => 'You are not qualified for this analysis type. Ask an admin to update Assignments.',
+        ]);
     }
 
     public function sign(JobOrder $jobOrder, User $reviewer, ?string $notes = null): JobOrder
@@ -612,7 +866,10 @@ class JobOrderService
             Mail::to($jobOrder->customer_email)->send(new ResultsReadyMail($jobOrder));
         }
 
-        $fresh = $jobOrder->fresh(['samples', 'analyses', 'reviewer']) ?? $jobOrder;
+        $fresh = $jobOrder->fresh(['samples', 'analyses.assignee', 'packages.signatory', 'reviewer']) ?? $jobOrder;
+
+        $this->notifyResultsReleased($fresh);
+
         LabQueueUpdated::notify([
             LabQueueUpdated::SCOPE_HEAD,
             LabQueueUpdated::SCOPE_RECEIVING,
@@ -647,12 +904,9 @@ class JobOrderService
      */
     public function returnAnalyses(JobOrder $jobOrder, iterable $analysisIds, User $reviewer, ?string $notes = null): JobOrder
     {
-        if (! in_array($jobOrder->status, [
-            JobOrderStatus::PendingReview,
-            JobOrderStatus::ReadyForPickup,
-        ], true)) {
+        if ($jobOrder->status !== JobOrderStatus::PendingReview || $jobOrder->reviewed_at !== null) {
             throw ValidationException::withMessages([
-                'job_order' => 'Only jobs pending Head review can be returned.',
+                'job_order' => 'Only jobs awaiting result release can be returned. Released results cannot be returned.',
             ]);
         }
 
@@ -664,15 +918,17 @@ class JobOrderService
             $analyses->each(function (JobOrderAnalysis $analysis) {
                 $analysis->update([
                     'result_value' => null,
+                    'result_pass_fail' => null,
                     'result_measurement' => null,
                     'result_unit' => null,
                     'result_remarks' => null,
+                    'result_method' => null,
                     'completed_at' => null,
                     'status' => JobOrderAnalysisStatus::Returned,
                 ]);
 
                 if ($analysis->assignee instanceof User) {
-                    $analysis->assignee->notify(new TaskAssigned($analysis->jobOrder, $analysis));
+                    $analysis->assignee->notify(new AnalysisReturned($analysis->jobOrder, $analysis));
                 }
             });
 
@@ -681,6 +937,7 @@ class JobOrderService
                 'reviewed_by' => null,
                 'reviewed_at' => null,
                 'review_notes' => $notes,
+                'result_signatories' => null,
             ]);
 
             return $jobOrder->fresh(['samples', 'analyses.assignee']) ?? $jobOrder;
@@ -692,5 +949,48 @@ class JobOrderService
         ], $jobOrder->id);
 
         return $jobOrder;
+    }
+
+    private function notifyResultsReleased(JobOrder $jobOrder): void
+    {
+        $jobOrder->loadMissing(['analyses', 'packages']);
+
+        $signatoryIds = $jobOrder->packages
+            ->pluck('signatory_user_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $analystIds = $signatoryIds->isNotEmpty()
+            ? $signatoryIds
+            : $jobOrder->analyses
+                ->pluck('assigned_to')
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+
+        $notifiedIds = [];
+
+        if ($analystIds->isNotEmpty()) {
+            User::query()
+                ->whereIn('id', $analystIds->all())
+                ->get()
+                ->each(function (User $user) use ($jobOrder, &$notifiedIds) {
+                    $user->notify(new ResultsReleased($jobOrder, ResultsReleased::AUDIENCE_ANALYST));
+                    $notifiedIds[(int) $user->id] = true;
+                });
+        }
+
+        User::role(['receiving', 'admin'])
+            ->get()
+            ->each(function (User $user) use ($jobOrder, $notifiedIds) {
+                if (isset($notifiedIds[(int) $user->id])) {
+                    return;
+                }
+
+                $user->notify(new ResultsReleased($jobOrder, ResultsReleased::AUDIENCE_RECEIVING));
+            });
     }
 }

@@ -45,11 +45,11 @@ export default function NeedsAttentionPanel({
         <section
             className={cn(
                 'rounded-xl border border-amber-200/90 bg-amber-50/40 shadow-sm',
-                compact ? 'px-4 py-3' : 'border-amber-300/80 bg-gradient-to-br from-amber-50 to-white p-5',
+                compact ? 'px-4 py-2.5' : 'border-amber-300/80 bg-gradient-to-br from-amber-50 to-white p-5',
             )}
             aria-labelledby="needs-attention-heading"
         >
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                     <AlertTriangle
                         className="size-4 shrink-0 text-amber-700"
@@ -69,7 +69,7 @@ export default function NeedsAttentionPanel({
                     <Button
                         asChild
                         size="sm"
-                        className="shrink-0 bg-[#1A3694] hover:bg-[#365BB0]"
+                        className="w-full shrink-0 bg-[#1A3694] hover:bg-[#365BB0] sm:w-auto"
                     >
                         <Link href={data.action.href}>{data.action.label}</Link>
                     </Button>

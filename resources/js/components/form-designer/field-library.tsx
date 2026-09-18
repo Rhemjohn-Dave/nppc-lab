@@ -121,7 +121,7 @@ export default function FieldLibrary({
     }
 
     return (
-        <aside className="flex h-full min-h-0 flex-col bg-white">
+        <aside className="flex min-h-0 flex-1 flex-col bg-white">
             {/* Fixed header */}
             <div className="shrink-0 border-b px-3 py-3">
                 <h2 className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">

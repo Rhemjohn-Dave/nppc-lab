@@ -67,7 +67,7 @@ export default function DashboardHeader(props: Props) {
                     compact ? 'p-4' : 'p-5 md:p-6',
                 )}
             >
-                <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                     <div className="flex min-w-0 flex-1 items-start gap-3">
                         {Icon && (
                             <div
@@ -87,7 +87,9 @@ export default function DashboardHeader(props: Props) {
                             <h1
                                 className={cn(
                                     'font-heading font-semibold text-[#1A3694]',
-                                    compact ? 'text-2xl' : 'text-2xl md:text-3xl',
+                                    compact
+                                        ? 'text-xl sm:text-2xl'
+                                        : 'text-2xl md:text-3xl',
                                 )}
                             >
                                 {title}
@@ -130,7 +132,7 @@ export default function DashboardHeader(props: Props) {
                         <Button
                             asChild
                             size={compact ? 'default' : 'lg'}
-                            className="shrink-0 bg-[#1A3694] hover:bg-[#365BB0]"
+                            className="w-full shrink-0 bg-[#1A3694] hover:bg-[#365BB0] sm:w-auto"
                         >
                             <Link href={primaryAction.href}>
                                 {primaryAction.label}

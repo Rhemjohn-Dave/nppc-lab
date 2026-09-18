@@ -36,12 +36,12 @@ class ControlledFormTest extends TestCase
         $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
 
+        $form = ControlledForm::query()
+            ->where('form_code', ControlledForm::RFA_FORM_CODE)
+            ->firstOrFail();
+
         $this->actingAs($admin)
-            ->post('/admin/controlled-forms', [
-                'form_code' => 'NPPC-LAB-FRM-001',
-                'name' => 'Request for Analysis Form / Job Order',
-                'department' => 'Laboratory',
-                'category' => ControlledFormCategory::JobOrder->value,
+            ->post("/admin/controlled-forms/{$form->id}/revisions", [
                 'revision' => '03',
                 'effective_date' => '2026-08-01',
                 'file' => $this->makeBlankFolioPdf(),
@@ -49,7 +49,7 @@ class ControlledFormTest extends TestCase
             ])
             ->assertRedirect();
 
-        $form = ControlledForm::query()->where('form_code', 'NPPC-LAB-FRM-001')->firstOrFail();
+        $form->refresh();
         $revision = $form->activeRevision();
         $this->assertNotNull($revision);
         $this->assertTrue($revision->hasCanonicalPdf());
@@ -110,6 +110,36 @@ class ControlledFormTest extends TestCase
         $this->assertDatabaseCount('generated_documents', 0);
     }
 
+    public function test_rfa_pdf_requires_active_controlled_form_canonical_pdf(): void
+    {
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $form = ControlledForm::query()
+            ->where('form_code', ControlledForm::RFA_FORM_CODE)
+            ->firstOrFail();
+
+        foreach ($form->revisions as $revision) {
+            $revision->update([
+                'canonical_pdf_path' => null,
+                'canonical_pdf_sha256' => null,
+            ]);
+        }
+
+        $job = JobOrder::query()->create([
+            'reference_no' => '26-NOCAN',
+            'customer_name' => 'No Canonical Corp',
+            'customer_address' => 'Bacolod',
+            'status' => JobOrderStatus::ReadyForPickup,
+            'reviewed_at' => now(),
+            'total_cost' => 0,
+        ]);
+
+        $this->actingAs($receiving)
+            ->get("/receiving/{$job->id}/pdf")
+            ->assertStatus(422);
+    }
+
     public function test_superseded_revision_cannot_generate_new_official_document(): void
     {
         $this->seed();
@@ -117,18 +147,19 @@ class ControlledFormTest extends TestCase
 
         $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
 
+        $form = ControlledForm::query()
+            ->where('form_code', ControlledForm::RFA_FORM_CODE)
+            ->firstOrFail();
+
         $this->actingAs($admin)
-            ->post('/admin/controlled-forms', [
-                'form_code' => 'NPPC-LAB-FRM-001',
-                'name' => 'Request for Analysis Form / Job Order',
-                'category' => ControlledFormCategory::JobOrder->value,
+            ->post("/admin/controlled-forms/{$form->id}/revisions", [
                 'revision' => '02',
                 'file' => $this->makeBlankFolioPdf(),
                 'activate' => 1,
             ])
             ->assertRedirect();
 
-        $form = ControlledForm::query()->firstOrFail();
+        $form->refresh();
         $old = $form->activeRevision();
         $this->assertNotNull($old);
 
@@ -326,26 +357,38 @@ class ControlledFormTest extends TestCase
         );
     }
 
-    public function test_package_binding_exposes_named_result_sources(): void
+    public function test_admin_can_rename_a_controlled_form(): void
     {
         $this->seed();
-        Storage::fake('local');
 
         $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
-        $package = AnalysisPackage::query()->where('code', 'PKG-MIC-NDW')->firstOrFail();
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO3')->firstOrFail();
+        $typeIds = $form->orderedTypeIds();
+        $this->assertNotEmpty($typeIds);
 
         $this->actingAs($admin)
-            ->post('/admin/controlled-forms', [
-                'form_code' => 'LSP-78-FO4',
-                'name' => 'Micro non-drinking water result',
-                'category' => ControlledFormCategory::AnalysisResult->value,
-                'revision' => '10',
-                'file' => $this->makeBlankFolioPdf(),
-                'analysis_package_id' => $package->id,
+            ->put("/admin/controlled-forms/{$form->id}", [
+                'name' => 'DW Physico Issue 11 (renamed)',
+                'description' => 'Updated Document Control label.',
+                'department' => 'Laboratory',
+                'analysis_type_ids' => $typeIds,
             ])
             ->assertRedirect();
 
-        $form = ControlledForm::query()->where('form_code', 'LSP-78-FO4')->firstOrFail();
+        $form->refresh();
+        $this->assertSame('DW Physico Issue 11 (renamed)', $form->name);
+        $this->assertSame('Updated Document Control label.', $form->description);
+        $this->assertNull($form->analysis_package_id);
+        $this->assertSame($typeIds, $form->orderedTypeIds());
+    }
+
+    public function test_package_binding_exposes_named_result_sources(): void
+    {
+        $this->seed();
+
+        $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
+        $package = AnalysisPackage::query()->where('code', 'PKG-MIC-NDW')->firstOrFail();
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO4')->firstOrFail();
         $this->assertSame($package->id, $form->analysis_package_id);
         $this->assertSame(
             ControlledFormService::combinationKey($package->orderedTypeIds()),
@@ -506,6 +549,54 @@ class ControlledFormTest extends TestCase
         $this->assertSame($active->id, $form->current_revision_id);
     }
 
+    public function test_designer_preview_uses_posted_fields_without_saving(): void
+    {
+        $this->seed();
+        Storage::fake('local');
+
+        $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
+        $this->actingAs($admin)
+            ->post('/admin/controlled-forms', [
+                'form_code' => 'NPPC-LAB-PREVIEW-TMP',
+                'name' => 'Preview scratch form',
+                'category' => ControlledFormCategory::JobOrder->value,
+                'revision' => '01',
+                'file' => $this->makeBlankFolioPdf(),
+            ])
+            ->assertRedirect();
+
+        $form = ControlledForm::query()
+            ->where('form_code', 'NPPC-LAB-PREVIEW-TMP')
+            ->firstOrFail();
+        $revision = $form->revisions()->firstOrFail();
+        $revision->fields()->delete();
+
+        $this->assertSame(0, $revision->fields()->count());
+
+        $response = $this->actingAs($admin)
+            ->post("/admin/controlled-forms/{$form->id}/revisions/{$revision->id}/preview", [
+                'fields' => [
+                    [
+                        'name' => 'unsaved_customer',
+                        'label' => 'Customer',
+                        'field_type' => 'text',
+                        'page_number' => 1,
+                        'x' => 20,
+                        'y' => 30,
+                        'width' => 40,
+                        'height' => 5,
+                        'font_size' => 11,
+                        'data_source_key' => 'job_orders.customer_name',
+                    ],
+                ],
+            ]);
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF', $response->getContent());
+        $this->assertSame(0, $revision->fields()->count());
+    }
+
     public function test_analysis_result_form_requires_bound_tests(): void
     {
         $this->seed();
@@ -524,6 +615,132 @@ class ControlledFormTest extends TestCase
             ])
             ->assertRedirect('/admin/controlled-forms')
             ->assertSessionHasErrors('analysis_type_ids');
+    }
+
+    public function test_saving_fields_touches_revision_and_busts_overlay_pdf_cache(): void
+    {
+        $this->seed();
+        Storage::fake('local');
+
+        $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
+        $package = AnalysisPackage::query()->where('code', 'PKG-MIC-NDW')->firstOrFail();
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO4')->firstOrFail();
+
+        $this->actingAs($admin)
+            ->post("/admin/controlled-forms/{$form->id}/revisions", [
+                'revision' => 'cache-bust',
+                'file' => $this->makeBlankFolioPdf('FO4 cache bust'),
+                'activate' => 1,
+                'fill_mode' => 'overlay',
+                'analysis_package_id' => $package->id,
+            ])
+            ->assertRedirect();
+
+        $form->refresh();
+        $revision = $form->activeRevision();
+        $this->assertNotNull($revision);
+
+        $fields = [
+            [
+                'name' => 'results.customer',
+                'label' => 'Customer',
+                'field_type' => 'text',
+                'page_number' => 1,
+                'x' => 40,
+                'y' => 40,
+                'width' => 50,
+                'height' => 5,
+                'font_size' => 11,
+                'data_source_key' => 'results.customer',
+            ],
+        ];
+
+        $this->actingAs($admin)
+            ->put("/admin/controlled-forms/{$form->id}/revisions/{$revision->id}/fields", [
+                'fields' => $fields,
+            ])
+            ->assertRedirect();
+
+        $revision->refresh();
+        $touchedAt = $revision->updated_at?->getTimestamp();
+        $this->assertNotNull($touchedAt);
+
+        $this->travel(2)->seconds();
+
+        $fields[0]['font_size'] = 18;
+        $fields[0]['x'] = 55;
+
+        $this->actingAs($admin)
+            ->put("/admin/controlled-forms/{$form->id}/revisions/{$revision->id}/fields", [
+                'fields' => $fields,
+            ])
+            ->assertRedirect();
+
+        $revision->refresh();
+        $this->assertGreaterThan($touchedAt, $revision->updated_at?->getTimestamp());
+        $this->assertSame(18.0, (float) $revision->fields()->firstOrFail()->font_size);
+        $this->assertEqualsWithDelta(55.0, (float) $revision->fields()->firstOrFail()->x, 0.01);
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'Cache Bust Customer',
+            'customer_email' => 'cache-bust@example.com',
+            'classification' => 'Wastewater',
+            'samples' => [
+                ['description' => 'Effluent', 'matrix' => 'Liquid'],
+            ],
+            'package_ids' => [$package->id],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $revision->forceFill(['fill_mode' => 'overlay'])->save();
+
+        $fillCalls = 0;
+        $this->mock(\App\Services\ControlledPdfFiller::class, function ($mock) use (&$fillCalls) {
+            $mock->shouldReceive('fill')
+                ->andReturnUsing(function () use (&$fillCalls) {
+                    $fillCalls++;
+
+                    return '%PDF-1.4 overlay-'.$fillCalls;
+                });
+        });
+
+        $reports = app(\App\Services\AnalysisResultReportResolver::class);
+        $makeResolved = function () use ($job, $form, $revision) {
+            $freshRevision = $revision->fresh(['fields']);
+
+            return new \App\Support\AnalysisResultReport(
+                kind: \App\Support\AnalysisResultReport::KIND_COMBINED,
+                filename: 'Result-cache-bust.pdf',
+                title: 'FO4',
+                message: null,
+                jobOrder: $job->fresh(['analyses', 'packages', 'samples']),
+                analyses: $job->analyses,
+                values: ['results.customer' => 'Cache Bust Customer'],
+                controlledForm: $form->fresh(),
+                controlledRevision: $freshRevision,
+            );
+        };
+
+        $first = $reports->renderOverlayPdf($makeResolved());
+        $this->assertSame('%PDF-1.4 overlay-1', $first);
+        $this->assertSame(1, $fillCalls);
+
+        // Same layout → cache hit (no second fill).
+        $cached = $reports->renderOverlayPdf($makeResolved());
+        $this->assertSame($first, $cached);
+        $this->assertSame(1, $fillCalls);
+
+        $this->travel(2)->seconds();
+        $fields[0]['font_size'] = 9;
+        $this->actingAs($admin)
+            ->put("/admin/controlled-forms/{$form->id}/revisions/{$revision->id}/fields", [
+                'fields' => $fields,
+            ])
+            ->assertRedirect();
+
+        $second = $reports->renderOverlayPdf($makeResolved());
+        $this->assertSame('%PDF-1.4 overlay-2', $second);
+        $this->assertSame(2, $fillCalls);
     }
 
     private function revisionWithPdf(ControlledForm $form, string $number, User $admin): ControlledFormRevision

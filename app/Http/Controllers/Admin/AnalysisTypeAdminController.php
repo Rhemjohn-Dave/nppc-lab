@@ -7,6 +7,7 @@ use App\Models\AnalysisCategory;
 use App\Models\AnalysisType;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -18,6 +19,7 @@ class AnalysisTypeAdminController extends Controller
     public function index(): Response
     {
         $categories = AnalysisCategory::query()
+            ->orderByDesc('is_active')
             ->orderBy('sort_order')
             ->orderBy('name')
             ->withCount('analysisTypes')
@@ -37,6 +39,8 @@ class AnalysisTypeAdminController extends Controller
                     'id' => $type->id,
                     'code' => $type->code,
                     'name' => $type->name,
+                    'method' => $type->method,
+                    'acceptable_values' => $type->acceptable_values,
                     'category_id' => $type->category_id,
                     'category' => $type->category?->slug,
                     'category_label' => $type->category?->name,
@@ -55,16 +59,19 @@ class AnalysisTypeAdminController extends Controller
             ];
         })->values();
 
+        $categoryOptions = $categories->map(fn (AnalysisCategory $category) => [
+            'id' => $category->id,
+            'value' => (string) $category->id,
+            'slug' => $category->slug,
+            'label' => $category->name,
+            'is_active' => $category->is_active,
+            'procedures_count' => $category->analysis_types_count,
+        ])->values();
+
         return Inertia::render('admin/prices', [
             'groups' => $grouped,
-            'categories' => $categories->map(fn (AnalysisCategory $category) => [
-                'id' => $category->id,
-                'value' => (string) $category->id,
-                'slug' => $category->slug,
-                'label' => $category->name,
-                'is_active' => $category->is_active,
-                'procedures_count' => $category->analysis_types_count,
-            ])->values(),
+            'categories' => $categoryOptions->where('is_active', true)->values(),
+            'all_categories' => $categoryOptions,
         ]);
     }
 
@@ -120,6 +127,8 @@ class AnalysisTypeAdminController extends Controller
         $data = $request->validate([
             'code' => ['required', 'string', 'max:30', 'unique:analysis_types,code'],
             'name' => ['required', 'string', 'max:255'],
+            'method' => ['nullable', 'string', 'max:255'],
+            'acceptable_values' => ['nullable', 'string', 'max:2000'],
             'category_id' => ['required', 'integer', 'exists:analysis_categories,id'],
             'default_price' => ['required', 'numeric', 'min:0'],
             'is_active' => ['sometimes', 'boolean'],
@@ -130,6 +139,10 @@ class AnalysisTypeAdminController extends Controller
         AnalysisType::query()->create([
             'code' => strtoupper(trim($data['code'])),
             'name' => trim($data['name']),
+            'method' => filled($data['method'] ?? null) ? trim((string) $data['method']) : null,
+            'acceptable_values' => filled($data['acceptable_values'] ?? null)
+                ? trim((string) $data['acceptable_values'])
+                : null,
             'category_id' => $data['category_id'],
             'default_price' => $data['default_price'],
             'is_active' => $data['is_active'] ?? true,
@@ -149,6 +162,8 @@ class AnalysisTypeAdminController extends Controller
                 Rule::unique('analysis_types', 'code')->ignore($analysisType->id),
             ],
             'name' => ['required', 'string', 'max:255'],
+            'method' => ['nullable', 'string', 'max:255'],
+            'acceptable_values' => ['nullable', 'string', 'max:2000'],
             'category_id' => ['required', 'integer', 'exists:analysis_categories,id'],
             'default_price' => ['required', 'numeric', 'min:0'],
             'is_active' => ['required', 'boolean'],
@@ -157,12 +172,41 @@ class AnalysisTypeAdminController extends Controller
         $analysisType->update([
             'code' => strtoupper(trim($data['code'])),
             'name' => trim($data['name']),
+            'method' => filled($data['method'] ?? null) ? trim((string) $data['method']) : null,
+            'acceptable_values' => filled($data['acceptable_values'] ?? null)
+                ? trim((string) $data['acceptable_values'])
+                : null,
             'category_id' => $data['category_id'],
             'default_price' => $data['default_price'],
             'is_active' => $data['is_active'],
         ]);
 
         return back()->with('success', 'Procedure updated.');
+    }
+
+    public function destroy(AnalysisType $analysisType): RedirectResponse
+    {
+        if ($analysisType->jobOrderAnalyses()->exists()) {
+            throw ValidationException::withMessages([
+                'procedure' => 'This procedure is used on job orders. Deactivate it instead of deleting.',
+            ]);
+        }
+
+        if ($analysisType->packages()->exists()) {
+            throw ValidationException::withMessages([
+                'procedure' => 'Remove this procedure from all packages before deleting.',
+            ]);
+        }
+
+        $analysisType->analysts()->detach();
+        DB::table('controlled_form_binding_types')
+            ->where('analysis_type_id', $analysisType->id)
+            ->delete();
+
+        $code = $analysisType->code;
+        $analysisType->delete();
+
+        return back()->with('success', "Procedure “{$code}” deleted.");
     }
 
     private function uniqueSlug(string $name): string

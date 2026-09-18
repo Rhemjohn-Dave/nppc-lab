@@ -1,0 +1,47 @@
+---
+description: Controlled PDF forms, designer fields, and result/RFA mapping rules
+globs: app/Services/Controlled*.php,app/Services/FieldValueResolver.php,app/Models/ControlledForm.php,config/controlled_form*.php,config/*form_fields.php,resources/js/pages/admin/**/form-designer*,docs/CONTROLLED*.md,docs/DYNAMIC*.md
+alwaysApply: false
+---
+
+# Controlled PDF forms (not React intake UI)
+
+The **uploaded PDF is the source of truth**. The Form Designer places overlays; production fill uses `ControlledPdfFiller` + whitelisted sources in `config/controlled_form_sources.php`.
+
+## Binding modes
+
+| Use case | Binding | Notes |
+|----------|---------|--------|
+| Job Order / RFA | `job_order_variant` general \| aqua | `ControlledForm::jobOrderFormFor($job)` |
+| Package results | `analysis_package_id` + `report_layout` | `controlled_form` = fixed slots (`-` for waived); `dynamic_matrix` = rows only for selected tests |
+| Types-only results | Exact type set / subset rules | See `AnalysisResultReportResolver` |
+
+Tag forms in **Controlled Forms admin**, not free-text codes on packages.
+
+## RFA layout pitfalls
+
+- **Sample grid (dual column):** map `sample_code_N` + `control_number_N` (N=1…9). Do **not** use `samples[]` for underline pairs.
+- **Billing grid:** map `bill_param_N`, `bill_price_N`, `bill_total_N` (1–14) + `billing_total`. Do **not** use `analyses[]` for the paper grid.
+- Control numbers: `SampleControlNumber` — one sample = ref only; 2+ = ref + `A`, `B`, `C`…
+
+## Dynamic test matrix
+
+- One **Dynamic test matrix** region in designer; package `report_layout = dynamic_matrix`.
+- Waived tests **omit rows** (not dashes). Details: `docs/DYNAMIC_CONTROLLED_FORMS.md`.
+- Nested method under each TEST row: `result_method` → Procedures (`analysis_types.method`) → catalog fallback.
+- **Test Methods / References** (or equivalent block below the table): map Multiline **`results.test_methods_references`**. Same method resolution and selected-test order as the matrix; never leave static methods ink as the live source of truth. Prefer a blank methods area on the PDF; `options.cover` is allowed **only** to blank obsolete printed methods text on that overlay.
+
+## Adding a new official form
+
+1. Add shell/registry entry (`OfficialAnalysisCatalog`, migration seed if needed).
+2. Place PDF under `resources/forms/official/`; admin uploads to revision.
+3. Map fields in Form Designer; add **`config/*_form_fields.php`** only when seeding designer presets (follow existing FO3/FO4/RFA files).
+4. If the sheet has a Methods/References footer, map **`results.test_methods_references`** (see above).
+5. Bind package or types; add/adjust PHPUnit if resolver or fill behavior changes.
+
+## Never
+
+- Run arbitrary SQL from designer field keys — keys must match `controlled_form_sources` whitelist.
+- Replace production PDF path with Blade/HTML templates for controlled outputs.
+- Rely on static “Test Methods and References” (or similar) ink on the uploaded PDF for live method text.
+- Re-derive designer page millimetres from client pdf.js alone, or add ad-hoc canvas scale factors — see **`form-designer-pdf-parity.mdc`**.

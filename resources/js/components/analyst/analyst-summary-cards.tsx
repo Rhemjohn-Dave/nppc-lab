@@ -47,26 +47,28 @@ export default function AnalystSummaryCards({
                         type="button"
                         onClick={() => onSelect(card.id)}
                         className={cn(
-                            'rounded-xl border bg-gradient-to-br p-4 text-left transition',
+                            'flex items-baseline justify-between gap-3 rounded-xl border bg-gradient-to-br p-3 text-left transition',
                             tones[tone],
                             active
                                 ? 'border-[#1A3694] ring-2 ring-[#1A3694]/25'
                                 : 'hover:border-[#5282D3]',
                         )}
                     >
-                        <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                            {card.label}
-                        </p>
+                        <div className="min-w-0">
+                            <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                                {card.label}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                                {card.unit}
+                            </p>
+                        </div>
                         <p
                             className={cn(
-                                'mt-1 font-heading text-3xl font-semibold',
+                                'font-heading text-2xl font-semibold tabular-nums',
                                 valueTones[tone],
                             )}
                         >
                             {card.value}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                            {card.unit}
                         </p>
                     </button>
                 );

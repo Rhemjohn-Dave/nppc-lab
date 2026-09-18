@@ -22,10 +22,10 @@ export default function AnalystDashboard({
     const viewAllLabel = links.primary?.label ?? 'Open Analyst Workspace';
 
     return (
-        <div className="flex flex-col gap-6">
-            <NeedsAttentionPanel data={needsAttention} />
-            <KpiGrid kpis={kpis} />
-            <section className="space-y-3">
+        <div className="flex flex-col gap-3 md:gap-4">
+            <NeedsAttentionPanel data={needsAttention} compact />
+            <KpiGrid kpis={kpis} compact />
+            <section className="space-y-2">
                 <h2 className="text-xs font-semibold tracking-wide text-[#1A3694] uppercase">
                     {queue.title}
                 </h2>
@@ -34,6 +34,7 @@ export default function AnalystDashboard({
                     empty={queue.empty}
                     viewAllHref={viewAllHref}
                     viewAllLabel={viewAllLabel}
+                    compact
                 />
             </section>
             <RecentActivity data={activity} compact />

@@ -9,10 +9,11 @@ use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
 use App\Models\User;
 use App\Services\AnalysisResultReportResolver;
-use App\Services\ControlledPdfFiller;
 use App\Services\JobOrderService;
 use App\Support\AnalysisResultPdfExporter;
 use App\Support\AnalysisResultReport;
+use App\Support\DynamicTestMatrix;
+use App\Support\ResultSignatories;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -55,9 +56,27 @@ class AnalystController extends Controller
         $completedQuery = JobOrderAnalysis::query()
             ->where('status', JobOrderAnalysisStatus::Completed);
 
-        if (! $user->hasRole('admin')) {
-            $openQuery->where('assigned_to', $user->id);
-            $completedQuery->where('assigned_to', $user->id);
+        $isAdmin = $user->hasRole('admin');
+        $qualifiedTypeIds = $isAdmin
+            ? []
+            : $user->analysisTypes()
+                ->pluck('analysis_types.id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+        if (! $isAdmin) {
+            $openQuery->where(function ($query) use ($user, $qualifiedTypeIds) {
+                $query->where('assigned_to', $user->id);
+                if ($qualifiedTypeIds !== []) {
+                    $query->orWhereIn('analysis_type_id', $qualifiedTypeIds);
+                }
+            });
+            $completedQuery->where(function ($query) use ($user, $qualifiedTypeIds) {
+                $query->where('assigned_to', $user->id);
+                if ($qualifiedTypeIds !== []) {
+                    $query->orWhereIn('analysis_type_id', $qualifiedTypeIds);
+                }
+            });
         }
 
         $showingCompleted = $statusFilter === JobOrderAnalysisStatus::Completed->value;
@@ -150,9 +169,8 @@ class AnalystController extends Controller
         $jobs = $jobsQuery->paginate(10)->withQueryString();
 
         $pageJobIds = $jobs->getCollection()->pluck('id');
-        $isAdmin = $user->hasRole('admin');
 
-        // Include every line on page jobs so analysts can see teammate assignments.
+        // Include every line on page jobs so analysts can see teammate suggestions.
         $tasks = JobOrderAnalysis::query()
             ->with(['jobOrder.samples', 'analysisType', 'assignee:id,name'])
             ->whereIn('job_order_id', $pageJobIds)
@@ -173,15 +191,23 @@ class AnalystController extends Controller
             ->values();
 
         $reportByJob = [];
+        $requiresPassFailByJob = [];
         foreach ($tasks as $task) {
             $jobId = $task->job_order_id;
             if (! isset($reportByJob[$jobId])) {
-                $reportByJob[$jobId] = $this->reports->forJobOrder($task->jobOrder, $user)->summary();
+                $reportByJob[$jobId] = $this->reports->forJobOrder($task->jobOrder, $user, withValues: false)->summary();
+                $requiresPassFailByJob[$jobId] = $this->reports->requiresPassFail($task->jobOrder);
             }
         }
 
-        $tasks = $tasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin, $reportByJob) {
+        $tasks = $tasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin, $qualifiedTypeIds, $reportByJob, $requiresPassFailByJob) {
             $isMine = $isAdmin || (int) $task->assigned_to === (int) $user->id;
+            $canWork = $isAdmin
+                || $isMine
+                || (
+                    $task->analysis_type_id
+                    && in_array((int) $task->analysis_type_id, $qualifiedTypeIds, true)
+                );
 
             return [
                 'id' => $task->id,
@@ -191,14 +217,19 @@ class AnalystController extends Controller
                 'status' => $task->status->value,
                 'status_label' => $task->status->label(),
                 'result_value' => $task->result_value,
+                'result_pass_fail' => $task->result_pass_fail,
                 'result_measurement' => $task->result_measurement,
                 'result_unit' => $task->result_unit,
                 'result_remarks' => $task->result_remarks,
+                'result_method' => $task->result_method,
+                'procedure_method' => DynamicTestMatrix::methodForAnalysisType($task->analysisType),
                 'result_mode' => $task->analysisType?->isPassFail() ? 'pass_fail' : 'value',
+                'requires_pass_fail' => (bool) ($requiresPassFailByJob[$task->job_order_id] ?? true),
                 'updated_at' => $task->updated_at?->toIso8601String(),
                 'assigned_to' => $task->assigned_to,
                 'assignee_name' => $task->assignee?->name,
                 'is_mine' => $isMine,
+                'can_work' => $canWork,
                 'report' => $this->taskReportSummary($reportByJob[$task->job_order_id] ?? null, $task->jobOrder),
                 'job_order' => [
                     'id' => $task->jobOrder->id,
@@ -244,9 +275,11 @@ class AnalystController extends Controller
     {
         $data = $request->validate([
             'result_value' => ['nullable', 'string', 'max:255'],
+            'result_pass_fail' => ['nullable', 'string', 'max:20'],
             'result_measurement' => ['nullable', 'string', 'max:80'],
             'result_unit' => ['nullable', 'string', 'max:50'],
             'result_remarks' => ['nullable', 'string', 'max:1000'],
+            'result_method' => ['nullable', 'string', 'max:2000'],
         ]);
 
         $this->jobOrders->saveAnalysisDraft($analysis, $data, $request->user());
@@ -256,21 +289,42 @@ class AnalystController extends Controller
 
     public function complete(Request $request, JobOrderAnalysis $analysis): RedirectResponse
     {
+        $analysis->loadMissing(['jobOrder.packages', 'jobOrder.analyses']);
+        $requiresPassFail = $this->reports->requiresPassFail($analysis->jobOrder);
+
         $data = $request->validate([
             'result_value' => ['required', 'string', 'max:255'],
+            'result_pass_fail' => [$requiresPassFail ? 'required' : 'nullable', 'string', 'max:20'],
             'result_measurement' => ['nullable', 'string', 'max:80'],
             'result_unit' => ['nullable', 'string', 'max:50'],
             'result_remarks' => ['nullable', 'string', 'max:1000'],
+            'result_method' => ['nullable', 'string', 'max:2000'],
         ]);
 
+        $wasCompleted = $analysis->status === JobOrderAnalysisStatus::Completed;
         $this->jobOrders->completeAnalysis($analysis, $data, $request->user());
 
-        return back()->with('success', 'Result saved and analysis marked complete.');
+        return back()->with(
+            'success',
+            $wasCompleted
+                ? 'Result updated.'
+                : 'Result saved and analysis marked complete.',
+        );
     }
 
     public function submitForReview(Request $request, JobOrder $jobOrder): RedirectResponse
     {
-        $this->jobOrders->submitForReview($jobOrder, $request->user());
+        $data = $request->validate([
+            'signatories' => ['nullable', 'array', 'min:1', 'max:4'],
+            'signatories.*.name' => ['nullable', 'string', 'max:180'],
+            'signatories.*.prc_id' => ['nullable', 'string', 'max:60'],
+        ]);
+
+        $this->jobOrders->submitForReview(
+            $jobOrder,
+            $request->user(),
+            $data['signatories'] ?? null,
+        );
 
         return back()->with('success', "Job order {$jobOrder->reference_no} sent to Head for signature.");
     }
@@ -280,7 +334,15 @@ class AnalystController extends Controller
         $user = $request->user();
         $this->assertCanViewAnalysis($user, $analysis);
 
-        $resolved = $this->reports->forAnalysis($analysis, $user);
+        $resolved = $this->reports->forAnalysis($analysis, $user, withValues: false);
+        // AcroForm client fill needs field values in the JSON manifest; overlay uses pdf_url.
+        if (
+            $resolved->kind === AnalysisResultReport::KIND_COMBINED
+            && $resolved->canPreview()
+            && ! $resolved->isOverlay()
+        ) {
+            $resolved = $this->reports->forAnalysis($analysis, $user, withValues: true);
+        }
         $isOverlayCombined = $resolved->kind === AnalysisResultReport::KIND_COMBINED
             && $resolved->isOverlay();
 
@@ -299,7 +361,53 @@ class AnalystController extends Controller
             $templateUrl,
             $inlinePdf,
             $resolved->fillMode(),
+            $this->signatoryManifestExtra(
+                $analysis->jobOrder,
+                $resolved,
+                "/analyst/job-orders/{$analysis->job_order_id}/result-signatories",
+            ),
         ));
+    }
+
+    public function updateResultSignatories(Request $request, JobOrder $jobOrder): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user !== null, 403);
+
+        $resolved = $this->reports->forJobOrder($jobOrder, $user);
+        abort_unless(
+            $this->reports->userCanAccessCombined($resolved->analyses, $user, $jobOrder)
+            || $user->hasRole('admin'),
+            403,
+        );
+        // Allow confirming analyst/PRC during preview; Print/Download stay gated by Head release.
+        abort_unless($resolved->canPreview() || $user->hasRole('admin'), 403);
+        abort_unless($resolved->controlledForm !== null, 422, 'No combined result form is bound to this job.');
+
+        $data = $request->validate([
+            'signatories' => ['required', 'array', 'min:1', 'max:4'],
+            'signatories.*.name' => ['nullable', 'string', 'max:180'],
+            'signatories.*.prc_id' => ['nullable', 'string', 'max:60'],
+        ]);
+
+        $normalized = ResultSignatories::normalizeForStorage(
+            $data['signatories'],
+            $resolved->controlledForm,
+        );
+
+        $jobOrder->update(['result_signatories' => $normalized]);
+        $jobOrder->refresh();
+
+        return response()->json([
+            'ok' => true,
+            'signatories' => $normalized,
+            'signatory' => ResultSignatories::manifestPayload(
+                $jobOrder,
+                $resolved->controlledForm,
+                "/analyst/job-orders/{$jobOrder->id}/result-signatories",
+                $resolved->analyses,
+            ),
+        ]);
     }
 
     public function combinedPdf(Request $request, JobOrderAnalysis $analysis): HttpResponse
@@ -320,14 +428,12 @@ class AnalystController extends Controller
             abort_unless($resolved->canPrint() || $user->hasRole('admin'), 403);
         }
 
-        $binary = app(ControlledPdfFiller::class)->fill(
-            $resolved->controlledRevision->load('fields'),
-            $resolved->values,
-        );
+        $binary = $this->reports->renderOverlayPdf($resolved);
 
         return response($binary, 200, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="'.$resolved->filename.'"',
+            'Cache-Control' => 'private, no-store',
         ]);
     }
 
@@ -410,5 +516,24 @@ class AnalystController extends Controller
             $this->reports->userIsPackageSignatory($analysis->jobOrder, $user),
             403,
         );
+    }
+
+    /**
+     * @return array{signatory?: array<string, mixed>}
+     */
+    private function signatoryManifestExtra(JobOrder $jobOrder, AnalysisResultReport $resolved, ?string $saveUrl): array
+    {
+        if ($resolved->controlledForm === null || ! $resolved->canPreview()) {
+            return [];
+        }
+
+        return [
+            'signatory' => ResultSignatories::manifestPayload(
+                $jobOrder,
+                $resolved->controlledForm,
+                $saveUrl,
+                $resolved->analyses,
+            ),
+        ];
     }
 }

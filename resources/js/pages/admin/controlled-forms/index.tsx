@@ -1,4 +1,5 @@
-import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
+import LimsWorkspace from '@/components/lims/lims-workspace';
 import { Plus, Search } from 'lucide-react';
 import { useState } from 'react';
 import AnalysisTypePicker from '@/components/analysis-type-picker';
@@ -37,7 +38,6 @@ export default function ControlledFormsIndex({
     analysisGroups = [],
     packages = [],
 }: Props) {
-    const { flash } = usePage().props as { flash?: { success?: string } };
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
 
@@ -47,7 +47,8 @@ export default function ControlledFormsIndex({
         description: '',
         department: 'Laboratory',
         category: 'job_order',
-        revision: '03',
+        job_order_variant: 'general',
+        revision: '11',
         effective_date: '',
         notes: '',
         file: null as File | null,
@@ -65,7 +66,7 @@ export default function ControlledFormsIndex({
     return (
         <>
             <Head title="Controlled Forms" />
-            <div className="flex flex-col gap-5 p-4">
+            <LimsWorkspace>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
@@ -76,11 +77,6 @@ export default function ControlledFormsIndex({
                             generate official laboratory documents without
                             redrawing the form.
                         </p>
-                        {flash?.success && (
-                            <p className="mt-2 text-sm text-emerald-700">
-                                {flash.success}
-                            </p>
-                        )}
                     </div>
                     <Button
                         className="bg-[#1A3694] hover:bg-[#365BB0]"
@@ -207,7 +203,7 @@ export default function ControlledFormsIndex({
                     </table>
                 </div>
 
-            </div>
+            </LimsWorkspace>
 
             <Dialog open={open} onOpenChange={setOpen}>
                 <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-2xl">
@@ -240,6 +236,11 @@ export default function ControlledFormsIndex({
                                     form.setData({
                                         ...form.data,
                                         category,
+                                        job_order_variant:
+                                            category === 'job_order'
+                                                ? form.data.job_order_variant ||
+                                                  'general'
+                                                : '',
                                         analysis_type_ids:
                                             category === 'analysis_result'
                                                 ? form.data.analysis_type_ids
@@ -258,11 +259,48 @@ export default function ControlledFormsIndex({
                                 ))}
                             </select>
                             <p className="text-xs text-muted-foreground">
-                                Job Order is the Request for Analysis. Analysis
-                                Result is the combined analyst PDF. Choose a
-                                package (recommended) or tick individual tests.
+                                Job Order is the Request for Analysis. Use
+                                General (FO1) or Aqua (FO4). Analysis Result is
+                                the combined analyst PDF. Choose a package
+                                (recommended) or tick individual tests.
                             </p>
                         </div>
+                        {form.data.category === 'job_order' && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="job_order_variant">
+                                    Job Order variant
+                                </Label>
+                                <select
+                                    id="job_order_variant"
+                                    className="h-9 rounded-md border px-3 text-sm"
+                                    value={form.data.job_order_variant}
+                                    onChange={(event) => {
+                                        const variant = event.target.value;
+                                        form.setData({
+                                            ...form.data,
+                                            job_order_variant: variant,
+                                            form_code:
+                                                variant === 'aqua'
+                                                    ? 'NPPC-LAB-FRM-AQUA'
+                                                    : 'NPPC-LAB-FRM-001',
+                                            name:
+                                                variant === 'aqua'
+                                                    ? 'Request for Analysis Form / Job Order (Aqua)'
+                                                    : 'Request for Analysis Form / Job Order',
+                                            revision:
+                                                variant === 'aqua' ? '03' : '11',
+                                        });
+                                    }}
+                                >
+                                    <option value="general">
+                                        General (LSP 7.1 FO1)
+                                    </option>
+                                    <option value="aqua">
+                                        Aqua (LSP 7.1 FO4)
+                                    </option>
+                                </select>
+                            </div>
+                        )}
                         {form.data.category === 'analysis_result' && (
                             <>
                                 <PackageSelect

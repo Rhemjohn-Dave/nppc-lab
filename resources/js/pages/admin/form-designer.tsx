@@ -43,10 +43,13 @@ import type {
     DesignerField,
     FieldTypeOption,
 } from '@/lib/controlled-forms';
+import {
+    fitScaleToWidth,
+    pagePxSize,
+    pdfjsViewportScaleForFpdiMm,
+} from '@/lib/controlled-pdf-viewport';
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
-
-const PDF_CSS_SCALE = 96 / 72;
 
 /** Collapse the global nav sidebar while the designer is open, restore on unmount. */
 function SidebarCollapser() {
@@ -64,14 +67,23 @@ function SidebarCollapser() {
     return null;
 }
 
+type CanonicalPage = {
+    width_mm: number;
+    height_mm: number;
+    page_count: number;
+};
+
 type Props = {
     form: ControlledFormSummary;
     revision: ControlledRevisionSummary;
+    canonical_page?: CanonicalPage | null;
     next_revision: string;
     sources: DataSource[];
     fieldTypes: FieldTypeOption[];
     jobOrders: Array<{ id: number; label: string }>;
     packages?: AnalysisPackageOption[];
+    matrix_preview_rows?: Array<Record<string, string>>;
+    matrix_default_config?: MatrixTableConfig | null;
 };
 
 type DragState = {
@@ -83,16 +95,43 @@ type DragState = {
     origY: number;
     origW: number;
     origH: number;
+    group?: Array<{ id: string; origX: number; origY: number }>;
 };
+
+type MarqueeState = {
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+    additive: boolean;
+};
+
+function isTypingTarget(target: EventTarget | null): boolean {
+    return Boolean(
+        (target as HTMLElement | null)?.closest(
+            'input, textarea, select, [contenteditable="true"], [contenteditable=""]',
+        ),
+    );
+}
+
+function rectsIntersect(
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number },
+): boolean {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
 
 export default function FormDesigner({
     form,
     revision,
+    canonical_page = null,
     sources,
     fieldTypes,
     jobOrders,
     packages = [],
     next_revision,
+    matrix_preview_rows = [],
+    matrix_default_config = null,
 }: Props) {
     const { flash } = usePage().props as { flash?: { success?: string } };
 
@@ -111,23 +150,28 @@ export default function FormDesigner({
 
     const [fields, setFields] = useState<DesignerField[]>(() => cloneFields(initialFields));
     const [savedFields, setSavedFields] = useState<DesignerField[]>(() => cloneFields(initialFields));
-    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [matrixCellSelection, setMatrixCellSelection] = useState<MatrixCellSelection | null>(null);
     const [pendingSource, setPendingSource] = useState<DataSource | null>(null);
     const [page, setPage] = useState(1);
     const [zoom, setZoom] = useState(0.75);
     const didAutoFit = useRef(false);
-    const initialWidthMm = revision.page_width_mm ?? 215.9;
-    const initialHeightMm = revision.page_height_mm ?? 330.2;
+    // FPDI millimetres from the server are authoritative (same as ControlledPdfFiller).
+    const initialWidthMm =
+        canonical_page?.width_mm ?? revision.page_width_mm ?? 215.9;
+    const initialHeightMm =
+        canonical_page?.height_mm ?? revision.page_height_mm ?? 330.2;
+    const initialBasePx = pagePxSize(initialWidthMm, initialHeightMm, 1);
+    const initialZoomPx = pagePxSize(initialWidthMm, initialHeightMm, 0.75);
     const [basePageSize, setBasePageSize] = useState({
-        widthPx: (initialWidthMm / 25.4) * 96,
-        heightPx: (initialHeightMm / 25.4) * 96,
+        widthPx: initialBasePx.widthPx,
+        heightPx: initialBasePx.heightPx,
     });
     const [pageSize, setPageSize] = useState({
         widthMm: initialWidthMm,
         heightMm: initialHeightMm,
-        widthPx: ((initialWidthMm / 25.4) * 96) * 0.85,
-        heightPx: ((initialHeightMm / 25.4) * 96) * 0.85,
+        widthPx: initialZoomPx.widthPx,
+        heightPx: initialZoomPx.heightPx,
     });
     const [history, setHistory] = useState<DesignerField[][]>([cloneFields(initialFields)]);
     const [historyIndex, setHistoryIndex] = useState(0);
@@ -142,19 +186,31 @@ export default function FormDesigner({
     const [snapEnabled, setSnapEnabled] = useState(true);
     const [cursorMm, setCursorMm] = useState<{ x: number; y: number } | null>(null);
     const [guides, setGuides] = useState<SnapGuides>({ vertical: [], horizontal: [] });
+    const [marquee, setMarquee] = useState<MarqueeState | null>(null);
     const dragRef = useRef<DragState | null>(null);
+    const marqueeRef = useRef<MarqueeState | null>(null);
+    const skipClickClearRef = useRef(false);
     const fieldsRef = useRef(fields);
+    const selectedIdsRef = useRef(selectedIds);
 
     useEffect(() => {
         fieldsRef.current = fields;
     }, [fields]);
 
+    useEffect(() => {
+        selectedIdsRef.current = selectedIds;
+    }, [selectedIds]);
+
     const canEdit = revision.status !== 'superseded' && revision.status !== 'archived';
     const pageCount = revision.page_count || 1;
     const isDirty = !fieldsEqual(fields, savedFields);
 
+    const primaryId = selectedIds.at(-1) ?? null;
     const selected =
-        fields.find((field, index) => clientId(field, index) === selectedId) ?? null;
+        fields.find((field, index) => clientId(field, index) === primaryId) ?? null;
+    const selectedFields = fields.filter((field, index) =>
+        selectedIds.includes(clientId(field, index)),
+    );
 
     const pxPerMm = pageSize.widthPx / pageSize.widthMm;
     const mm = useCallback((px: number) => Number((px / pxPerMm).toFixed(3)), [pxPerMm]);
@@ -197,10 +253,29 @@ export default function FormDesigner({
     );
 
     function updateSelected(patch: Partial<DesignerField>, recordHistory = false) {
+        const ids = new Set(selectedIdsRef.current);
+
+        if (ids.size === 0) {
+            return;
+        }
+
         setFields((current) => {
-            const next = current.map((field, index) =>
-                clientId(field, index) === selectedId ? { ...field, ...patch } : field,
-            );
+            const next = current.map((field, index) => {
+                const id = clientId(field, index);
+
+                if (!ids.has(id)) {
+                    return field;
+                }
+
+                // Renaming only applies to the primary (last) selection.
+                if (patch.name !== undefined && id !== selectedIdsRef.current.at(-1)) {
+                    const { name: _ignored, ...rest } = patch;
+
+                    return Object.keys(rest).length > 0 ? { ...field, ...rest } : field;
+                }
+
+                return { ...field, ...patch };
+            });
 
             fieldsRef.current = next;
 
@@ -215,7 +290,13 @@ export default function FormDesigner({
         });
 
         if (patch.name) {
-            setSelectedId(patch.name);
+            const primaryId = selectedIdsRef.current.at(-1);
+
+            if (primaryId) {
+                setSelectedIds((current) =>
+                    current.map((id) => (id === primaryId ? patch.name! : id)),
+                );
+            }
         }
     }
 
@@ -225,16 +306,37 @@ export default function FormDesigner({
 
     useEffect(() => {
         function onKeyDown(event: KeyboardEvent) {
-            if (!canEdit || !selectedId) {
+            if (isTypingTarget(event.target)) {
                 return;
             }
 
-            const target = event.target as HTMLElement | null;
-            if (
-                target?.closest(
-                    'input, textarea, select, [contenteditable="true"], [contenteditable=""]',
-                )
-            ) {
+            if (event.key === 'Escape') {
+                setSelectedIds([]);
+                setMatrixCellSelection(null);
+                setPendingSource(null);
+
+                return;
+            }
+
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+                event.preventDefault();
+                setSelectedIds(
+                    fieldsRef.current.flatMap((field, index) =>
+                        field.page_number === page ? [clientId(field, index)] : [],
+                    ),
+                );
+
+                return;
+            }
+
+            if (!canEdit || selectedIdsRef.current.length === 0) {
+                return;
+            }
+
+            if (event.key === 'Delete' || event.key === 'Backspace') {
+                event.preventDefault();
+                deleteSelected();
+
                 return;
             }
 
@@ -261,30 +363,47 @@ export default function FormDesigner({
 
             event.preventDefault();
 
-            const current = fieldsRef.current.find(
-                (field, index) => clientId(field, index) === selectedId,
-            );
-            if (!current) {
+            const ids = new Set(selectedIdsRef.current);
+            const current = fieldsRef.current;
+            let changed = false;
+            const next = current.map((field, index) => {
+                if (!ids.has(clientId(field, index))) {
+                    return field;
+                }
+
+                const maxX = Math.max(0, pageSize.widthMm - field.width);
+                const maxY = Math.max(0, pageSize.heightMm - field.height);
+                const x = Number(Math.min(maxX, Math.max(0, field.x + dx)).toFixed(3));
+                const y = Number(Math.min(maxY, Math.max(0, field.y + dy)).toFixed(3));
+
+                if (x === field.x && y === field.y) {
+                    return field;
+                }
+
+                changed = true;
+
+                return { ...field, x, y };
+            });
+
+            if (!changed) {
                 return;
             }
 
-            const maxX = Math.max(0, pageSize.widthMm - current.width);
-            const maxY = Math.max(0, pageSize.heightMm - current.height);
-            const x = Number(Math.min(maxX, Math.max(0, current.x + dx)).toFixed(3));
-            const y = Number(Math.min(maxY, Math.max(0, current.y + dy)).toFixed(3));
+            fieldsRef.current = next;
+            setFields(next);
+            setJustSaved(false);
 
-            if (x === current.x && y === current.y) {
-                return;
+            if (!event.repeat) {
+                setHistory((items) => [...items.slice(0, historyIndex + 1), cloneFields(next)].slice(-50));
+                setHistoryIndex((value) => value + 1);
             }
-
-            updateSelected({ x, y }, !event.repeat);
         }
 
         window.addEventListener('keydown', onKeyDown);
 
         return () => window.removeEventListener('keydown', onKeyDown);
         // eslint-disable-next-line react-hooks/exhaustive-deps -- fieldsRef keeps live box position during key repeat
-    }, [canEdit, selectedId, pageSize.widthMm, pageSize.heightMm, historyIndex]);
+    }, [canEdit, page, pageSize.widthMm, pageSize.heightMm, historyIndex]);
 
     useEffect(() => {
         if (flash?.success) {
@@ -306,8 +425,27 @@ export default function FormDesigner({
             }
 
             const pdfPage = await pdf.getPage(page);
-            const baseViewport = pdfPage.getViewport({ scale: PDF_CSS_SCALE });
-            const viewport = pdfPage.getViewport({ scale: PDF_CSS_SCALE * zoom });
+            const unscaledViewport = pdfPage.getViewport({ scale: 1 });
+            // Prefer server FPDI metrics (same AddPage size as ControlledPdfFiller).
+            // Fall back to pdf.js only when canonical_page / revision mm are missing.
+            const widthMmFromPdf = Number(((unscaledViewport.width * 25.4) / 72).toFixed(2));
+            const heightMmFromPdf = Number(((unscaledViewport.height * 25.4) / 72).toFixed(2));
+            const widthMm =
+                canonical_page?.width_mm ??
+                revision.page_width_mm ??
+                (widthMmFromPdf > 0 ? widthMmFromPdf : 215.9);
+            const heightMm =
+                canonical_page?.height_mm ??
+                revision.page_height_mm ??
+                (heightMmFromPdf > 0 ? heightMmFromPdf : 330.2);
+
+            // Stretch pdf.js raster so CSS px map 1:1 to FPDI millimetres.
+            const renderScale = pdfjsViewportScaleForFpdiMm(
+                widthMm,
+                unscaledViewport.width,
+                zoom,
+            );
+            const viewport = pdfPage.getViewport({ scale: renderScale });
             const canvas = canvasRef.current;
 
             if (!canvas) {
@@ -324,15 +462,18 @@ export default function FormDesigner({
 
             await pdfPage.render({ canvasContext: context, viewport, canvas }).promise;
 
+            const basePx = pagePxSize(widthMm, heightMm, 1);
+            const zoomPx = pagePxSize(widthMm, heightMm, zoom);
+
             setBasePageSize({
-                widthPx: baseViewport.width,
-                heightPx: baseViewport.height,
+                widthPx: basePx.widthPx,
+                heightPx: basePx.heightPx,
             });
             setPageSize({
-                widthMm: revision.page_width_mm ?? 215.9,
-                heightMm: revision.page_height_mm ?? 330.2,
-                widthPx: viewport.width,
-                heightPx: viewport.height,
+                widthMm,
+                heightMm,
+                widthPx: zoomPx.widthPx,
+                heightPx: zoomPx.heightPx,
             });
 
             // Auto-fit the first time the PDF loads so it fills the canvas.
@@ -342,8 +483,10 @@ export default function FormDesigner({
 
                 if (container) {
                     const padding = 64 + RULER_SIZE;
-                    const fitScale = (container.clientWidth - padding) / baseViewport.width;
-                    const clamped = Number(Math.min(Math.max(fitScale, 0.3), 2.5).toFixed(2));
+                    const clamped = fitScaleToWidth(
+                        container.clientWidth - padding,
+                        basePx.widthPx,
+                    );
                     setZoom(clamped);
                 }
             }
@@ -352,7 +495,16 @@ export default function FormDesigner({
         return () => {
             cancelled = true;
         };
-    }, [form.id, revision.id, revision.page_height_mm, revision.page_width_mm, page, zoom]);
+    }, [
+        form.id,
+        revision.id,
+        revision.page_height_mm,
+        revision.page_width_mm,
+        canonical_page?.width_mm,
+        canonical_page?.height_mm,
+        page,
+        zoom,
+    ]);
 
     function placeField(source: DataSource, xMm: number, yMm: number) {
         const origin = snapEnabled
@@ -368,7 +520,7 @@ export default function FormDesigner({
         const field = sourceToField(source, fieldTypes, page, origin.x, origin.y, fields.length + 1);
         const next = [...fields, field];
         pushHistory(next);
-        setSelectedId(field.name);
+        setSelectedIds([field.name]);
         setPendingSource(null);
         setMobileLibraryOpen(false);
     }
@@ -396,22 +548,28 @@ export default function FormDesigner({
                 type.value === 'table'
                     ? { row_height: 4.5, max_rows: 9, columns: [] }
                     : type.value === 'dynamic_test_matrix'
-                      ? { ...DEFAULT_MATRIX_CONFIG }
+                      ? {
+                            ...(matrix_default_config && Object.keys(matrix_default_config).length > 0
+                                ? matrix_default_config
+                                : DEFAULT_MATRIX_CONFIG),
+                        }
                       : null,
             z_order: index,
         };
         pushHistory([...fields, field]);
-        setSelectedId(field.name);
+        setSelectedIds([field.name]);
         setMobilePropertiesOpen(true);
     }
 
     function deleteSelected() {
-        if (!selectedId) {
+        const ids = new Set(selectedIdsRef.current);
+
+        if (ids.size === 0) {
             return;
         }
 
-        pushHistory(fields.filter((field, index) => clientId(field, index) !== selectedId));
-        setSelectedId(null);
+        pushHistory(fieldsRef.current.filter((field, index) => !ids.has(clientId(field, index))));
+        setSelectedIds([]);
     }
 
     function duplicateSelected() {
@@ -428,7 +586,7 @@ export default function FormDesigner({
             y: selected.y + 4,
         };
         pushHistory([...fields, copy]);
-        setSelectedId(copy.name);
+        setSelectedIds([copy.name]);
     }
 
     function undo() {
@@ -525,7 +683,7 @@ export default function FormDesigner({
         };
     }
 
-        function handleCanvasClick(event: React.MouseEvent<HTMLDivElement>) {
+    function handleCanvasClick(event: React.MouseEvent<HTMLDivElement>) {
         if (pendingSource && canEdit) {
             const point = canvasPointFromEvent(event.clientX, event.clientY);
 
@@ -536,7 +694,13 @@ export default function FormDesigner({
             return;
         }
 
-        setSelectedId(null);
+        if (skipClickClearRef.current) {
+            skipClickClearRef.current = false;
+
+            return;
+        }
+
+        setSelectedIds([]);
         setMatrixCellSelection(null);
     }
 
@@ -573,10 +737,39 @@ export default function FormDesigner({
     ) {
         event.preventDefault();
         event.stopPropagation();
-        setSelectedId(clientId(field, index));
+        const id = clientId(field, index);
+        const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+        const currentIds = selectedIdsRef.current;
+
+        if (additive && currentIds.includes(id)) {
+            setSelectedIds(currentIds.filter((item) => item !== id));
+            setPendingSource(null);
+
+            return;
+        }
+
+        const nextIds = additive
+            ? [...currentIds, id]
+            : currentIds.includes(id) && currentIds.length > 1 && mode === 'move'
+              ? currentIds
+              : [id];
+
+        setSelectedIds(nextIds);
         setPendingSource(null);
+
+        const group =
+            mode === 'move' && nextIds.length > 1
+                ? nextIds.flatMap((groupId) => {
+                      const match = fieldsRef.current.find(
+                          (item, itemIndex) => clientId(item, itemIndex) === groupId,
+                      );
+
+                      return match ? [{ id: groupId, origX: match.x, origY: match.y }] : [];
+                  })
+                : undefined;
+
         dragRef.current = {
-            id: clientId(field, index),
+            id,
             mode,
             startX: event.clientX,
             startY: event.clientY,
@@ -584,8 +777,38 @@ export default function FormDesigner({
             origY: field.y,
             origW: field.width,
             origH: field.height,
+            group,
         };
         (event.target as HTMLElement).setPointerCapture(event.pointerId);
+    }
+
+    function onCanvasPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+        if (!canEdit || pendingSource) {
+            return;
+        }
+
+        const target = event.target as HTMLElement;
+
+        if (target.closest('[data-designer-field]')) {
+            return;
+        }
+
+        const point = canvasPointFromEvent(event.clientX, event.clientY);
+
+        if (!point) {
+            return;
+        }
+
+        const next: MarqueeState = {
+            startX: point.x,
+            startY: point.y,
+            endX: point.x,
+            endY: point.y,
+            additive: event.shiftKey || event.ctrlKey || event.metaKey,
+        };
+        marqueeRef.current = next;
+        setMarquee(next);
+        event.currentTarget.setPointerCapture(event.pointerId);
     }
 
     function onPointerMove(event: React.PointerEvent) {
@@ -593,6 +816,14 @@ export default function FormDesigner({
 
         if (point) {
             setCursorMm(point);
+        }
+
+        if (marqueeRef.current && point) {
+            const next = { ...marqueeRef.current, endX: point.x, endY: point.y };
+            marqueeRef.current = next;
+            setMarquee(next);
+
+            return;
         }
 
         const drag = dragRef.current;
@@ -626,16 +857,38 @@ export default function FormDesigner({
                 : { ...proposed, guides: { vertical: [], horizontal: [] } as SnapGuides };
 
             setGuides(snapped.guides);
+            const appliedDx = snapped.x - drag.origX;
+            const appliedDy = snapped.y - drag.origY;
+
             setFields((current) =>
-                current.map((field, index) =>
-                    clientId(field, index) === drag.id
+                current.map((field, index) => {
+                    const id = clientId(field, index);
+
+                    if (drag.group && drag.group.length > 1) {
+                        const orig = drag.group.find((item) => item.id === id);
+
+                        if (!orig) {
+                            return field;
+                        }
+
+                        const maxX = Math.max(0, pageSize.widthMm - field.width);
+                        const maxY = Math.max(0, pageSize.heightMm - field.height);
+
+                        return {
+                            ...field,
+                            x: Number(Math.min(maxX, Math.max(0, orig.origX + appliedDx)).toFixed(3)),
+                            y: Number(Math.min(maxY, Math.max(0, orig.origY + appliedDy)).toFixed(3)),
+                        };
+                    }
+
+                    return id === drag.id
                         ? {
                               ...field,
                               x: Number(snapped.x.toFixed(3)),
                               y: Number(snapped.y.toFixed(3)),
                           }
-                        : field,
-                ),
+                        : field;
+                }),
             );
         } else {
             const proposed = {
@@ -666,6 +919,35 @@ export default function FormDesigner({
     }
 
     function onPointerUp() {
+        const box = marqueeRef.current;
+
+        if (box) {
+            const left = Math.min(box.startX, box.endX);
+            const top = Math.min(box.startY, box.endY);
+            const width = Math.abs(box.endX - box.startX);
+            const height = Math.abs(box.endY - box.startY);
+
+            if (width >= 2 || height >= 2) {
+                skipClickClearRef.current = true;
+                const hits = fieldsRef.current.flatMap((field, index) =>
+                    field.page_number === page &&
+                    rectsIntersect(
+                        { x: field.x, y: field.y, w: field.width, h: field.height },
+                        { x: left, y: top, w: width, h: height },
+                    )
+                        ? [clientId(field, index)]
+                        : [],
+                );
+                setSelectedIds((current) =>
+                    box.additive ? [...new Set([...current, ...hits])] : hits,
+                );
+                setMatrixCellSelection(null);
+            }
+
+            marqueeRef.current = null;
+            setMarquee(null);
+        }
+
         if (dragRef.current) {
             setHistory((items) => [...items.slice(0, historyIndex + 1), cloneFields(fields)].slice(-50));
             setHistoryIndex((value) => value + 1);
@@ -683,8 +965,7 @@ export default function FormDesigner({
         }
 
         const padding = 64 + RULER_SIZE;
-        const available = container.clientWidth - padding;
-        setZoom(Number((available / basePageSize.widthPx).toFixed(2)));
+        setZoom(fitScaleToWidth(container.clientWidth - padding, basePageSize.widthPx));
     }
 
     function fitPage() {
@@ -697,7 +978,7 @@ export default function FormDesigner({
         const padding = 64 + RULER_SIZE;
         const scaleX = (container.clientWidth - padding) / basePageSize.widthPx;
         const scaleY = (container.clientHeight - padding) / basePageSize.heightPx;
-        setZoom(Number(Math.min(scaleX, scaleY, 2.5).toFixed(2)));
+        setZoom(Number(Math.min(Math.max(Math.min(scaleX, scaleY), 0.3), 2.5).toFixed(2)));
     }
 
     return (
@@ -724,7 +1005,7 @@ export default function FormDesigner({
                     onNewPdfRevision={createPdfRevision}
                     calibrationHref={`/admin/controlled-forms/${form.id}/revisions/${revision.id}/calibration`}
                     onImportBlueprint={
-                        form.category === 'job_order' &&
+                        form.has_blueprint &&
                         revision.status !== 'superseded' &&
                         revision.status !== 'archived'
                             ? () =>
@@ -783,6 +1064,17 @@ export default function FormDesigner({
                     </div>
                 )}
 
+                {revision.has_canonical && revision.status !== 'active' && (
+                    <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                        You are editing revision <span className="font-semibold">{revision.revision}</span> (
+                        {revision.status}). Job-order downloads and prints use the{' '}
+                        <span className="font-semibold">active</span> revision, which may still have the
+                        older (smaller) matrix size. Save fields here, then open Document Control → this
+                        form → <span className="font-semibold">Activate</span> this revision so downloads
+                        match the designer.
+                    </div>
+                )}
+
                 <div className="relative grid min-h-0 flex-1 overflow-hidden grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_300px]">
                     {(mobileLibraryOpen || mobilePropertiesOpen) && (
                         <button
@@ -797,10 +1089,10 @@ export default function FormDesigner({
                     )}
 
                     <div
-                        className={`min-h-0 overflow-hidden border-r shadow-sm ${
+                        className={`flex min-h-0 flex-col overflow-hidden border-r shadow-sm ${
                             mobileLibraryOpen
-                                ? 'fixed inset-x-0 bottom-0 top-32 z-40 block bg-white xl:relative xl:inset-auto xl:top-auto xl:z-auto'
-                                : 'hidden xl:block'
+                                ? 'fixed inset-x-0 bottom-0 top-32 z-40 flex bg-white xl:relative xl:inset-auto xl:top-auto xl:z-auto'
+                                : 'hidden xl:flex'
                         }`}
                     >
                         <FieldLibrary
@@ -873,6 +1165,7 @@ export default function FormDesigner({
                                         }}
                                         onClick={handleCanvasClick}
                                         onDrop={handleCanvasDrop}
+                                        onPointerDown={onCanvasPointerDown}
                                         onPointerMove={onPointerMove}
                                         onPointerUp={onPointerUp}
                                         onPointerLeave={() => {
@@ -902,16 +1195,29 @@ export default function FormDesigner({
                                             }}
                                         />
                                     ))}
+                                    {marquee && (
+                                        <div
+                                            className="pointer-events-none absolute z-30 border border-dashed border-[#1A3694] bg-[#1A3694]/10"
+                                            style={{
+                                                left: px(Math.min(marquee.startX, marquee.endX)),
+                                                top: px(Math.min(marquee.startY, marquee.endY)),
+                                                width: px(Math.abs(marquee.endX - marquee.startX)),
+                                                height: px(Math.abs(marquee.endY - marquee.startY)),
+                                            }}
+                                        />
+                                    )}
                                     {pageFields.map((field) => {
                                         const index = fields.indexOf(field);
                                         const id = clientId(field, index);
-                                        const active = id === selectedId;
+                                        const active = selectedIds.includes(id);
+                                        const isPrimary = id === primaryId;
                                         const isTable = field.field_type === 'table';
                                         const isMatrix = field.field_type === 'dynamic_test_matrix';
 
                                         return (
                                             <div
                                                 key={`${id}-${index}`}
+                                                data-designer-field={id}
                                                 className={`absolute z-10 overflow-visible text-[10px] leading-tight ${
                                                     isMatrix ? '' : 'select-none'
                                                 } ${canEdit && !isMatrix ? 'cursor-move' : canEdit ? '' : 'cursor-default'}`}
@@ -923,11 +1229,9 @@ export default function FormDesigner({
                                                 }}
                                                 onClick={(event) => {
                                                     event.stopPropagation();
-                                                    setSelectedId(id);
                                                     if (!isMatrix) {
                                                         setMatrixCellSelection(null);
                                                     }
-                                                    setPendingSource(null);
                                                     setMobilePropertiesOpen(true);
                                                 }}
                                                 onPointerDown={(event) => {
@@ -969,8 +1273,9 @@ export default function FormDesigner({
                                                             selection={
                                                                 active ? matrixCellSelection : null
                                                             }
+                                                            packagePreviewRows={matrix_preview_rows}
                                                             onSelectCell={(cell) => {
-                                                                setSelectedId(id);
+                                                                setSelectedIds([id]);
                                                                 setMatrixCellSelection(cell);
                                                                 setPendingSource(null);
                                                                 setMobilePropertiesOpen(true);
@@ -995,17 +1300,19 @@ export default function FormDesigner({
                                                         </span>
                                                     )}
                                                 </div>
-                                                {active && canEdit && (
+                                                {isPrimary && canEdit && (
                                                     <>
                                                         <span className="pointer-events-none absolute -top-5 left-0 rounded bg-[#1A3694] px-1 py-0.5 text-[9px] text-white shadow-sm">
                                                             {field.data_source_key ?? field.name}
                                                         </span>
-                                                        <span
-                                                            className="absolute right-0 bottom-0 z-20 size-3 translate-x-1/3 translate-y-1/3 cursor-se-resize rounded-sm border border-white bg-[#1A3694] shadow-sm"
-                                                            onPointerDown={(event) =>
-                                                                onPointerDown(event, field, index, 'resize')
-                                                            }
-                                                        />
+                                                        {selectedIds.length === 1 && (
+                                                            <span
+                                                                className="absolute right-0 bottom-0 z-20 size-3 translate-x-1/3 translate-y-1/3 cursor-se-resize rounded-sm border border-white bg-[#1A3694] shadow-sm"
+                                                                onPointerDown={(event) =>
+                                                                    onPointerDown(event, field, index, 'resize')
+                                                                }
+                                                            />
+                                                        )}
                                                     </>
                                                 )}
                                             </div>
@@ -1020,8 +1327,8 @@ export default function FormDesigner({
                             page={page}
                             pageCount={pageCount}
                             zoom={zoom}
-                            pageWidthMm={revision.page_width_mm}
-                            pageHeightMm={revision.page_height_mm}
+                            pageWidthMm={pageSize.widthMm}
+                            pageHeightMm={pageSize.heightMm}
                             snapEnabled={snapEnabled}
                             onSnapEnabledChange={setSnapEnabled}
                             onPageChange={setPage}
@@ -1040,6 +1347,8 @@ export default function FormDesigner({
                     >
                         <PropertiesPanel
                             selected={selected}
+                            selectedCount={selectedIds.length}
+                            selectedFields={selectedFields}
                             groupedSources={groupedSources}
                             canEdit={canEdit}
                             matrixCellSelection={
@@ -1047,6 +1356,8 @@ export default function FormDesigner({
                                     ? matrixCellSelection
                                     : null
                             }
+                            matrixPreviewRows={matrix_preview_rows}
+                            matrixDefaultConfig={matrix_default_config}
                             onClearMatrixCell={() => setMatrixCellSelection(null)}
                             onUpdate={updateSelected}
                             onDuplicate={duplicateSelected}
@@ -1060,12 +1371,56 @@ export default function FormDesigner({
                 open={previewOpen}
                 onOpenChange={setPreviewOpen}
                 title="Populated preview"
-                description="Preview uses sample data unless a job order is selected. It is not saved as an official document."
+                description="Uses the fields currently on the canvas (save not required). Sample data unless a job order is selected. Not saved as an official document."
                 load={async () => {
-                    const query = previewJobId ? `?job_order_id=${previewJobId}` : '';
+                    const token = decodeURIComponent(
+                        document.cookie
+                            .split('; ')
+                            .find((row) => row.startsWith('XSRF-TOKEN='))
+                            ?.split('=')
+                            .slice(1)
+                            .join('=') ?? '',
+                    );
+
                     const response = await fetch(
-                        `/admin/controlled-forms/${form.id}/revisions/${revision.id}/preview${query}`,
-                        { credentials: 'same-origin' },
+                        `/admin/controlled-forms/${form.id}/revisions/${revision.id}/preview`,
+                        {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: {
+                                Accept: 'application/pdf',
+                                'Content-Type': 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest',
+                                ...(token ? { 'X-XSRF-TOKEN': token } : {}),
+                            },
+                            body: JSON.stringify({
+                                job_order_id: previewJobId
+                                    ? Number(previewJobId)
+                                    : null,
+                                fields: fields.map((field) => ({
+                                    id: field.id ?? null,
+                                    name: field.name,
+                                    label: field.label,
+                                    field_type: field.field_type,
+                                    page_number: field.page_number,
+                                    x: field.x,
+                                    y: field.y,
+                                    width: field.width,
+                                    height: field.height,
+                                    font_size: field.font_size,
+                                    font_family: field.font_family,
+                                    font_color: field.font_color,
+                                    alignment: field.alignment,
+                                    data_source_key: field.data_source_key,
+                                    format: field.format,
+                                    checkbox_true_value:
+                                        field.checkbox_true_value,
+                                    options: field.options,
+                                    table_config: field.table_config,
+                                    z_order: field.z_order,
+                                })),
+                            }),
+                        },
                     );
 
                     if (!response.ok) {
@@ -1076,6 +1431,8 @@ export default function FormDesigner({
                         blob: await response.blob(),
                         filename: `${form.form_code}-preview.pdf`,
                         title: 'Preview',
+                        pageWidthMm: pageSize.widthMm,
+                        pageHeightMm: pageSize.heightMm,
                     };
                 }}
             />

@@ -1,4 +1,5 @@
 import { Head } from '@inertiajs/react';
+import LimsWorkspace from '@/components/lims/lims-workspace';
 import { useState } from 'react';
 import TablePagination from '@/components/table-pagination';
 import { Button } from '@/components/ui/button';
@@ -32,7 +33,7 @@ export default function DocumentAudit({ logs, filters }: Props) {
     return (
         <>
             <Head title="Audit Logs" />
-            <div className="flex flex-col gap-5 p-4">
+            <LimsWorkspace>
                 <div>
                     <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
                         Document Audit Logs
@@ -94,7 +95,7 @@ export default function DocumentAudit({ logs, filters }: Props) {
                     to={logs.to}
                     total={logs.total}
                 />
-            </div>
+            </LimsWorkspace>
         </>
     );
 }

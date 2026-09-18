@@ -38,9 +38,9 @@ class ControlledDocumentGenerator
         bool $persist = false,
         ?ControlledFormRevision $revision = null,
     ): array {
-        $form = ControlledForm::jobOrderForm();
+        $form = ControlledForm::jobOrderFormFor($jobOrder);
         if (! $form) {
-            throw new RuntimeException('No job-order controlled form is configured.');
+            throw new RuntimeException('No job-order controlled form is configured for this classification.');
         }
 
         $revision = $this->workflow->assertCanGenerate($revision, $form);

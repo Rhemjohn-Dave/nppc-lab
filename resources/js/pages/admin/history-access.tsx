@@ -1,4 +1,5 @@
-import { Head, useForm, usePage } from '@inertiajs/react';
+import { Head, useForm } from '@inertiajs/react';
+import LimsWorkspace from '@/components/lims/lims-workspace';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -14,7 +15,6 @@ type Props = {
 };
 
 export default function HistoryAccessAdmin({ roles, selected }: Props) {
-    const { flash } = usePage().props as { flash?: { success?: string } };
     const form = useForm({
         roles: selected,
     });
@@ -30,7 +30,7 @@ export default function HistoryAccessAdmin({ roles, selected }: Props) {
     return (
         <>
             <Head title="History access" />
-            <div className="flex flex-col gap-5 p-4">
+            <LimsWorkspace>
                 <div>
                     <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
                         History visibility
@@ -39,11 +39,6 @@ export default function HistoryAccessAdmin({ roles, selected }: Props) {
                         Choose which roles can see the History page in the
                         sidebar. Admin always keeps access.
                     </p>
-                    {flash?.success && (
-                        <p className="mt-2 text-sm text-emerald-700">
-                            {flash.success}
-                        </p>
-                    )}
                 </div>
 
                 <form
@@ -107,7 +102,7 @@ export default function HistoryAccessAdmin({ roles, selected }: Props) {
                         </Button>
                     </div>
                 </form>
-            </div>
+            </LimsWorkspace>
         </>
     );
 }

@@ -1,5 +1,7 @@
-import { Head, Link, router, usePage } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
+import LimsWorkspace from '@/components/lims/lims-workspace';
 import { useEffect, useState } from 'react';
+import NavigationLoadingShell from '@/components/loading/navigation-loading-shell';
 import QueueFilterBar from '@/components/queue-filter-bar';
 import QueueRangeNote from '@/components/queue-range-note';
 import SummaryStat from '@/components/summary-stat';
@@ -7,6 +9,7 @@ import TablePagination from '@/components/table-pagination';
 import WorkspaceHeader from '@/components/workspace-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useInertiaNavigation } from '@/hooks/use-inertia-navigation';
 
 type Order = {
     id: number;
@@ -55,8 +58,8 @@ export default function HistoryIndex({
     filters,
     canSign,
 }: Props) {
-    const { flash } = usePage().props as { flash?: { success?: string } };
     const [query, setQuery] = useState(filters.q ?? '');
+    const { isRefreshing } = useInertiaNavigation();
 
     useEffect(() => {
         setQuery(filters.q ?? '');
@@ -107,16 +110,18 @@ export default function HistoryIndex({
     return (
         <>
             <Head title="History" />
-            <div className="flex flex-col gap-5 p-4">
-                <WorkspaceHeader
-                    title="History archive"
-                    description={`Read-only archive of finished files. Search, open the official form, and download PDFs without leaving the workflow queues.${
-                        canSign
-                            ? ' Head Analysis can still sign unsigned files from this list or from the signing queue.'
-                            : ''
-                    }`}
-                    flash={flash?.success}
-                />
+            <NavigationLoadingShell variant="queue">
+                <LimsWorkspace>
+                    <WorkspaceHeader
+                        title="History archive"
+                        description={`Read-only archive of finished files. Search, open the official form, and download PDFs without leaving the workflow queues.${
+                            canSign
+                                ? ' Head Analysis can still sign unsigned files from this list or from the signing queue.'
+                                : ''
+                        }`}
+                        refreshing={isRefreshing}
+                        refreshLabel="Updating archive…"
+                    />
 
                 <div className="grid gap-3 sm:grid-cols-3">
                     <SummaryStat label="All finished" value={counts.all} />
@@ -297,7 +302,8 @@ export default function HistoryIndex({
                     total={orders.total}
                     label="finished files"
                 />
-            </div>
+                </LimsWorkspace>
+            </NavigationLoadingShell>
         </>
     );
 }

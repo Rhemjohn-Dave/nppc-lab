@@ -28,6 +28,7 @@ type Props = {
     onOpenTask: (task: AnalystTask) => void;
     onPreview: (url: string) => void;
     onSubmit: (jobId: number) => void;
+    onEditSignatories?: (jobId: number) => void;
 };
 
 export default function AnalystJobSheet({
@@ -40,6 +41,7 @@ export default function AnalystJobSheet({
     onOpenTask,
     onPreview,
     onSubmit,
+    onEditSignatories,
 }: Props) {
     if (!job) {
         return null;
@@ -278,21 +280,61 @@ export default function AnalystJobSheet({
                                 </>
                             )}
                             {releasedPrint && (
-                                <Button
-                                    size="sm"
-                                    className="bg-[#1A3694] hover:bg-[#365BB0]"
-                                    disabled={
-                                        !releasedPrint.can_print ||
-                                        !releasedPrint.print_url
-                                    }
-                                    onClick={() => {
-                                        if (releasedPrint.print_url) {
-                                            onPreview(releasedPrint.print_url);
+                                <>
+                                    {(releasedPrint.can_preview ||
+                                        releasedPrint.preview_url ||
+                                        releasedPrint.print_url) && (
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            disabled={
+                                                !(
+                                                    releasedPrint.preview_url ||
+                                                    releasedPrint.print_url
+                                                )
+                                            }
+                                            onClick={() => {
+                                                const url =
+                                                    releasedPrint.preview_url ||
+                                                    releasedPrint.print_url;
+                                                if (url) {
+                                                    onPreview(url);
+                                                }
+                                            }}
+                                        >
+                                            Preview result form
+                                        </Button>
+                                    )}
+                                    {releasedPrint.signatory &&
+                                        onEditSignatories && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() =>
+                                                    onEditSignatories(job.id)
+                                                }
+                                            >
+                                                Edit printed analyst
+                                            </Button>
+                                        )}
+                                    <Button
+                                        size="sm"
+                                        className="bg-[#1A3694] hover:bg-[#365BB0]"
+                                        disabled={
+                                            !releasedPrint.can_print ||
+                                            !releasedPrint.print_url
                                         }
-                                    }}
-                                >
-                                    Print result form
-                                </Button>
+                                        onClick={() => {
+                                            if (releasedPrint.print_url) {
+                                                onPreview(
+                                                    releasedPrint.print_url,
+                                                );
+                                            }
+                                        }}
+                                    >
+                                        Print result form
+                                    </Button>
+                                </>
                             )}
                             {!consolidation && !releasedPrint && (
                                 <p className="text-xs text-muted-foreground">

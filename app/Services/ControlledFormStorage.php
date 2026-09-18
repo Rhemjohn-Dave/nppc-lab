@@ -75,9 +75,11 @@ class ControlledFormStorage
     }
 
     /**
-     * @return array{page_count: int, width: float, height: float}
+     * FPDI template metrics for page 1 — same source ControlledPdfFiller uses for AddPage.
+     *
+     * @return array{page_count: int, width_mm: float, height_mm: float, width: float, height: float}
      */
-    public function inspectPdf(string $absolutePath): array
+    public function pageMetrics(string $absolutePath): array
     {
         $pdf = new Fpdi('P', 'mm');
         $pdf->setPrintHeader(false);
@@ -85,11 +87,70 @@ class ControlledFormStorage
         app(PdfCompatibilityNormalizer::class)->ensureCompatible($absolutePath);
         $pageCount = $pdf->setSourceFile($absolutePath);
         $size = $pdf->getTemplateSize($pdf->importPage(1));
+        $width = (float) $size['width'];
+        $height = (float) $size['height'];
 
         return [
             'page_count' => $pageCount,
-            'width' => (float) $size['width'],
-            'height' => (float) $size['height'],
+            'width_mm' => $width,
+            'height_mm' => $height,
+            // Legacy keys kept for storeUpload / existing callers.
+            'width' => $width,
+            'height' => $height,
+        ];
+    }
+
+    /**
+     * @return array{page_count: int, width: float, height: float}
+     */
+    public function inspectPdf(string $absolutePath): array
+    {
+        $metrics = $this->pageMetrics($absolutePath);
+
+        return [
+            'page_count' => $metrics['page_count'],
+            'width' => $metrics['width'],
+            'height' => $metrics['height'],
+        ];
+    }
+
+    /**
+     * Re-read the canonical PDF and persist page_width_mm / page_height_mm when drift exceeds threshold.
+     * Designer and fill must share these FPDI millimetre values.
+     *
+     * @return array{width_mm: float, height_mm: float, page_count: int}|null
+     */
+    public function syncRevisionPageMetrics(ControlledFormRevision $revision, float $driftMm = 0.5): ?array
+    {
+        if (! $revision->hasCanonicalPdf()) {
+            return null;
+        }
+
+        $path = $revision->canonicalAbsolutePath();
+        if (! is_file($path)) {
+            return null;
+        }
+
+        $metrics = $this->pageMetrics($path);
+        $storedWidth = $revision->page_width_mm !== null ? (float) $revision->page_width_mm : null;
+        $storedHeight = $revision->page_height_mm !== null ? (float) $revision->page_height_mm : null;
+        $storedCount = $revision->page_count !== null ? (int) $revision->page_count : null;
+
+        $widthDrift = $storedWidth === null || abs($storedWidth - $metrics['width_mm']) > $driftMm;
+        $heightDrift = $storedHeight === null || abs($storedHeight - $metrics['height_mm']) > $driftMm;
+        $countDrift = $storedCount === null || $storedCount !== $metrics['page_count'];
+
+        if ($widthDrift || $heightDrift || $countDrift) {
+            $revision->page_width_mm = $metrics['width_mm'];
+            $revision->page_height_mm = $metrics['height_mm'];
+            $revision->page_count = $metrics['page_count'];
+            $revision->save();
+        }
+
+        return [
+            'width_mm' => $metrics['width_mm'],
+            'height_mm' => $metrics['height_mm'],
+            'page_count' => $metrics['page_count'],
         ];
     }
 

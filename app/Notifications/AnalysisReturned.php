@@ -1,0 +1,42 @@
+<?php
+
+namespace App\Notifications;
+
+use App\Models\JobOrder;
+use App\Models\JobOrderAnalysis;
+use App\Support\SyncBroadcastMessage;
+use Illuminate\Notifications\Messages\BroadcastMessage;
+use Illuminate\Notifications\Notification;
+
+class AnalysisReturned extends Notification
+{
+    public function __construct(
+        public JobOrder $jobOrder,
+        public JobOrderAnalysis $analysis,
+    ) {}
+
+    /** @return array<int, string> */
+    public function via(object $notifiable): array
+    {
+        return ['database', 'broadcast'];
+    }
+
+    /** @return array<string, mixed> */
+    public function toArray(object $notifiable): array
+    {
+        return [
+            'type' => 'analysis_returned',
+            'job_order_id' => $this->jobOrder->id,
+            'analysis_id' => $this->analysis->id,
+            'reference_no' => $this->jobOrder->reference_no,
+            'analysis_name' => $this->analysis->name,
+            'message' => "Head returned {$this->analysis->name} on {$this->jobOrder->reference_no} for correction.",
+            'href' => '/analyst?job='.$this->jobOrder->id,
+        ];
+    }
+
+    public function toBroadcast(object $notifiable): BroadcastMessage
+    {
+        return SyncBroadcastMessage::make($this->toArray($notifiable));
+    }
+}

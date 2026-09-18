@@ -19,6 +19,9 @@ export type ControlledFormSummary = {
     revisions_count: number;
     analysis_type_ids: number[];
     analysis_package_id?: number | null;
+    analyst_signatory_slots?: number;
+    analyst_require_prc?: boolean;
+    has_blueprint?: boolean;
     revisions?: ControlledRevisionSummary[];
     analysis_types?: Array<{ id: number; code: string; name: string }>;
 };

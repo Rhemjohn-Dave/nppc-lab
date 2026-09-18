@@ -1,4 +1,5 @@
-import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
+import LimsWorkspace from '@/components/lims/lims-workspace';
 import { Pencil, Plus, Search } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import TablePagination from '@/components/table-pagination';
@@ -72,7 +73,6 @@ export default function AdminUsers({
     filters,
     counts,
 }: Props) {
-    const { flash } = usePage().props as { flash?: { success?: string } };
     const [query, setQuery] = useState(filters.q ?? '');
     const [createOpen, setCreateOpen] = useState(false);
     const [editing, setEditing] = useState<UserRow | null>(null);
@@ -103,7 +103,7 @@ export default function AdminUsers({
     return (
         <>
             <Head title="Users" />
-            <div className="flex flex-col gap-5 p-4">
+            <LimsWorkspace>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
@@ -113,11 +113,6 @@ export default function AdminUsers({
                             Manage staff accounts and Spatie roles. Create and
                             edit users in modals.
                         </p>
-                        {flash?.success && (
-                            <p className="mt-2 text-sm text-emerald-700">
-                                {flash.success}
-                            </p>
-                        )}
                     </div>
                     <Button
                         className="bg-[#1A3694] hover:bg-[#365BB0]"
@@ -303,7 +298,7 @@ export default function AdminUsers({
                     total={users.total}
                     label="users"
                 />
-            </div>
+            </LimsWorkspace>
 
             <UserModal
                 open={createOpen}

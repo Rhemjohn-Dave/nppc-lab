@@ -314,4 +314,49 @@
     .intake-float {
         animation: intake-float 8s ease-in-out infinite;
     }
+
+    @keyframes nppc-shimmer {
+        0% {
+            background-position: -200% 0;
+        }
+        100% {
+            background-position: 200% 0;
+        }
+    }
+
+    .nppc-skeleton-shimmer {
+        background: linear-gradient(
+            90deg,
+            oklch(0.94 0.02 265) 0%,
+            oklch(0.97 0.015 255) 40%,
+            oklch(0.92 0.04 265 / 0.55) 50%,
+            oklch(0.97 0.015 255) 60%,
+            oklch(0.94 0.02 265) 100%
+        );
+        background-size: 200% 100%;
+        animation: nppc-shimmer 1.6s ease-in-out infinite;
+    }
+
+    @keyframes nppc-orbit {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
+    .nppc-orbit-spinner {
+        animation: nppc-orbit 0.75s linear infinite;
+        border-radius: 9999px;
+        border: 2px solid oklch(0.88 0.04 265);
+        border-top-color: var(--color-nppc-900);
+        border-right-color: var(--color-nppc-500);
+    }
+
+    .nppc-loading-fade {
+        opacity: 0.65;
+        pointer-events: none;
+        transition: opacity 0.15s ease-out;
+    }
 }

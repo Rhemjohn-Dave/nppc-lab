@@ -26,7 +26,7 @@ class LabWorkflowTest extends TestCase
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
         $head = User::where('email', 'head@nppc.local')->firstOrFail();
-        $type = AnalysisType::query()->where('code', 'PC-07')->firstOrFail();
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
 
         $this->post('/intake/job-orders', [
             'customer_name' => 'Jane Farmer',
@@ -50,6 +50,20 @@ class LabWorkflowTest extends TestCase
                 ],
             ])
             ->assertRedirect();
+
+        $job->refresh();
+        $this->assertSame(JobOrderStatus::PendingJoApproval, $job->status);
+
+        $this->actingAs($receiving)
+            ->post("/receiving/{$job->id}/receive")
+            ->assertSessionHasErrors('job_order');
+
+        $this->approveJobOrder($job);
+
+        $job->refresh();
+        $this->assertSame(JobOrderStatus::JoApproved, $job->status);
+        $this->assertNotNull($job->jo_approved_at);
+        $this->assertSame($head->id, $job->jo_approved_by);
 
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
@@ -75,6 +89,8 @@ class LabWorkflowTest extends TestCase
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
                 'result_value' => '12.5',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method',
                 'result_unit' => '%',
             ])
             ->assertRedirect();
@@ -106,7 +122,7 @@ class LabWorkflowTest extends TestCase
             ->post("/head/{$job->id}/sign", [
                 'review_notes' => 'Signed end of day',
             ])
-            ->assertRedirect('/head');
+            ->assertRedirect('/head/results?tab=unsigned');
 
         $job->refresh();
         $this->assertSame(JobOrderStatus::ReadyForPickup, $job->status);
@@ -121,7 +137,7 @@ class LabWorkflowTest extends TestCase
 
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
-        $type = AnalysisType::query()->where('code', 'PC-07')->firstOrFail();
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
 
         $this->post('/intake/job-orders', [
             'customer_name' => 'Sam Customer',
@@ -150,6 +166,8 @@ class LabWorkflowTest extends TestCase
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
                 'result_value' => '1.0',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method',
             ])
             ->assertSessionHasErrors('analysis');
 
@@ -165,6 +183,12 @@ class LabWorkflowTest extends TestCase
             ->get('/analyst')
             ->assertOk()
             ->assertInertia(fn ($page) => $page->has('tasks', 0));
+
+        $this->actingAs($receiving)
+            ->post("/receiving/{$job->id}/receive")
+            ->assertSessionHasErrors('job_order');
+
+        $this->approveJobOrder($job);
 
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
@@ -186,7 +210,7 @@ class LabWorkflowTest extends TestCase
     {
         $this->seed();
 
-        $type = AnalysisType::query()->where('code', 'PC-07')->firstOrFail();
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
 
         $this->from('/intake/create')
             ->post('/intake/job-orders', [
@@ -215,7 +239,7 @@ class LabWorkflowTest extends TestCase
                 'job_order_ids' => [$first->id, $second->id],
                 'review_notes' => 'End of day batch',
             ])
-            ->assertRedirect('/head');
+            ->assertRedirect('/head/results?tab=unsigned');
 
         $first->refresh();
         $second->refresh();
@@ -240,7 +264,7 @@ class LabWorkflowTest extends TestCase
                 'analysis_ids' => [$line->id],
                 'review_notes' => 'Please recheck the pH reading.',
             ])
-            ->assertRedirect('/head');
+            ->assertRedirect('/head/results');
 
         $job->refresh();
         $line->refresh();
@@ -260,6 +284,39 @@ class LabWorkflowTest extends TestCase
                 ->where('jobs.total', 1));
     }
 
+    public function test_head_cannot_return_after_results_are_released(): void
+    {
+        Mail::fake();
+        $this->seed();
+
+        $head = User::where('email', 'head@nppc.local')->firstOrFail();
+        $job = $this->createFinishedJob('Released Return Block', 'released-return@example.com');
+        $line = $job->analyses()->firstOrFail();
+
+        $this->actingAs($head)
+            ->post("/head/{$job->id}/sign", [
+                'review_notes' => 'Released',
+            ])
+            ->assertRedirect('/head/results?tab=unsigned');
+
+        $job->refresh();
+        $this->assertSame(JobOrderStatus::ReadyForPickup, $job->status);
+        $this->assertNotNull($job->reviewed_at);
+
+        $this->actingAs($head)
+            ->post("/head/{$job->id}/return", [
+                'analysis_ids' => [$line->id],
+                'review_notes' => 'Too late',
+            ])
+            ->assertSessionHasErrors('job_order');
+
+        $job->refresh();
+        $line->refresh();
+        $this->assertSame(JobOrderStatus::ReadyForPickup, $job->status);
+        $this->assertSame(JobOrderAnalysisStatus::Completed, $line->status);
+        $this->assertNotNull($line->result_value);
+    }
+
     public function test_completed_analysis_cannot_be_overwritten_without_return(): void
     {
         Mail::fake();
@@ -267,7 +324,7 @@ class LabWorkflowTest extends TestCase
 
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
-        $type = AnalysisType::query()->where('code', 'PC-07')->firstOrFail();
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
 
         $this->post('/intake/job-orders', [
             'customer_name' => 'Guard Customer',
@@ -290,6 +347,8 @@ class LabWorkflowTest extends TestCase
             ])
             ->assertRedirect();
 
+        $this->approveJobOrder($job);
+
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
@@ -297,6 +356,8 @@ class LabWorkflowTest extends TestCase
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
                 'result_value' => '10',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method',
                 'result_unit' => 'mg/L',
             ])
             ->assertRedirect();
@@ -308,13 +369,101 @@ class LabWorkflowTest extends TestCase
             ->from('/analyst')
             ->post("/analyst/tasks/{$line->id}/complete", [
                 'result_value' => '99',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method',
                 'result_unit' => 'mg/L',
             ])
             ->assertRedirect('/analyst')
-            ->assertSessionHasErrors('analysis');
+            ->assertSessionHasNoErrors();
 
         $line->refresh();
-        $this->assertSame('10', $line->result_value);
+        $this->assertSame('99', $line->result_value);
+        $this->assertSame(JobOrderAnalysisStatus::Completed, $line->status);
+    }
+
+    public function test_analyst_can_edit_result_after_send_to_head_and_after_release(): void
+    {
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $head = User::where('email', 'head@nppc.local')->firstOrFail();
+        $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'Post Release Edit',
+            'customer_email' => 'post-release@example.com',
+            'samples' => [
+                ['description' => 'Water', 'matrix' => 'Liquid'],
+            ],
+            'analysis_type_ids' => [$type->id],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $line = $job->analyses()->firstOrFail();
+
+        $this->actingAs($receiving)
+            ->patch("/receiving/{$job->id}/pricing", [
+                'lines' => [
+                    ['id' => $line->id, 'unit_price' => 250, 'quantity' => 1],
+                ],
+            ])
+            ->assertRedirect();
+
+        $this->approveJobOrder($job);
+
+        $this->actingAs($receiving)
+            ->post("/receiving/{$job->id}/receive")
+            ->assertRedirect('/receiving');
+
+        $this->actingAs($analyst)
+            ->post("/analyst/tasks/{$line->id}/complete", $this->completeResultPayload([
+                'result_value' => '10',
+                'result_unit' => 'mg/L',
+            ]))
+            ->assertRedirect();
+
+        $this->actingAs($analyst)
+            ->post("/analyst/job-orders/{$job->id}/submit-for-review")
+            ->assertRedirect();
+
+        $job->refresh();
+        $this->assertSame(JobOrderStatus::PendingReview, $job->status);
+
+        $this->actingAs($analyst)
+            ->post("/analyst/tasks/{$line->id}/complete", $this->completeResultPayload([
+                'result_value' => '11',
+                'result_unit' => 'mg/L',
+                'result_method' => 'Updated Method',
+            ]))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $line->refresh();
+        $this->assertSame('11', $line->result_value);
+        $this->assertSame('Updated Method', $line->result_method);
+        $this->assertSame(JobOrderAnalysisStatus::Completed, $line->status);
+        $this->assertSame(JobOrderStatus::PendingReview, $job->fresh()->status);
+
+        $this->actingAs($head)
+            ->post("/head/{$job->id}/sign")
+            ->assertRedirect();
+
+        $this->assertSame(JobOrderStatus::ReadyForPickup, $job->fresh()->status);
+
+        $this->actingAs($analyst)
+            ->post("/analyst/tasks/{$line->id}/complete", $this->completeResultPayload([
+                'result_value' => '12',
+                'result_pass_fail' => 'Failed',
+                'result_unit' => 'mg/L',
+            ]))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $line->refresh();
+        $this->assertSame('12', $line->result_value);
+        $this->assertSame('Failed', $line->result_pass_fail);
+        $this->assertSame(JobOrderStatus::ReadyForPickup, $job->fresh()->status);
     }
 
     public function test_filtered_queue_links_return_expected_filters(): void
@@ -335,13 +484,21 @@ class LabWorkflowTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('receiving/index')
-                ->where('filters.status', 'draft_submitted'));
+                ->where('filters.status', 'draft_submitted')
+                ->where('filters.sort', 'oldest'));
 
-        $this->actingAs($head)
-            ->get('/head?tab=unsigned')
+        $this->actingAs($receiving)
+            ->get('/receiving?sort=newest')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
-                ->component('head/index')
+                ->component('receiving/index')
+                ->where('filters.sort', 'newest'));
+
+        $this->actingAs($head)
+            ->get('/head/results?tab=unsigned')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('head/results')
                 ->where('filters.tab', 'unsigned'));
 
         $this->actingAs($head)
@@ -398,6 +555,8 @@ class LabWorkflowTest extends TestCase
             ])
             ->assertRedirect();
 
+        $this->approveJobOrder($job);
+
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
@@ -413,7 +572,9 @@ class LabWorkflowTest extends TestCase
             $worker = $line->assignee ?? $analyst;
             $this->actingAs($worker)
                 ->post("/analyst/tasks/{$line->id}/complete", [
-                    'result_value' => 'Passed',
+                    'result_value' => 'ND',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method'
                 ])
                 ->assertRedirect();
         }
@@ -437,7 +598,7 @@ class LabWorkflowTest extends TestCase
     {
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
-        $type = AnalysisType::query()->where('code', 'PC-07')->firstOrFail();
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
 
         $this->post('/intake/job-orders', [
             'customer_name' => $customerName,
@@ -460,6 +621,8 @@ class LabWorkflowTest extends TestCase
             ])
             ->assertRedirect();
 
+        $this->approveJobOrder($job);
+
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
@@ -467,6 +630,8 @@ class LabWorkflowTest extends TestCase
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
                 'result_value' => '1.0',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method',
             ])
             ->assertRedirect();
 

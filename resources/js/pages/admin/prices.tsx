@@ -1,6 +1,8 @@
-import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { Pencil, Plus, Search, Tags } from 'lucide-react';
+import { Head, router, useForm } from '@inertiajs/react';
+import LimsWorkspace from '@/components/lims/lims-workspace';
+import { Pencil, Plus, Search, Tags, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import ConfirmDialog from '@/components/confirm-dialog';
 import TablePagination from '@/components/table-pagination';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,6 +23,8 @@ type AnalysisType = {
     id: number;
     code: string;
     name: string;
+    method: string | null;
+    acceptable_values?: string | null;
     category_id: number;
     category: string | null;
     category_label: string | null;
@@ -50,14 +54,32 @@ type Group = {
 type Props = {
     groups: Group[];
     categories: CategoryOption[];
+    all_categories?: CategoryOption[];
 };
 
 function money(value: string | number) {
     return `₱${Number(value || 0).toFixed(2)}`;
 }
 
-export default function AdminPrices({ groups, categories }: Props) {
-    const { flash } = usePage().props as { flash?: { success?: string } };
+function categoryChipLabel(
+    category: CategoryOption,
+    siblings: CategoryOption[],
+): string {
+    const duplicateName = siblings.some(
+        (other) =>
+            other.id !== category.id &&
+            other.label.toLowerCase() === category.label.toLowerCase(),
+    );
+
+    return duplicateName ? `${category.label} (${category.slug})` : category.label;
+}
+
+export default function AdminPrices({
+    groups,
+    categories,
+    all_categories,
+}: Props) {
+    const manageCategories = all_categories ?? categories;
     const [query, setQuery] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<string>('all');
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>(
@@ -70,6 +92,8 @@ export default function AdminPrices({ groups, categories }: Props) {
     const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
     const [addProcedureOpen, setAddProcedureOpen] = useState(false);
     const [editing, setEditing] = useState<AnalysisType | null>(null);
+    const [deleting, setDeleting] = useState<AnalysisType | null>(null);
+    const [deletingBusy, setDeletingBusy] = useState(false);
 
     const procedures = useMemo(
         () => groups.flatMap((group) => group.items),
@@ -134,7 +158,7 @@ export default function AdminPrices({ groups, categories }: Props) {
     return (
         <>
             <Head title="Procedures & prices" />
-            <div className="flex flex-col gap-5 p-4">
+            <LimsWorkspace>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
@@ -144,11 +168,6 @@ export default function AdminPrices({ groups, categories }: Props) {
                             Searchable catalog of analyst procedures. Use
                             modals to add categories and add/edit procedures.
                         </p>
-                        {flash?.success && (
-                            <p className="mt-2 text-sm text-emerald-700">
-                                {flash.success}
-                            </p>
-                        )}
                     </div>
                     <div className="flex flex-wrap gap-2">
                         <Button
@@ -229,7 +248,7 @@ export default function AdminPrices({ groups, categories }: Props) {
                                         : 'border-slate-200 bg-white text-slate-700 hover:border-[#5282D3]',
                                 )}
                             >
-                                {category.label}
+                                {categoryChipLabel(category, categories)}
                                 <span
                                     className={cn(
                                         'rounded-full px-1.5 py-0.5 text-xs tabular-nums',
@@ -331,14 +350,25 @@ export default function AdminPrices({ groups, categories }: Props) {
                                         )}
                                     </td>
                                     <td className="px-4 py-3 text-right">
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => setEditing(item)}
-                                        >
-                                            <Pencil className="size-3.5" />
-                                            Edit
-                                        </Button>
+                                        <div className="flex justify-end gap-2">
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => setEditing(item)}
+                                            >
+                                                <Pencil className="size-3.5" />
+                                                Edit
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="text-red-700 hover:bg-red-50 hover:text-red-800"
+                                                onClick={() => setDeleting(item)}
+                                            >
+                                                <Trash2 className="size-3.5" />
+                                                Delete
+                                            </Button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -368,7 +398,7 @@ export default function AdminPrices({ groups, categories }: Props) {
                     label="procedures"
                     filteredTotal={procedures.length}
                 />
-            </div>
+            </LimsWorkspace>
 
             <AddCategoryModal
                 open={addCategoryOpen}
@@ -377,7 +407,7 @@ export default function AdminPrices({ groups, categories }: Props) {
             <ManageCategoriesModal
                 open={manageCategoriesOpen}
                 onOpenChange={setManageCategoriesOpen}
-                categories={categories}
+                categories={manageCategories}
             />
             <ProcedureModal
                 open={addProcedureOpen}
@@ -389,8 +419,46 @@ export default function AdminPrices({ groups, categories }: Props) {
                 open={!!editing}
                 onOpenChange={(open) => !open && setEditing(null)}
                 categories={categories}
+                allCategories={manageCategories}
                 mode="edit"
                 procedure={editing}
+            />
+            <ConfirmDialog
+                open={deleting !== null}
+                onOpenChange={(open) => {
+                    if (!open && !deletingBusy) {
+                        setDeleting(null);
+                    }
+                }}
+                title="Delete procedure?"
+                description={
+                    deleting ? (
+                        <>
+                            Delete <span className="font-medium">{deleting.code}</span>{' '}
+                            ({deleting.name})? This cannot be undone. Procedures
+                            used on packages or job orders cannot be deleted —
+                            deactivate them instead.
+                        </>
+                    ) : null
+                }
+                confirmLabel="Delete"
+                processingLabel="Deleting…"
+                variant="destructive"
+                processing={deletingBusy}
+                onConfirm={() => {
+                    if (!deleting) {
+                        return;
+                    }
+
+                    setDeletingBusy(true);
+                    router.delete(`/admin/prices/${deleting.id}`, {
+                        preserveScroll: true,
+                        onFinish: () => {
+                            setDeletingBusy(false);
+                            setDeleting(null);
+                        },
+                    });
+                }}
             />
         </>
     );
@@ -571,19 +639,42 @@ function ProcedureModal({
     open,
     onOpenChange,
     categories,
+    allCategories,
     mode,
     procedure = null,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     categories: CategoryOption[];
+    allCategories?: CategoryOption[];
     mode: 'create' | 'edit';
     procedure?: AnalysisType | null;
 }) {
+    const categoryChoices = useMemo(() => {
+        const pool = allCategories ?? categories;
+        const byId = new Map(categories.map((category) => [category.id, category]));
+
+        if (
+            procedure?.category_id &&
+            !byId.has(procedure.category_id)
+        ) {
+            const orphan = pool.find(
+                (category) => category.id === procedure.category_id,
+            );
+            if (orphan) {
+                return [...categories, orphan];
+            }
+        }
+
+        return categories;
+    }, [allCategories, categories, procedure?.category_id]);
+
     const form = useForm({
         code: procedure?.code ?? '',
         name: procedure?.name ?? '',
-        category_id: procedure?.category_id ?? categories[0]?.id ?? 0,
+        method: procedure?.method ?? '',
+        acceptable_values: procedure?.acceptable_values ?? '',
+        category_id: procedure?.category_id ?? categoryChoices[0]?.id ?? 0,
         default_price: Number(procedure?.default_price ?? 0),
         is_active: procedure?.is_active ?? true,
     });
@@ -596,7 +687,9 @@ function ProcedureModal({
         form.setData({
             code: procedure?.code ?? '',
             name: procedure?.name ?? '',
-            category_id: procedure?.category_id ?? categories[0]?.id ?? 0,
+            method: procedure?.method ?? '',
+            acceptable_values: procedure?.acceptable_values ?? '',
+            category_id: procedure?.category_id ?? categoryChoices[0]?.id ?? 0,
             default_price: Number(procedure?.default_price ?? 0),
             is_active: procedure?.is_active ?? true,
         });
@@ -615,6 +708,8 @@ function ProcedureModal({
                     form.setData({
                         code: '',
                         name: '',
+                        method: '',
+                        acceptable_values: '',
                         category_id: categories[0]?.id ?? 0,
                         default_price: 0,
                         is_active: true,
@@ -655,7 +750,7 @@ function ProcedureModal({
                             <Input
                                 id="proc_code"
                                 className="mt-1"
-                                placeholder="MB-11"
+                                placeholder="AQ-W-01"
                                 value={form.data.code}
                                 onChange={(e) =>
                                     form.setData('code', e.target.value)
@@ -682,12 +777,16 @@ function ProcedureModal({
                                 }
                                 required
                             >
-                                {categories.map((category) => (
+                                {categoryChoices.map((category) => (
                                     <option
                                         key={category.id}
                                         value={category.id}
                                     >
-                                        {category.label}
+                                        {categoryChipLabel(
+                                            category,
+                                            categoryChoices,
+                                        )}
+                                        {!category.is_active ? ' (inactive)' : ''}
                                     </option>
                                 ))}
                             </select>
@@ -705,6 +804,48 @@ function ProcedureModal({
                             }
                             required
                         />
+                    </div>
+                    <div>
+                        <Label htmlFor="proc_method">Method</Label>
+                        <Input
+                            id="proc_method"
+                            className="mt-1"
+                            placeholder="Shown under the test name on dynamic matrix PDFs"
+                            value={form.data.method}
+                            onChange={(e) =>
+                                form.setData('method', e.target.value)
+                            }
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            Default for analyst encoding and Dynamic test matrix
+                            PDFs. Analysts can override method when encoding.
+                        </p>
+                        {form.errors.method && (
+                            <p className="mt-1 text-xs text-red-600">
+                                {form.errors.method}
+                            </p>
+                        )}
+                    </div>
+                    <div>
+                        <Label htmlFor="proc_acceptable">Acceptable values</Label>
+                        <textarea
+                            id="proc_acceptable"
+                            className="mt-1 min-h-[72px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                            placeholder="e.g. 6.5-8.5 / 5-7 for RO or distilled product water"
+                            value={form.data.acceptable_values}
+                            onChange={(e) =>
+                                form.setData('acceptable_values', e.target.value)
+                            }
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            Optional. Printed in the Acceptable Values column on
+                            Drinking Water Physico-Chemical style sheets.
+                        </p>
+                        {form.errors.acceptable_values && (
+                            <p className="mt-1 text-xs text-red-600">
+                                {form.errors.acceptable_values}
+                            </p>
+                        )}
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
                         <div>

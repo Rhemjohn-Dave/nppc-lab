@@ -55,6 +55,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/tasks/{analysis}/draft', [AnalystController::class, 'saveDraft'])->name('draft');
         Route::post('/tasks/{analysis}/complete', [AnalystController::class, 'complete'])->name('complete');
         Route::post('/job-orders/{jobOrder}/submit-for-review', [AnalystController::class, 'submitForReview'])->name('submit-for-review');
+        Route::put('/job-orders/{jobOrder}/result-signatories', [AnalystController::class, 'updateResultSignatories'])->name('result-signatories');
         Route::get('/tasks/{analysis}/report', [AnalystController::class, 'report'])->name('report');
         Route::get('/tasks/{analysis}/combined-pdf', [AnalystController::class, 'combinedPdf'])->name('combined-pdf');
         Route::get('/tasks/{analysis}/pdf', [AnalystController::class, 'pdf'])->name('pdf');
@@ -63,8 +64,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::middleware('role:head_analysis')->prefix('head')->name('head.')->group(function () {
         Route::get('/', [ReviewController::class, 'index'])->name('index');
+        Route::get('/jo', [ReviewController::class, 'joIndex'])->name('jo');
+        Route::get('/results', [ReviewController::class, 'resultsIndex'])->name('results');
+        Route::post('/approve-batch', [ReviewController::class, 'approveJobOrderBatch'])->name('approve-batch');
         Route::post('/sign-batch', [ReviewController::class, 'signBatch'])->name('sign-batch');
         Route::get('/{jobOrder}', [ReviewController::class, 'show'])->name('show');
+        Route::post('/{jobOrder}/approve', [ReviewController::class, 'approveJobOrder'])->name('approve');
         Route::post('/{jobOrder}/sign', [ReviewController::class, 'sign'])->name('sign');
         Route::post('/{jobOrder}/return', [ReviewController::class, 'returnAnalyses'])->name('return');
         Route::get('/{jobOrder}/print', [ReviewController::class, 'print'])->name('print');
@@ -86,10 +91,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('/prices/categories/{category}', [AnalysisTypeAdminController::class, 'destroyCategory'])->name('prices.categories.destroy');
         Route::post('/prices', [AnalysisTypeAdminController::class, 'store'])->name('prices.store');
         Route::patch('/prices/{analysisType}', [AnalysisTypeAdminController::class, 'update'])->name('prices.update');
+        Route::delete('/prices/{analysisType}', [AnalysisTypeAdminController::class, 'destroy'])->name('prices.destroy');
 
         Route::get('/packages', [AnalysisPackageAdminController::class, 'index'])->name('packages');
         Route::post('/packages', [AnalysisPackageAdminController::class, 'store'])->name('packages.store');
         Route::put('/packages/{package}', [AnalysisPackageAdminController::class, 'update'])->name('packages.update');
+        Route::delete('/packages/{package}', [AnalysisPackageAdminController::class, 'destroy'])->name('packages.destroy');
+
+        Route::get('/result-panels', [ControlledFormAdminController::class, 'resultPanels'])->name('result-panels');
 
         Route::get('/assignments', [AssignmentAdminController::class, 'index'])->name('assignments');
         Route::put('/assignments/{user}', [AssignmentAdminController::class, 'update'])->name('assignments.update');
@@ -113,6 +122,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/controlled-forms/{controlledForm}/revisions/{revision}/canonical', [ControlledFormAdminController::class, 'canonical'])->name('controlled-forms.revisions.canonical');
         Route::get('/controlled-forms/{controlledForm}/revisions/{revision}/original', [ControlledFormAdminController::class, 'original'])->name('controlled-forms.revisions.original');
         Route::get('/controlled-forms/{controlledForm}/revisions/{revision}/preview', [ControlledFormAdminController::class, 'preview'])->name('controlled-forms.revisions.preview');
+        Route::post('/controlled-forms/{controlledForm}/revisions/{revision}/preview', [ControlledFormAdminController::class, 'preview'])->name('controlled-forms.revisions.preview.post');
         Route::get('/controlled-forms/{controlledForm}/revisions/{revision}/calibration', [ControlledFormAdminController::class, 'calibration'])->name('controlled-forms.revisions.calibration');
 
         Route::get('/print-history', [PrintHistoryAdminController::class, 'index'])->name('print-history.index');

@@ -4,9 +4,11 @@ export type MatrixColumnConfig = {
     key: string;
     label: string;
     sublabel?: string | null;
+    sublabels?: string[] | null;
     width_pct?: number;
     align?: 'L' | 'C' | 'R';
     header_align?: 'L' | 'C' | 'R';
+    sublabel_align?: 'L' | 'C' | 'R';
     /** Body cell font size (pt) for this column */
     font_size?: number;
     /** Header cell font size (pt) for this column */
@@ -25,6 +27,8 @@ export type MatrixTableConfig = {
     preview_rows?: number;
     /** Designer-only sample row text (not printed — runtime uses job data) */
     preview_data?: Array<Record<string, string>>;
+    /** When false, body rows keep natural height (no stretch-to-fill). */
+    stretch_body?: boolean;
     method_font_size?: number;
     test_name_bold?: boolean;
     header_bold?: boolean;
@@ -56,6 +60,21 @@ export function matrixHeaderFontSize(fieldFontSize: number, config: MatrixTableC
     return fieldFontSize;
 }
 
+export function matrixHeaderSublines(column: MatrixColumnConfig): string[] {
+    if (Array.isArray(column.sublabels) && column.sublabels.length > 0) {
+        return column.sublabels.map((line) => line.trim()).filter(Boolean);
+    }
+
+    if (!column.sublabel) {
+        return [];
+    }
+
+    return column.sublabel
+        .split(/\r\n|\n|\r/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+}
+
 export function measureMatrixHeaderRowHeightMm(
     config: MatrixTableConfig,
     fieldFontSize: number,
@@ -73,11 +92,12 @@ export function measureMatrixHeaderRowHeightMm(
     for (const column of columns) {
         const colFontSize = column.header_font_size ?? defaultHeaderFont;
         const labelLine = matrixLineHeightMm(colFontSize);
+        const sublines = matrixHeaderSublines(column);
         let colHeight = padding + labelLine + padding;
 
-        if (column.sublabel) {
+        if (sublines.length > 0) {
             const subLine = matrixLineHeightMm(Math.max(6, colFontSize - 1));
-            colHeight = padding + labelLine + gap + subLine + padding;
+            colHeight = padding + labelLine + gap + sublines.length * subLine + padding;
         }
 
         maxHeight = Math.max(maxHeight, colHeight);
@@ -85,6 +105,35 @@ export function measureMatrixHeaderRowHeightMm(
 
     return maxHeight;
 }
+
+/**
+ * Distribute leftover body height across drawn rows (mirrors DynamicTestMatrix::stretchBodyRowHeights).
+ */
+export function stretchBodyRowHeightsMm(
+    naturalHeightsMm: number[],
+    availableBodyMm: number,
+): number[] {
+    const count = naturalHeightsMm.length;
+    if (count === 0) {
+        return [];
+    }
+
+    const naturalTotal = naturalHeightsMm.reduce((sum, h) => sum + h, 0);
+    if (availableBodyMm <= 0 || naturalTotal <= 0) {
+        return [...naturalHeightsMm];
+    }
+
+    if (naturalTotal >= availableBodyMm - 0.05) {
+        return [...naturalHeightsMm];
+    }
+
+    const extraEach = (availableBodyMm - naturalTotal) / count;
+
+    return naturalHeightsMm.map((natural) => natural + extraEach);
+}
+
+/** Designer-only chrome above the printable matrix (in-flow; does not overlay headers). */
+export const MATRIX_DESIGNER_DRAG_HANDLE_PX = 16;
 
 export function matrixMethodFontSize(fieldFontSize: number, config: MatrixTableConfig): number {
     if (typeof config.method_font_size === 'number' && config.method_font_size > 0) {
@@ -108,25 +157,36 @@ export function columnBodyAlign(column: MatrixColumnConfig): 'L' | 'C' | 'R' {
 
 export const DEFAULT_MATRIX_CONFIG: MatrixTableConfig = {
     columns: [
-        { key: 'test', label: 'TEST', width_pct: 42, align: 'L' },
-        { key: 'sample_1', label: 'Sample 1', sublabel: 'SS: 18g', width_pct: 29, align: 'C' },
-        { key: 'sample_2', label: 'Sample 2', sublabel: 'SS: 18g', width_pct: 29, align: 'C' },
+        { key: 'test', label: 'TEST', width_pct: 55, align: 'C', header_align: 'C' },
+        {
+            key: 'result',
+            label: 'Control Number',
+            sublabel: 'Sample Description:\nSS:',
+            sublabel_align: 'C',
+            width_pct: 45,
+            align: 'C',
+            header_align: 'C',
+        },
     ],
-    row_height_mm: 7,
+    row_height_mm: 9,
+    header_row_height_mm: 14,
     header_row: true,
     border: true,
     preview_rows: 8,
+    test_name_bold: true,
+    header_bold: true,
+    method_font_size: 7,
 };
 
 export const MATRIX_DESIGNER_PREVIEW_ROWS: Array<Record<string, string>> = [
-    { test: '% Fat', test_method: 'Soxhlet Extraction Method', sample_1: '0.68', sample_2: '0.59' },
-    { test: '% Protein', test_method: 'Kjeldahl Method', sample_1: '18.2', sample_2: '18.0' },
-    { test: '% Moisture', test_method: 'Gravimetric Oven Drying at 105°C', sample_1: '65.0', sample_2: '64.8' },
-    { test: '% Fiber', test_method: 'Weende Method', sample_1: '2.1', sample_2: '2.0' },
-    { test: '% Carbohydrates', test_method: 'Phenol Sulfuric Acid Method', sample_1: '12.4', sample_2: '12.6' },
-    { test: '% Ash', test_method: 'Oxidation at 550°C', sample_1: '1.2', sample_2: '1.1' },
-    { test: 'Sugar, Bx', test_method: 'Refractometer', sample_1: '4.5', sample_2: '4.4' },
-    { test: 'Nitrite (mg/kg)', test_method: 'Spectrophotometric Method', sample_1: '12', sample_2: '11' },
+    { test: '% Fat', test_method: 'Soxhlet Extraction Method', result: '0.68' },
+    { test: '% Protein', test_method: 'Kjeldahl Method', result: '18.2' },
+    { test: '% Moisture', test_method: 'Gravimetric Oven Drying at 105°C', result: '65.0' },
+    { test: '% Fiber', test_method: 'Weende Method', result: '2.1' },
+    { test: '% Carbohydrates', test_method: 'Phenol Sulfuric Acid Method', result: '12.4' },
+    { test: '% Ash', test_method: 'Oxidation at 550°C', result: '1.2' },
+    { test: '% Sodium', test_method: 'FLAME-AES', result: '0.45' },
+    { test: 'Sugar, Bx', test_method: 'Refractometer', result: '4.5' },
 ];
 
 export function matrixConfig(field: DesignerField): MatrixTableConfig {
@@ -136,33 +196,95 @@ export function matrixConfig(field: DesignerField): MatrixTableConfig {
             ? raw.columns
             : DEFAULT_MATRIX_CONFIG.columns!;
 
-    return {
+    const merged: MatrixTableConfig = {
         ...DEFAULT_MATRIX_CONFIG,
         ...raw,
         columns,
     };
+
+    // Nitrite: keep natural row height (1 sample → 1 short row, not one stretched cell).
+    if (field.name === 'nitrite_f016_matrix') {
+        return {
+            ...merged,
+            stretch_body: false,
+        };
+    }
+
+    return merged;
 }
 
-export function matrixPreviewData(config: MatrixTableConfig): Array<Record<string, string>> {
-    const count = Math.min(
-        config.preview_rows ?? MATRIX_DESIGNER_PREVIEW_ROWS.length,
-        MATRIX_DESIGNER_PREVIEW_ROWS.length,
-    );
+export function matrixPreviewData(
+    config: MatrixTableConfig,
+    baseRows: Array<Record<string, string>> = MATRIX_DESIGNER_PREVIEW_ROWS,
+): Array<Record<string, string>> {
     const stored = config.preview_data ?? [];
+    const source = baseRows.length > 0 ? baseRows : MATRIX_DESIGNER_PREVIEW_ROWS;
+    const desired =
+        typeof config.preview_rows === 'number' && config.preview_rows > 0
+            ? config.preview_rows
+            : Math.max(source.length, stored.length);
 
-    return Array.from({ length: count }, (_, index) => ({
-        ...MATRIX_DESIGNER_PREVIEW_ROWS[index],
-        ...(stored[index] ?? {}),
-    }));
+    // Same as other matrices: clamp to bound package/type preview rows from the server.
+    const count = Math.min(desired, Math.max(source.length, stored.length || source.length));
+
+    return Array.from({ length: count }, (_, index) => {
+        const base = source[index] ?? {};
+        const override = stored[index] ?? {};
+        const merged: Record<string, string> = { ...base };
+
+        for (const [key, value] of Object.entries(override)) {
+            if (
+                (key === 'test' || key === 'test_method') &&
+                (value === undefined || value === null || String(value).trim() === '')
+            ) {
+                continue;
+            }
+
+            merged[key] = value == null ? '' : String(value);
+        }
+
+        return merged;
+    });
 }
 
 export function columnWidthPct(columns: MatrixColumnConfig[], index: number): number {
-    const column = columns[index];
-    if (column?.width_pct && column.width_pct > 0) {
-        return column.width_pct;
+    const count = Math.max(1, columns.length);
+    const raw = columns.map((column) =>
+        column?.width_pct && column.width_pct > 0 ? column.width_pct : 0,
+    );
+    const sum = raw.reduce((total, pct) => total + pct, 0);
+
+    if (sum <= 0) {
+        return 100 / count;
     }
 
-    return 100 / Math.max(1, columns.length);
+    const pct = raw[index] ?? 0;
+    if (pct <= 0) {
+        return 0;
+    }
+
+    // Last positive column absorbs floating-point drift so widths sum to 100.
+    const positiveIndexes = raw
+        .map((value, i) => (value > 0 ? i : -1))
+        .filter((i) => i >= 0);
+    const lastPositive = positiveIndexes[positiveIndexes.length - 1];
+    if (index === lastPositive) {
+        const others = positiveIndexes
+            .filter((i) => i !== lastPositive)
+            .reduce((total, i) => total + (100 * (raw[i] ?? 0)) / sum, 0);
+
+        return 100 - others;
+    }
+
+    return (100 * pct) / sum;
+}
+
+export function columnWidthPctSum(columns: MatrixColumnConfig[]): number {
+    return columns.reduce((total, column) => {
+        const pct = column?.width_pct && column.width_pct > 0 ? column.width_pct : 0;
+
+        return total + pct;
+    }, 0);
 }
 
 export function cellValue(row: Record<string, string>, key: string): string {
@@ -189,6 +311,7 @@ export function readCellText(
     config: MatrixTableConfig,
     columns: MatrixColumnConfig[],
     selection: MatrixCellSelection,
+    baseRows?: Array<Record<string, string>>,
 ): string {
     const column = columns.find((item) => item.key === selection.columnKey);
     if (!column) {
@@ -199,7 +322,7 @@ export function readCellText(
         return selection.part === 'label' ? column.label : column.sublabel ?? '';
     }
 
-    const row = matrixPreviewData(config)[selection.rowIndex] ?? {};
+    const row = matrixPreviewData(config, baseRows)[selection.rowIndex] ?? {};
     if (selection.part === 'test') {
         return row.test ?? '';
     }
@@ -214,6 +337,7 @@ export function patchCellText(
     config: MatrixTableConfig,
     selection: MatrixCellSelection,
     text: string,
+    baseRows?: Array<Record<string, string>>,
 ): MatrixTableConfig {
     if (selection.area === 'header') {
         const columns = (config.columns ?? []).map((column) => {
@@ -231,7 +355,7 @@ export function patchCellText(
         return { ...config, columns };
     }
 
-    const preview_data = matrixPreviewData(config).map((row, index) => {
+    const preview_data = matrixPreviewData(config, baseRows).map((row, index) => {
         if (index !== selection.rowIndex) {
             return row;
         }

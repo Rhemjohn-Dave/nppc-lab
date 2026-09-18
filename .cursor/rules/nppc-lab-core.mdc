@@ -1,0 +1,42 @@
+---
+description: NPPC LIMS core stack, docs, and change discipline
+alwaysApply: true
+---
+
+# NPPC Laboratory Management System
+
+## Stack
+
+- **Backend:** Laravel 13, PHP, Inertia server props, MySQL (prod) / SQLite (local)
+- **Frontend:** React 19, TypeScript, Tailwind CSS 4, shadcn/ui (`@/components/ui/*`)
+- **PDF:** Controlled forms via uploaded PDF + FPDI/TCPDF overlays (`ControlledPdfFiller`, Form Designer)
+
+## Before changing behavior
+
+1. Read **`docs/SYSTEM_OVERVIEW.md`** for roles, JO approval, assignment, and release workflow.
+2. Treat lab workflow rules as **locked** unless the user explicitly asks to change validation, API shape, pricing logic, or persistence.
+3. Prefer **minimal diffs**; match naming and patterns in the touched module.
+
+## Where things live
+
+| Area | Location |
+|------|----------|
+| HTTP | `app/Http/Controllers/` |
+| Domain logic | `app/Services/`, `app/Support/` |
+| Enums | `app/Enums/` |
+| Inertia pages | `resources/js/pages/` |
+| Shared UI | `resources/js/components/` |
+| Controlled form field catalogs | `config/*form_fields.php`, `config/controlled_form_sources.php` |
+| Official form assets | `resources/forms/official/` |
+
+## Verification
+
+- Backend: `php artisan test` (use `--filter=` for targeted suites)
+- Frontend: `npm run build` after TS/React changes
+- Do **not** git commit unless the user asks
+
+## Docs index
+
+- Workflow: `docs/SYSTEM_OVERVIEW.md`
+- Controlled PDF forms: `docs/CONTROLLED_FORMS.md`, `docs/DYNAMIC_CONTROLLED_FORMS.md`, `docs/CONTROLLED_FORMS_EXPANSION.md`
+- Deploy: `docs/DEPLOY.md`

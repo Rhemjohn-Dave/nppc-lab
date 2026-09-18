@@ -23,7 +23,10 @@ const kpiIcons: Record<string, LucideIcon> = {
     draft_revisions: PenLine,
     audit_events_7d: Shield,
     new_requests: Inbox,
+    needs_pricing: Inbox,
+    awaiting_head: Clock,
     for_receiving: Package,
+    ready_for_analysts: Package,
     received_today: CheckCircle2,
     reviewed: FileCheck,
     needs_action: AlertTriangle,
@@ -42,7 +45,10 @@ const kpiHints: Record<string, string> = {
     returned: 'Needs correction',
     completed_today: 'Finished today',
     new_requests: 'Awaiting review',
-    for_receiving: 'Ready to receive',
+    needs_pricing: 'Enter line prices',
+    awaiting_head: 'JO with Head',
+    for_receiving: 'Ready for analysts',
+    ready_for_analysts: 'Print ×3 then send',
     waiting_review: 'Pending signature',
     ready_to_sign: 'Awaiting your sign-off',
 };
@@ -129,7 +135,7 @@ export function KpiGrid({
             className={cn(
                 'grid gap-3',
                 compact
-                    ? 'grid-cols-2 lg:grid-cols-4'
+                    ? 'grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4'
                     : 'sm:grid-cols-2 xl:grid-cols-4',
             )}
         >

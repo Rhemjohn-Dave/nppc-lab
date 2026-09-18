@@ -51,11 +51,16 @@ function notificationHref(data: NotificationData): string | null {
 
     switch (data.type) {
         case 'job_order_submitted':
+        case 'job_order_jo_approved':
+        case 'results_released':
             return `/receiving/${data.job_order_id}`;
         case 'task_assigned':
+        case 'analysis_returned':
             return data.job_order_id
                 ? `/analyst?job=${data.job_order_id}`
                 : '/analyst';
+        case 'job_order_pending_jo_approval':
+        case 'job_order_pending_review':
         case 'job_order_ready_to_sign':
             return `/head/${data.job_order_id}`;
         default:
@@ -129,11 +134,21 @@ export function AppSidebarHeader({
                     ? payload.type
                     : payload.type?.includes('JobOrderSubmitted')
                       ? 'job_order_submitted'
-                      : payload.type?.includes('TaskAssigned')
-                        ? 'task_assigned'
-                        : payload.type?.includes('JobOrderPendingReview')
-                          ? 'job_order_ready_to_sign'
-                          : payload.type,
+                      : payload.type?.includes('JobOrderJoApproved')
+                        ? 'job_order_jo_approved'
+                        : payload.type?.includes('TaskAssigned')
+                          ? 'task_assigned'
+                          : payload.type?.includes('AnalysisReturned')
+                            ? 'analysis_returned'
+                            : payload.type?.includes('ResultsReleased')
+                              ? 'results_released'
+                              : payload.type?.includes(
+                                      'JobOrderPendingJoApproval',
+                                  )
+                                ? 'job_order_pending_jo_approval'
+                                : payload.type?.includes('JobOrderPendingReview')
+                                  ? 'job_order_pending_review'
+                                  : payload.type,
             job_order_id: payload.job_order_id,
             analysis_id: payload.analysis_id,
             href: payload.href,

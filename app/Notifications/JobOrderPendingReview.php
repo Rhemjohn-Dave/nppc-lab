@@ -21,7 +21,7 @@ class JobOrderPendingReview extends Notification
     public function toArray(object $notifiable): array
     {
         return [
-            'type' => 'job_order_ready_to_sign',
+            'type' => 'job_order_pending_review',
             'job_order_id' => $this->jobOrder->id,
             'reference_no' => $this->jobOrder->reference_no,
             'message' => "Job order {$this->jobOrder->reference_no} is ready for Head review.",

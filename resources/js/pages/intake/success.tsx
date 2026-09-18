@@ -19,15 +19,15 @@ export default function IntakeSuccess({ jobOrder }: Props) {
                 <NppcLogo className="mx-auto h-16 w-auto" />
                 <CheckCircle2 className="mx-auto mt-5 size-14 text-[#1A3694]" />
                 <h1 className="mt-4 font-heading text-3xl font-semibold text-[#1A3694]">
-                    Request received
+                    Request submitted successfully
                 </h1>
                 <p className="mt-3 text-slate-600">
-                    Thank you, {jobOrder.customer_name}. Please keep this
-                    reference number and proceed to Receiving.
+                    Thank you, {jobOrder.customer_name}. Your request has been
+                    received by the laboratory.
                 </p>
                 <div className="mt-6 rounded-2xl bg-[#e8eef8] px-4 py-5">
                     <p className="text-xs font-semibold tracking-[0.18em] text-[#365BB0] uppercase">
-                        Reference number
+                        Request reference
                     </p>
                     <p className="mt-2 font-heading text-4xl font-semibold tracking-wide text-[#1A3694]">
                         {jobOrder.reference_no}
@@ -39,14 +39,15 @@ export default function IntakeSuccess({ jobOrder }: Props) {
                         <Printer className="mt-0.5 size-4 shrink-0 text-[#1A3694]" />
                         <p>
                             Receiving will review pricing and print your Request
-                            for Analysis form.
+                            for Analysis form. Keep this reference number.
                         </p>
                     </div>
                     <div className="flex gap-3 rounded-xl border border-slate-200 p-3">
                         <Clock3 className="mt-0.5 size-4 shrink-0 text-[#1A3694]" />
                         <p>
-                            Typical turnaround is 5–7 working days. We’ll email
-                            you when results are ready for pickup.
+                            Typical turnaround is 5–7 working days. You will
+                            receive updates using your registered contact
+                            information when results are ready for pickup.
                         </p>
                     </div>
                 </div>
@@ -59,7 +60,7 @@ export default function IntakeSuccess({ jobOrder }: Props) {
                         <Link href="/intake">Done</Link>
                     </Button>
                     <Button asChild variant="outline" className="h-12">
-                        <Link href="/intake/create">Submit another</Link>
+                        <Link href="/intake">Start new request</Link>
                     </Button>
                 </div>
             </div>

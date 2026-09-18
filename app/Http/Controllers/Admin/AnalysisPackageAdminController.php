@@ -87,6 +87,18 @@ class AnalysisPackageAdminController extends Controller
         return redirect()->route('admin.packages')->with('success', 'Package updated.');
     }
 
+    public function destroy(AnalysisPackage $package): RedirectResponse
+    {
+        $code = $package->code;
+
+        // Detach members; job_order_packages and controlled_forms FKs cascade / null on delete.
+        $package->analysisTypes()->detach();
+        $package->jobOrders()->detach();
+        $package->delete();
+
+        return redirect()->route('admin.packages')->with('success', "Package “{$code}” deleted.");
+    }
+
     /**
      * @return array<string, mixed>
      */

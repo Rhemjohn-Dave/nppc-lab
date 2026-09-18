@@ -72,10 +72,14 @@ class DashboardTest extends TestCase
                 ->where('role', 'receiving')
                 ->where('header.title', 'Receiving Workspace')
                 ->has('kpis', 4)
-                ->where('kpis.0.key', 'new_requests')
-                ->where('kpis.1.key', 'for_receiving')
-                ->where('kpis.2.key', 'received_today')
-                ->where('kpis.3.key', 'reviewed'));
+                ->where('kpis.0.key', 'needs_pricing')
+                ->where('kpis.1.key', 'awaiting_head')
+                ->where('kpis.2.key', 'ready_for_analysts')
+                ->where('kpis.3.key', 'reviewed')
+                ->where('kpis.0.href', '/receiving?status=draft_submitted')
+                ->where('kpis.1.href', '/receiving?status=pending_jo_approval')
+                ->where('kpis.2.href', '/receiving?status=jo_approved')
+                ->where('kpis.3.href', '/receiving?status=reviewed'));
     }
 
     public function test_analyst_dashboard_payload(): void

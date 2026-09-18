@@ -138,4 +138,36 @@ class AnalysisPackage extends Model
 
         return false;
     }
+
+    /**
+     * Strict Aqua vs non-Aqua package visibility for intake.
+     */
+    public function visibleForAqua(bool $isAqua): bool
+    {
+        $tags = array_values(array_filter(array_map(
+            static fn ($tag): string => mb_strtolower(trim((string) $tag)),
+            $this->classifications ?? [],
+        )));
+
+        if ($tags === []) {
+            return ! $isAqua;
+        }
+
+        $hasAqua = false;
+        $hasNonAqua = false;
+
+        foreach ($tags as $tag) {
+            if (str_contains($tag, 'aqua')) {
+                $hasAqua = true;
+            } else {
+                $hasNonAqua = true;
+            }
+        }
+
+        if ($isAqua) {
+            return $hasAqua;
+        }
+
+        return $hasNonAqua || ! $hasAqua;
+    }
 }

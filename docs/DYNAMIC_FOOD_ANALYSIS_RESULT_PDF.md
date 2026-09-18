@@ -24,7 +24,7 @@ The **only new capability** on top of the current design form is a **dynamic tab
 |----------------|----------------------|----------------------|
 | Upload PDF + designer | Yes | **Same** |
 | Header, customer block, dates | Mapped text/date fields | **Same** |
-| Analyzed by / Approved by | `results.analyst_name`, `job_orders.reviewed_by_name`, report dates | **Same** |
+| Analyzed by / Approved by | `results.analyst_name` (+ optional `results.analyst_name_2` / PRC keys), `job_orders.reviewed_by_name`, report dates | **Same** — Analyzed by is entered by the analyst at Send to Head (editable by analyst at print); Head fills Approved by on release |
 | Test result rows | Fixed slots (`test_1_*` … `test_N_*`); waived → `-` | **Dynamic table** — one row per selected test only |
 
 So technically this is **not a second report system**. It is the existing controlled-form pipeline plus one new render mode for the test table.
@@ -93,6 +93,7 @@ Add a field type to the existing Form Designer, e.g. `dynamic_test_matrix`:
 - Admin uploads the official Food/Special PDF (table body may be blank or omitted on the source file).
 - Admin maps all static fields as today (customer, address, specimen, dates, ref no., notes block if needed).
 - Admin maps **Analyzed by** → `results.analyst_name`, **Approved by** → `job_orders.reviewed_by_name`, dates → `results.report_date` / `results.release_date` (same catalog as FO4/FO5).
+- Per result form, admin can set **1 or 2 analyst slots** and whether **PRC ID is required**. The **analyst** enters those values at **Send to Head**; they persist on the job for reprints. Head cannot edit them. Analysts may adjust them when printing after release.
 - Admin draws **one rectangle** where the test table should appear and sets type = **Dynamic test matrix**.
 
 **Matrix region properties (v1):**
@@ -223,3 +224,5 @@ If no controlled form is bound yet, a temporary standalone DomPDF Blade view (`a
 | How do only 4 appear on the printed report? | Matrix region renders 4 rows; static header/signatures still use controlled-form overlays. |
 | Can I map Analyzed by / Approved by like FO4/FO5? | **Yes** — same data sources in the designer. |
 | Do water packages change? | **No** — they keep fixed-slot controlled-form reports. |
+
+> **Consolidated system doc:** `docs/DYNAMIC_CONTROLLED_FORMS.md`

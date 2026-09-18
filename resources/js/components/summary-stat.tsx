@@ -31,14 +31,14 @@ export default function SummaryStat({
     return (
         <div
             className={cn(
-                'rounded-xl border bg-gradient-to-br p-4',
+                'flex items-baseline justify-between gap-3 rounded-xl border bg-gradient-to-br p-3',
                 tones[tone],
             )}
         >
-            <p className="text-sm text-muted-foreground">{label}</p>
+            <p className="text-xs text-muted-foreground">{label}</p>
             <p
                 className={cn(
-                    'mt-1 font-heading text-3xl font-semibold',
+                    'font-heading text-2xl font-semibold tabular-nums',
                     valueTones[tone],
                 )}
             >

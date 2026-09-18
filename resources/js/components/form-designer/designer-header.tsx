@@ -23,13 +23,13 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Textarea } from '@/components/ui/textarea';
 import {
-    statusBadgeClass
-    
-    
+    statusBadgeClass,
+    type ControlledFormSummary,
+    type ControlledRevisionSummary,
 } from '@/lib/controlled-forms';
-import type {ControlledFormSummary, ControlledRevisionSummary} from '@/lib/controlled-forms';
 
 export type NewPdfRevisionPayload = {
     revision: string;
@@ -117,6 +117,10 @@ export default function DesignerHeader({
         <header className="relative z-20 shrink-0 border-b bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 lg:px-4">
                 <div className="flex min-w-0 items-center gap-2">
+                    <SidebarTrigger
+                        className="shrink-0 text-[#1A3694] hover:bg-[#eef3fb]"
+                        title="Show or hide navigation"
+                    />
                     <Button variant="ghost" size="sm" className="shrink-0 px-2" asChild>
                         <Link href={`/admin/controlled-forms/${form.id}`}>
                             <ArrowLeft className="size-4" />

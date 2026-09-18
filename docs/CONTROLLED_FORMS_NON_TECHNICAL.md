@@ -150,9 +150,11 @@ What to do:
 ### 3. Wrong revision is being used
 Possible reason:
 - the needed revision is not the active one
+- you edited a Draft in Form Designer but did not Activate it (operations always print the Active revision)
 
 What to do:
 - verify which revision is active
+- after Draft layout/font edits, Activate that revision before checking Head or Analyst preview
 
 ### 4. The file opens but the layout is wrong
 Possible reason:
@@ -161,6 +163,7 @@ Possible reason:
 What to do:
 - create or update the revision
 - preview before activating
+- if you edited the **Active** revision, save and reopen preview (layout cache invalidates on save)
 
 ## Good Practice for Admin Staff
 - Always upload the final approved document before designing.
@@ -196,8 +199,9 @@ What to do in Admin → Controlled Forms:
 3. On the analysis bindings, choose the package **Microbiological Examination — Non-Drinking Water**. Prefer package binding so the sheet still prints when the customer unchecks a member (unchecked slots show `-`).
 4. Open the designer. With the package selected, the Field Library shows only the boxes this sheet needs. Under **Result sheet header** and **This package**, map:
    - Customer, Address, Date & Time Sample Received, Sample Description, Date & Time of Sampling, Date & Time of Analysis, Date of Release of Result, Sample Collected by
-   - **Total Coliform (MPN/100ml) result** on the Total Coliform cell (prints Passed or Failed)
-   - **Thermotolerant Coliform (MPN/100ml) result** on the Thermotolerant Coliform cell (prints Passed or Failed)
+   - **Sample Description** — prints the job **classification** (e.g. Wastewater), not the RFA sample description text
+   - **Total Coliform (MPN/100ml) result** on the Total Coliform cell (prints the measured MPN value)
+   - **Thermotolerant Coliform (MPN/100ml) result** on the Thermotolerant Coliform cell (prints the measured MPN value)
    - Reference Number → LSO No.
    - First sample code
    - Analyst name

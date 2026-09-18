@@ -1,74 +1,141 @@
-import { Head, router } from '@inertiajs/react';
-import { useState } from 'react';
-import RequestForAnalysisForm from '@/components/request-for-analysis-form';
-import type { RequestForAnalysisData } from '@/components/request-for-analysis-form';
+import { Head } from '@inertiajs/react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import LoadingState from '@/components/ui/loading-state';
+import { markPrintedThisSession } from '@/lib/receiving-workflow';
 
 type Props = {
-    jobOrder: RequestForAnalysisData;
+    jobOrder: {
+        id: number;
+        reference_no: string;
+    };
+    pdfUrl: string;
     copies?: number;
+    copyLabels?: string[];
     showResults?: boolean;
 };
 
 export default function RfaPrint({
     jobOrder,
+    pdfUrl,
     copies = 1,
+    copyLabels = [],
     showResults = false,
 }: Props) {
-    const [copyCount, setCopyCount] = useState(copies);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [objectUrl, setObjectUrl] = useState<string | null>(null);
+    const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        let createdUrl: string | null = null;
+
+        void Promise.resolve().then(async () => {
+            setLoading(true);
+            setError(null);
+            setObjectUrl(null);
+
+            try {
+                const response = await fetch(pdfUrl, {
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/pdf' },
+                });
+
+                if (!response.ok) {
+                    const message = await response.text();
+                    throw new Error(
+                        message.trim() ||
+                            'Could not generate the controlled-form Job Order PDF.',
+                    );
+                }
+
+                const blob = await response.blob();
+
+                if (cancelled) {
+                    return;
+                }
+
+                createdUrl = URL.createObjectURL(blob);
+
+                if (cancelled) {
+                    URL.revokeObjectURL(createdUrl);
+
+                    return;
+                }
+
+                setObjectUrl(createdUrl);
+                markPrintedThisSession(jobOrder.id);
+            } catch (cause: unknown) {
+                if (cancelled) {
+                    return;
+                }
+
+                setError(
+                    cause instanceof Error
+                        ? cause.message
+                        : 'Could not prepare the Job Order PDF preview.',
+                );
+            } finally {
+                if (!cancelled) {
+                    setLoading(false);
+                }
+            }
+        });
+
+        return () => {
+            cancelled = true;
+
+            if (createdUrl) {
+                URL.revokeObjectURL(createdUrl);
+            }
+        };
+    }, [pdfUrl, jobOrder.id]);
+
+    function print() {
+        const frame = iframeRef.current;
+
+        if (!frame?.contentWindow) {
+            return;
+        }
+
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+    }
+
+    function download() {
+        if (!objectUrl) {
+            return;
+        }
+
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = `RFA-${jobOrder.reference_no}.pdf`;
+        link.click();
+    }
 
     return (
         <>
             <Head title={`Print ${jobOrder.reference_no}`} />
-            <div className="min-h-screen space-y-8 bg-slate-100 p-4 print:bg-white print:p-0">
-                <div className="mx-auto flex max-w-[8.5in] flex-wrap items-center justify-between gap-2 print:hidden">
+            <div className="flex min-h-screen flex-col bg-slate-100">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-white px-4 py-3 print:hidden">
                     <div>
                         <p className="text-sm font-medium text-[#1A3694]">
                             Print preview — {jobOrder.reference_no}
                         </p>
                         <p className="text-xs text-muted-foreground">
                             {showResults
-                                ? 'Official form with analyst results'
-                                : 'Official Request for Analysis form'}
-                            {copies > 1 ? ` · ${copies} copies` : ''}
-                            {' · Long bond 8.5×13 · 1″ margins'}
+                                ? 'Controlled Job Order form with results'
+                                : 'Controlled Job Order (Request for Analysis) form'}
+                            {copies > 1
+                                ? ` · set ${copies} copies in the print dialog`
+                                : ''}
+                            {copyLabels.length > 0
+                                ? ` · ${copyLabels.join(' / ')}`
+                                : ''}
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                        <label className="flex items-center gap-2 text-sm">
-                            Copies
-                            <Input
-                                type="number"
-                                min={1}
-                                max={20}
-                                className="w-20"
-                                value={copyCount}
-                                onChange={(event) =>
-                                    setCopyCount(
-                                        Math.min(
-                                            20,
-                                            Math.max(
-                                                1,
-                                                Number(event.target.value) || 1,
-                                            ),
-                                        ),
-                                    )
-                                }
-                            />
-                        </label>
-                        <Button
-                            variant="outline"
-                            onClick={() =>
-                                router.get(
-                                    window.location.pathname,
-                                    { copies: copyCount },
-                                    { preserveState: false },
-                                )
-                            }
-                        >
-                            Apply copies
-                        </Button>
                         <Button
                             variant="outline"
                             onClick={() => window.history.back()}
@@ -76,31 +143,46 @@ export default function RfaPrint({
                             Back
                         </Button>
                         <Button
+                            variant="outline"
+                            disabled={!objectUrl}
+                            onClick={download}
+                        >
+                            Download
+                        </Button>
+                        <Button
                             className="bg-[#1A3694] hover:bg-[#365BB0]"
-                            onClick={() => window.print()}
+                            disabled={!objectUrl}
+                            onClick={print}
                         >
                             Print
                         </Button>
                     </div>
                 </div>
 
-                {Array.from({ length: copies }).map((_, index) => (
-                    <div
-                        key={index}
-                        className="mx-auto max-w-[8.5in] rounded-xl bg-white p-6 shadow print:max-w-none print:break-after-page print:rounded-none print:p-0 print:shadow-none"
-                    >
-                        {copies > 1 && (
-                            <p className="mb-2 text-xs text-slate-500 print:hidden">
-                                Copy {index + 1} of {copies}
-                            </p>
-                        )}
-                        <RequestForAnalysisForm
-                            jobOrder={jobOrder}
-                            showResults={showResults}
-                            showPrintButton={false}
+                <div className="flex flex-1 flex-col p-4 print:p-0">
+                    {loading && (
+                        <LoadingState
+                            title="Preparing preview…"
+                            description="Generating PDF from the controlled form"
+                            size="lg"
+                            showDocumentPreview
+                            className="min-h-[70vh] rounded-xl border bg-white"
                         />
-                    </div>
-                ))}
+                    )}
+                    {!loading && error && (
+                        <div className="flex min-h-[70vh] items-center justify-center rounded-xl border bg-white px-6 text-center text-sm text-red-700">
+                            {error}
+                        </div>
+                    )}
+                    {!loading && !error && objectUrl && (
+                        <iframe
+                            ref={iframeRef}
+                            title={`RFA ${jobOrder.reference_no}`}
+                            src={objectUrl}
+                            className="min-h-[calc(100vh-6rem)] w-full flex-1 rounded-xl border bg-white shadow print:min-h-screen print:rounded-none print:border-0 print:shadow-none"
+                        />
+                    )}
+                </div>
             </div>
         </>
     );

@@ -1,23 +1,25 @@
 import { Form } from '@inertiajs/react';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import { Button } from '@/components/ui/button';
 import {
-    Dialog,
-    DialogClose,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogTitle,
-    DialogTrigger,
-} from '@/components/ui/dialog';
+    AlertDialog,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 
 export default function DeleteUser() {
     const passwordInput = useRef<HTMLInputElement>(null);
+    const [open, setOpen] = useState(false);
 
     return (
         <div className="space-y-6">
@@ -34,25 +36,27 @@ export default function DeleteUser() {
                     </p>
                 </div>
 
-                <Dialog>
-                    <DialogTrigger asChild>
+                <AlertDialog open={open} onOpenChange={setOpen}>
+                    <AlertDialogTrigger asChild>
                         <Button
                             variant="destructive"
                             data-test="delete-user-button"
                         >
                             Delete account
                         </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogTitle>
-                            Are you sure you want to delete your account?
-                        </DialogTitle>
-                        <DialogDescription>
-                            Once your account is deleted, all of its resources
-                            and data will also be permanently deleted. Please
-                            enter your password to confirm you would like to
-                            permanently delete your account.
-                        </DialogDescription>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>
+                                Are you sure you want to delete your account?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                                Once your account is deleted, all of its resources
+                                and data will also be permanently deleted. Please
+                                enter your password to confirm you would like to
+                                permanently delete your account.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
 
                         <Form
                             {...ProfileController.destroy.form()}
@@ -60,6 +64,7 @@ export default function DeleteUser() {
                                 preserveScroll: true,
                             }}
                             onError={() => passwordInput.current?.focus()}
+                            onSuccess={() => setOpen(false)}
                             resetOnSuccess
                             className="space-y-6"
                         >
@@ -84,17 +89,13 @@ export default function DeleteUser() {
                                         <InputError message={errors.password} />
                                     </div>
 
-                                    <DialogFooter className="gap-2">
-                                        <DialogClose asChild>
-                                            <Button
-                                                variant="secondary"
-                                                onClick={() =>
-                                                    resetAndClearErrors()
-                                                }
-                                            >
-                                                Cancel
-                                            </Button>
-                                        </DialogClose>
+                                    <AlertDialogFooter className="gap-2">
+                                        <AlertDialogCancel
+                                            disabled={processing}
+                                            onClick={() => resetAndClearErrors()}
+                                        >
+                                            Cancel
+                                        </AlertDialogCancel>
 
                                         <Button
                                             variant="destructive"
@@ -105,15 +106,17 @@ export default function DeleteUser() {
                                                 type="submit"
                                                 data-test="confirm-delete-user-button"
                                             >
-                                                Delete account
+                                                {processing
+                                                    ? 'Deleting…'
+                                                    : 'Delete account'}
                                             </button>
                                         </Button>
-                                    </DialogFooter>
+                                    </AlertDialogFooter>
                                 </>
                             )}
                         </Form>
-                    </DialogContent>
-                </Dialog>
+                    </AlertDialogContent>
+                </AlertDialog>
             </div>
         </div>
     );

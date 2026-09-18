@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Enums\ControlledFormFieldType;
-use App\Models\AnalysisPackage;
 use App\Models\AnalysisType;
 use App\Models\ControlledForm;
 use App\Models\ControlledFormField;
@@ -11,12 +10,24 @@ use App\Models\ControlledFormRevision;
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
 use App\Support\DynamicTestMatrix;
+use App\Support\ResultSignatories;
+use App\Support\SampleControlNumber;
 use DateTimeInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 class FieldValueResolver
 {
+    /** General JO dual-column billing: slots 1–10 left, 11–20 right. */
+    public const RFA_BILLING_LEFT_SLOTS = 10;
+
+    public const RFA_BILLING_TOTAL_SLOTS = 20;
+
+    /** General JO dual-column samples: slots 1–8 left, 9–16 right. */
+    public const RFA_SAMPLE_LEFT_SLOTS = 8;
+
+    public const RFA_SAMPLE_TOTAL_SLOTS = 16;
+
     /**
      * @return array<string, mixed>
      */
@@ -38,20 +49,37 @@ class FieldValueResolver
         ?ControlledForm $form = null,
     ): array {
         $bag = $this->jobOrderBag($jobOrder, true);
-        $ordered = $orderedAnalyses?->values() ?? $jobOrder->analyses->values();
         $form ??= $revision->form;
         $form?->loadMissing('analysisPackage');
+
+        // FO4 Sample Description prints the job classification (e.g. Wastewater), not FO5 sterile-bottle text.
+        if (($form?->form_code ?? null) === 'LSP-7.8-FO4') {
+            $bag['results.sample_description'] = $this->listedOrSpecified($jobOrder->classification);
+        }
+
+        if ($orderedAnalyses !== null) {
+            $ordered = $orderedAnalyses->values();
+        } elseif ($form && DynamicTestMatrix::formUsesMatrix($form, $revision)) {
+            $ordered = DynamicTestMatrix::orderedSelectedAnalysesForForm($jobOrder, $form);
+        } elseif ($form?->analysisPackage && DynamicTestMatrix::packageUsesMatrix($form->analysisPackage)) {
+            $ordered = DynamicTestMatrix::orderedSelectedAnalyses($jobOrder, $form->analysisPackage);
+        } else {
+            $ordered = $jobOrder->analyses->values();
+        }
 
         $bag['results.issued_date'] = $this->officialDate($jobOrder->reviewed_at);
         $bag['results.release_date'] = $bag['results.issued_date'];
         $bag['results.report_date'] = $bag['results.release_date'];
-        $bag['results.analyst_name'] = $this->resultAnalystName($jobOrder, $ordered);
+        $this->putResultAnalystBag($bag, $jobOrder, $form, $ordered);
+        $bag['results.test_requested'] = $this->testRequestedNames($jobOrder, $form);
+        $bag['results.test_methods_references'] = $this->testMethodsReferencesBlock($ordered);
         $bag['issued_date'] = $bag['results.issued_date'];
         $bag['analyst_name'] = $bag['results.analyst_name'];
 
         $revision->loadMissing('fields');
         $usesMatrix = DynamicTestMatrix::revisionUsesMatrix($revision)
-            || DynamicTestMatrix::packageUsesMatrix($form?->analysisPackage);
+            || DynamicTestMatrix::packageUsesMatrix($form?->analysisPackage)
+            || DynamicTestMatrix::formUsesMatrix($form, $revision);
 
         $sampleCount = (int) config('analysis_result_form_fields.sample_count', 9);
         $samples = $jobOrder->samples->values();
@@ -65,6 +93,19 @@ class FieldValueResolver
             $bag["samples.{$i}.matrix"] = $sample?->matrix;
         }
 
+        // Food matrix sheets (Proximate / Milk / Water Activity / CAP / FO26 / FO27) print the first sample
+        // description in the result-column header — do not overwrite FO4 / sterile-bottle text.
+        if (
+            $usesMatrix
+            && ($form?->form_code ?? null) !== 'LSP-7.8-FO4'
+            && empty($bag['results.sample_description'])
+        ) {
+            $firstDescription = trim((string) ($samples->first()?->description ?? ''));
+            if ($firstDescription !== '') {
+                $bag['results.sample_description'] = $firstDescription;
+            }
+        }
+
         if (! $usesMatrix) {
             $this->fillResultTestSlots($bag, $jobOrder, $ordered, $form);
         } else {
@@ -73,7 +114,38 @@ class FieldValueResolver
                     continue;
                 }
 
-                $bag[$field->name] = DynamicTestMatrix::buildRows($ordered);
+                $rows = DynamicTestMatrix::buildRows($ordered);
+
+                $formCode = $form?->form_code ?? null;
+                $isNo2Matrix = $formCode === 'LSP-7.8-F016-NO2'
+                    || $field->name === 'nitrite_f016_matrix';
+
+                // F016-NO2: one body row per JO sample (per-sample control numbers).
+                if ($isNo2Matrix) {
+                    $bag[$field->name] = DynamicTestMatrix::buildSampleResidueRows($jobOrder, $ordered);
+
+                    continue;
+                }
+
+                // F016-WA / F016-CAP: Control Number | Sample Description | result — body cells.
+                if (
+                    in_array($formCode, ['LSP-7.8-F016-WA', 'LSP-7.8-F016-CAP'], true)
+                    || in_array($field->name, [
+                        'water_activity_f016_matrix',
+                        'chloramphenicol_f016_matrix',
+                    ], true)
+                ) {
+                    $controlNo = trim((string) ($bag['results.control_no'] ?? ''));
+                    $sampleDescription = trim((string) ($bag['results.sample_description'] ?? ''));
+                    $rows = array_map(static function (array $row) use ($controlNo, $sampleDescription): array {
+                        $row['control_no'] = $controlNo;
+                        $row['sample_description'] = $sampleDescription;
+
+                        return $row;
+                    }, $rows);
+                }
+
+                $bag[$field->name] = $rows;
             }
         }
 
@@ -95,6 +167,9 @@ class FieldValueResolver
         ?ControlledForm $form,
     ): void {
         $slotTypeIds = $form?->orderedTypeIds() ?? [];
+        if ($slotTypeIds === [] && $form?->analysisPackage) {
+            $slotTypeIds = $form->analysisPackage->orderedTypeIds();
+        }
         $waived = $jobOrder->waivedTypeIds();
         $byType = $jobOrder->analyses
             ->filter(fn (JobOrderAnalysis $line): bool => $line->analysis_type_id !== null)
@@ -114,6 +189,8 @@ class FieldValueResolver
                     $bag["test_{$slot}_code"] = $typeMeta?->code;
                     $bag["test_{$slot}_result"] = '-';
                     $bag["test_{$slot}_measurement"] = '-';
+                    $bag["test_{$slot}_pass_fail"] = '-';
+                    $bag["test_{$slot}_method"] = '-';
                     $bag["test_{$slot}_unit"] = '-';
                     $bag["test_{$slot}_remarks"] = '-';
                     $bag["test_{$slot}_analyst"] = null;
@@ -139,10 +216,22 @@ class FieldValueResolver
      */
     private function putTestSlot(array &$bag, int $slot, JobOrderAnalysis $line): void
     {
+        $measured = filled($line->result_value) ? (string) $line->result_value : null;
+        $passFail = filled($line->result_pass_fail) ? (string) $line->result_pass_fail : null;
+        $method = filled($line->result_method)
+            ? (string) $line->result_method
+            : DynamicTestMatrix::methodForAnalysisType($line->analysisType);
+
         $bag["test_{$slot}_name"] = $line->name;
         $bag["test_{$slot}_code"] = $line->analysisType?->code;
-        $bag["test_{$slot}_result"] = $line->result_value;
-        $bag["test_{$slot}_measurement"] = $line->result_measurement;
+        // FO4/FO5 Form Designer contract:
+        // - test_N_measurement → Results of Analysis (measured value)
+        // - test_N_result → Interpretation (Passed/Failed when set)
+        // Combined "value (Passed)" is for dynamic matrix only, not fixed slots.
+        $bag["test_{$slot}_result"] = $passFail ?: $measured;
+        $bag["test_{$slot}_measurement"] = $measured;
+        $bag["test_{$slot}_pass_fail"] = $passFail;
+        $bag["test_{$slot}_method"] = $method;
         $bag["test_{$slot}_unit"] = $line->result_unit;
         $bag["test_{$slot}_remarks"] = $line->result_remarks;
         $bag["test_{$slot}_analyst"] = $line->assignee?->name;
@@ -163,14 +252,37 @@ class FieldValueResolver
             'job_orders.sampling_date' => now()->format('m/d/Y'),
             'job_orders.sampling_time' => '09:00 AM',
             'job_orders.sample_collected_by' => 'Sample Collector',
+            'job_orders.sampling_site' => 'Plant gate — Tank A',
+            'job_orders.specimen' => 'Dried fish',
+            'job_orders.payment_mode' => 'Billing/Partial',
+            'job_orders.payment_mode:cash' => false,
+            'job_orders.payment_mode:billing_partial' => true,
+            'job_orders.payment_mode:check' => false,
+            'job_orders.payment_terms' => '30 days',
+            'job_orders.payment_terms:15_days' => false,
+            'job_orders.payment_terms:30_days' => true,
             'job_orders.classification' => 'Potability',
             'job_orders.classification:potability' => true,
             'job_orders.ownership_type' => 'Private',
             'job_orders.ownership_type:private' => true,
             'job_orders.total_cost' => '1,500.00',
             'job_orders.created_at' => now()->format('m/d/Y h:i A'),
+            'job_orders.received_at' => now()->format('m/d/Y'),
+            'job_orders.jo_approved_at' => now()->format('m/d/Y'),
+            'job_orders.reviewed_at' => now()->format('m/d/Y'),
             'job_orders.received_by_name' => 'Maria Santos',
             'job_orders.reviewed_by_name' => 'John Cruz',
+            'conforme_name' => 'ABC Corporation',
+            'conforme_date' => now()->format('m/d/Y'),
+            'received_date' => now()->format('m/d/Y'),
+            'reviewed_date' => now()->format('m/d/Y'),
+            'sampling_site' => 'Plant gate — Tank A',
+            'specimen' => 'Dried fish',
+            'payment_cash' => false,
+            'payment_billing_partial' => true,
+            'payment_check' => false,
+            'payment_terms_15' => false,
+            'payment_terms_30' => true,
             'results.customer' => 'ABC Corporation',
             'results.address' => 'Bacolod City',
             'results.ref_no' => 'JO-2026-00125',
@@ -178,6 +290,7 @@ class FieldValueResolver
             'results.sample_received_at' => 'July 29, 2026 (3:00PM)',
             'results.receipt_at' => 'July 29, 2026 (9:00AM)',
             'results.sample_description' => 'Water in sterile bottle',
+            'results.specimen' => 'Dried fish',
             'results.sample_code' => 'SMP-2026-00452',
             'results.sampling_datetime' => 'July 20, 2026 (9:30AM)',
             'results.collection_datetime' => 'July 20, 2026 (9:30AM)',
@@ -191,8 +304,17 @@ class FieldValueResolver
             'results.classification' => 'Potability',
             'results.issued_date' => 'July 30, 2026',
             'results.analyst_name' => 'Ana Analyst',
+            'results.analyst_name_2' => 'Ben Analyst',
+            'results.analyst_name_3' => 'Cara Analyst',
+            'results.analyst_name_4' => 'Dan Analyst',
+            'results.analyst_prc' => '1234567',
+            'results.analyst_prc_2' => '7654321',
+            'results.analyst_prc_3' => '1111111',
+            'results.analyst_prc_4' => '2222222',
+            'results.test_requested' => 'Water Activity',
             'test_1_result' => 'Passed',
             'test_1_measurement' => '<1.1',
+            'test_1_name' => 'Water Activity',
             'test_2_result' => 'Failed',
             'test_2_measurement' => '16',
             'test_3_result' => 'Passed',
@@ -203,24 +325,64 @@ class FieldValueResolver
             'contact_no' => '09171234567',
             'samples.sample_code' => 'SMP-2026-00452',
             'samples.description' => 'Tap water',
-            'sample_code_1' => 'SMP-2026-00452 / Tap water',
-            'control_number_1' => 'JO-2026-00125',
+            'sample_code_1' => 'SMP-2026-00452 / Pond water',
+            'sample_code_2' => 'SMP-2026-00453 / Canal water',
+            'control_number_1' => 'JO-2026-00125A',
+            'control_number_2' => 'JO-2026-00125B',
             'bill_param_1' => 'pH',
             'bill_price_1' => '250.00',
             'bill_total_1' => '250.00',
             'billing_total' => '1,500.00',
+            'billing_total_right' => null,
             'samples[]' => [
-                ['sample_code' => 'SMP-2026-00452', 'description' => 'Tap water', 'matrix' => 'Liquid', 'quantity' => '1', 'unit' => 'L'],
+                [
+                    'sample_code' => 'SMP-2026-00452',
+                    'description' => 'Pond water',
+                    'control_number' => 'JO-2026-00125A',
+                    'matrix' => 'Liquid',
+                    'quantity' => '1',
+                    'unit' => 'L',
+                ],
+                [
+                    'sample_code' => 'SMP-2026-00453',
+                    'description' => 'Canal water',
+                    'control_number' => 'JO-2026-00125B',
+                    'matrix' => 'Liquid',
+                    'quantity' => '1',
+                    'unit' => 'L',
+                ],
             ],
             'analyses[]' => [
                 ['name' => 'pH', 'category' => 'Physico-Chemical', 'unit_price' => '250.00', 'total_cost' => '250.00', 'result_value' => '7.2', 'result_unit' => ''],
             ],
         ];
 
-        $revision->loadMissing('fields');
+        $revision->loadMissing(['fields', 'form.analysisPackage.analysisTypes', 'form.analysisTypes']);
+
+        $sampleTestRequested = $this->sampleTestRequestedLabel($revision->form);
+        if ($sampleTestRequested !== null) {
+            $bag['results.test_requested'] = $sampleTestRequested;
+        }
+
+        $sampleMethods = $this->sampleTestMethodsReferencesBlock($revision->form);
+        if ($sampleMethods !== null) {
+            $bag['results.test_methods_references'] = $sampleMethods;
+        }
+
+        $revision->loadMissing('form');
+        if (($revision->form?->form_code ?? null) === 'LSP-7.8-FO4') {
+            $bag['job_orders.classification'] = 'Wastewater';
+            $bag['job_orders.classification:potability'] = false;
+            $bag['job_orders.classification:wastewater'] = true;
+            $bag['results.classification'] = 'Wastewater';
+            $bag['results.sample_description'] = 'Wastewater';
+            $bag['test_1_result'] = '<1.1';
+            $bag['test_2_result'] = '16';
+        }
+
         foreach ($revision->fields as $field) {
             if ($field->field_type === ControlledFormFieldType::DynamicTestMatrix) {
-                $bag[$field->name] = DynamicTestMatrix::sampleRows();
+                $bag[$field->name] = DynamicTestMatrix::previewRowsForForm($revision->form);
             }
         }
 
@@ -237,6 +399,29 @@ class FieldValueResolver
 
         foreach ($revision->fields as $field) {
             $values[$field->name] = $this->valueForField($field, $bag, $jobOrder);
+
+            if ($field->field_type !== ControlledFormFieldType::DynamicTestMatrix) {
+                continue;
+            }
+
+            $columns = is_array($field->table_config['columns'] ?? null)
+                ? $field->table_config['columns']
+                : [];
+
+            foreach ($columns as $column) {
+                if (! is_array($column)) {
+                    continue;
+                }
+
+                foreach (['label_data_source', 'sublabel_data_source'] as $sourceKey) {
+                    $key = isset($column[$sourceKey]) ? trim((string) $column[$sourceKey]) : '';
+                    if ($key === '' || ! array_key_exists($key, $bag) || array_key_exists($key, $values)) {
+                        continue;
+                    }
+
+                    $values[$key] = $bag[$key];
+                }
+            }
         }
 
         return $values;
@@ -354,6 +539,10 @@ class FieldValueResolver
             'job_orders.sample_storage_temp' => $jobOrder->sample_storage_temp,
             'job_orders.wastewater_source' => $jobOrder->wastewater_source,
             'job_orders.sampling_point' => $jobOrder->sampling_point,
+            'job_orders.sampling_site' => $jobOrder->sampling_site,
+            'job_orders.specimen' => $jobOrder->specimen,
+            'job_orders.payment_mode' => $jobOrder->payment_mode?->label(),
+            'job_orders.payment_terms' => $jobOrder->payment_terms?->label(),
             'job_orders.other_tests' => $jobOrder->other_tests,
             'job_orders.total_cost' => $jobOrder->total_cost !== null
                 ? number_format((float) $jobOrder->total_cost, 2)
@@ -361,6 +550,7 @@ class FieldValueResolver
             'job_orders.created_at' => $jobOrder->created_at?->format('m/d/Y h:i A'),
             'job_orders.received_at' => $jobOrder->received_at?->format('m/d/Y'),
             'job_orders.reviewed_at' => $jobOrder->reviewed_at?->format('m/d/Y'),
+            'job_orders.jo_approved_at' => $jobOrder->jo_approved_at?->format('m/d/Y'),
             'job_orders.received_by_name' => $jobOrder->receiver?->name,
             'job_orders.reviewed_by_name' => $jobOrder->reviewer?->name,
             'reference_no' => $jobOrder->reference_no,
@@ -372,15 +562,16 @@ class FieldValueResolver
             'sampling_time' => $jobOrder->sampling_time,
             'sample_collected_by' => $jobOrder->sample_collected_by,
             'sample_storage_temp' => $jobOrder->sample_storage_temp,
+            'sampling_site' => $jobOrder->sampling_site,
+            'specimen' => $jobOrder->specimen,
             'other_tests' => $jobOrder->other_tests,
-            'billing_total' => $jobOrder->total_cost !== null
-                ? number_format((float) $jobOrder->total_cost, 2)
-                : null,
-            'conforme_date' => null,
+            'conforme_name' => $jobOrder->customer_name,
+            'conforme_date' => $jobOrder->created_at?->format('m/d/Y'),
             'received_date' => $jobOrder->received_at?->format('m/d/Y'),
-            'reviewed_date' => $jobOrder->reviewed_at?->format('m/d/Y'),
+            'reviewed_date' => $jobOrder->jo_approved_at?->format('m/d/Y'),
         ];
 
+        // billing_total / billing_total_right filled after analysis lines below.
         $ownership = mb_strtolower((string) $jobOrder->ownership_type);
         $bag['job_orders.ownership_type:private'] = $ownership === 'private';
         $bag['job_orders.ownership_type:commercial'] = $ownership === 'commercial';
@@ -388,6 +579,20 @@ class FieldValueResolver
         $bag['ownership_private'] = $bag['job_orders.ownership_type:private'];
         $bag['ownership_commercial'] = $bag['job_orders.ownership_type:commercial'];
         $bag['ownership_public'] = $bag['job_orders.ownership_type:public'];
+
+        $paymentMode = $jobOrder->payment_mode?->value;
+        $bag['job_orders.payment_mode:cash'] = $paymentMode === 'cash';
+        $bag['job_orders.payment_mode:billing_partial'] = $paymentMode === 'billing_partial';
+        $bag['job_orders.payment_mode:check'] = $paymentMode === 'check';
+        $bag['payment_cash'] = $bag['job_orders.payment_mode:cash'];
+        $bag['payment_billing_partial'] = $bag['job_orders.payment_mode:billing_partial'];
+        $bag['payment_check'] = $bag['job_orders.payment_mode:check'];
+
+        $paymentTerms = $jobOrder->payment_terms?->value;
+        $bag['job_orders.payment_terms:15_days'] = $paymentTerms === '15_days';
+        $bag['job_orders.payment_terms:30_days'] = $paymentTerms === '30_days';
+        $bag['payment_terms_15'] = $bag['job_orders.payment_terms:15_days'];
+        $bag['payment_terms_30'] = $bag['job_orders.payment_terms:30_days'];
 
         $classification = mb_strtolower((string) $jobOrder->classification);
         foreach (['aqua', 'potability', 'wastewater', 'agriculture', 'academic', 'other'] as $token) {
@@ -416,29 +621,49 @@ class FieldValueResolver
         $bag['job_orders.wastewater_source:faucet'] = str_contains($ww, 'faucet');
         $bag['job_orders.wastewater_source:tank'] = str_contains($ww, 'tank');
         $bag['job_orders.wastewater_source:deepwell'] = str_contains($ww, 'deepwell') || str_contains($ww, 'deep well');
+        $bag['job_orders.wastewater_source:sea'] = str_contains($ww, 'sea');
+        $bag['job_orders.wastewater_source:brackish'] = str_contains($ww, 'brackish');
+        $bag['job_orders.wastewater_source:river'] = str_contains($ww, 'river');
         $bag['ww_local_district'] = $bag['job_orders.wastewater_source:district'];
         $bag['ww_faucet'] = $bag['job_orders.wastewater_source:faucet'];
         $bag['ww_tank'] = $bag['job_orders.wastewater_source:tank'];
         $bag['ww_deepwell'] = $bag['job_orders.wastewater_source:deepwell'];
+        $bag['aqua_sea'] = $bag['job_orders.wastewater_source:sea'];
+        $bag['aqua_brackish'] = $bag['job_orders.wastewater_source:brackish'];
+        $bag['aqua_river'] = $bag['job_orders.wastewater_source:river'];
         if (str_contains(mb_strtolower((string) $jobOrder->sampling_point), 'faucet')) {
             $bag['job_orders.wastewater_source:faucet'] = true;
             $bag['ww_faucet'] = true;
         }
         $bag['ww_others'] = $ww !== '' && ! (
-            $bag['ww_local_district'] || $bag['ww_faucet'] || $bag['ww_tank'] || $bag['ww_deepwell']
+            $bag['ww_local_district']
+            || $bag['ww_faucet']
+            || $bag['ww_tank']
+            || $bag['ww_deepwell']
+            || $bag['aqua_sea']
+            || $bag['aqua_brackish']
+            || $bag['aqua_river']
         );
         $bag['job_orders.wastewater_source:other'] = $bag['ww_others'];
         $bag['ww_others_text'] = $bag['ww_others'] ? (string) $jobOrder->wastewater_source : null;
 
         $samples = $jobOrder->samples->values();
-        $bag['samples[]'] = $samples->map(fn ($sample) => [
-            'sample_code' => $sample->sample_code,
-            'description' => $sample->description,
-            'matrix' => $sample->matrix,
-            'quantity' => $sample->quantity,
-            'unit' => $sample->unit,
-            'remarks' => $sample->remarks,
-        ])->all();
+        $sampleCount = $samples->count();
+        $bag['samples[]'] = $samples->values()->map(function ($sample, int $index) use ($jobOrder, $sampleCount) {
+            return [
+                'sample_code' => $sample->sample_code,
+                'description' => $sample->description,
+                'control_number' => SampleControlNumber::forIndex(
+                    (string) $jobOrder->reference_no,
+                    $index,
+                    $sampleCount,
+                ),
+                'matrix' => $sample->matrix,
+                'quantity' => $sample->quantity,
+                'unit' => $sample->unit,
+                'remarks' => $sample->remarks,
+            ];
+        })->all();
         $firstSample = $samples->first();
         $bag['samples.sample_code'] = $firstSample?->sample_code;
         $bag['samples.description'] = $firstSample?->description;
@@ -455,6 +680,7 @@ class FieldValueResolver
         $bag['results.sample_description'] = $bag['potability_sterile']
             ? 'Water in sterile bottle'
             : null;
+        $bag['results.specimen'] = $jobOrder->specimen;
         $bag['results.sampling_datetime'] = $this->officialSamplingDateTime(
             $jobOrder->sampling_date,
             $jobOrder->sampling_time,
@@ -469,12 +695,16 @@ class FieldValueResolver
         $bag['results.sampling_point'] = $this->listedOrSpecified($jobOrder->wastewater_source);
         $bag['results.classification'] = $this->listedOrSpecified($jobOrder->classification);
         $bag['results.issued_date'] = $bag['results.release_date'];
-        $bag['results.analyst_name'] = $this->resultAnalystName($jobOrder);
+        $this->putResultAnalystBag($bag, $jobOrder);
 
-        for ($i = 1; $i <= 9; $i++) {
+        for ($i = 1; $i <= self::RFA_SAMPLE_TOTAL_SLOTS; $i++) {
             $sample = $samples->get($i - 1);
             $bag["sample_code_{$i}"] = $this->rfaSampleCodeDescription($sample);
-            $bag["control_number_{$i}"] = $sample ? $jobOrder->reference_no : null;
+            $bag["control_number_{$i}"] = SampleControlNumber::forIndex(
+                (string) $jobOrder->reference_no,
+                $i - 1,
+                $sampleCount,
+            );
         }
 
         $codeByTypeId = AnalysisType::query()
@@ -505,7 +735,7 @@ class FieldValueResolver
             'result_unit' => $showResults ? $line->result_unit : null,
         ])->all();
 
-        for ($i = 1; $i <= 14; $i++) {
+        for ($i = 1; $i <= self::RFA_BILLING_TOTAL_SLOTS; $i++) {
             $line = $analyses->get($i - 1);
             if (! $line) {
                 $bag["bill_param_{$i}"] = null;
@@ -525,36 +755,70 @@ class FieldValueResolver
             $bag["bill_total_{$i}"] = number_format((float) $line->total_cost, 2);
         }
 
+        $this->putBillingTotals($bag, $jobOrder, $analyses->count());
+
         return $bag;
+    }
+
+    /**
+     * Place the grand total under the left column when lines fit there; under the
+     * right column when the dual-column grid spills past the left slots.
+     *
+     * @param  array<string, mixed>  $bag
+     */
+    private function putBillingTotals(array &$bag, JobOrder $jobOrder, int $lineCount): void
+    {
+        $formatted = $jobOrder->total_cost !== null
+            ? number_format((float) $jobOrder->total_cost, 2)
+            : null;
+
+        if ($formatted === null) {
+            $bag['billing_total'] = null;
+            $bag['billing_total_right'] = null;
+
+            return;
+        }
+
+        $spillsRight = $lineCount > self::RFA_BILLING_LEFT_SLOTS;
+
+        // Clear left amount (space) when spilling right; totals stay transparent (no cover fill).
+        $bag['billing_total'] = $spillsRight ? ' ' : $formatted;
+        $bag['billing_total_right'] = $spillsRight ? $formatted : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $bag
+     * @param  Collection<int, JobOrderAnalysis>|null  $orderedAnalyses
+     */
+    private function putResultAnalystBag(
+        array &$bag,
+        JobOrder $jobOrder,
+        ?ControlledForm $form = null,
+        ?Collection $orderedAnalyses = null,
+    ): void {
+        $values = ResultSignatories::bagValues($jobOrder, $form, $orderedAnalyses);
+
+        // Name and PRC are separate overlay fields — do not append PRC to the name.
+        $bag['results.analyst_name'] = $values['name'] ?? $values['line'];
+        $bag['results.analyst_name_2'] = $values['name_2'] ?? $values['line_2'];
+        $bag['results.analyst_name_3'] = $values['name_3'] ?? $values['line_3'];
+        $bag['results.analyst_name_4'] = $values['name_4'] ?? $values['line_4'];
+        $bag['results.analyst_prc'] = $values['prc'];
+        $bag['results.analyst_prc_2'] = $values['prc_2'];
+        $bag['results.analyst_prc_3'] = $values['prc_3'];
+        $bag['results.analyst_prc_4'] = $values['prc_4'];
+        $bag['analyst_name'] = $bag['results.analyst_name'];
     }
 
     private function resultAnalystName(JobOrder $jobOrder, ?Collection $orderedAnalyses = null): ?string
     {
-        $jobOrder->loadMissing('packages.signatory');
-        $signatories = $jobOrder->packages
-            ->map(fn (AnalysisPackage $package) => $package->signatory?->name)
-            ->filter()
-            ->unique()
-            ->values();
+        $names = ResultSignatories::candidateNames($jobOrder, $orderedAnalyses);
 
-        if ($signatories->count() === 1) {
-            return $signatories->first();
-        }
-
-        $ordered = $orderedAnalyses?->values() ?? $jobOrder->analyses->values();
-        $analystNames = $ordered
-            ->map(fn (JobOrderAnalysis $line) => $line->assignee?->name)
-            ->filter()
-            ->unique()
-            ->values();
-
-        if ($analystNames->isEmpty()) {
+        if ($names === []) {
             return null;
         }
 
-        return $analystNames->count() === 1
-            ? $analystNames->first()
-            : $analystNames->implode(', ');
+        return count($names) === 1 ? $names[0] : implode(', ', $names);
     }
 
     private function officialDateTime(?DateTimeInterface $dateTime): ?string
@@ -764,11 +1028,19 @@ class FieldValueResolver
             $slot = $index + 1;
             $name = (string) $type->name;
             $sources[] = [
+                'key' => "test_{$slot}_name",
+                'label' => $name.' name',
+                'type' => 'text',
+                'group' => 'This package',
+                'hint' => 'Printed test name for '.$name.' (test requested on this sheet).',
+                'focused' => $focus,
+            ];
+            $sources[] = [
                 'key' => "test_{$slot}_result",
                 'label' => $name.' result',
                 'type' => 'text',
                 'group' => 'This package',
-                'hint' => 'Pass/Fail interpretation for '.$name.'.',
+                'hint' => 'For Pass/Fail procedures this prints Passed/Failed; otherwise the measured result for '.$name.'.',
                 'focused' => $focus,
             ];
             $sources[] = [
@@ -776,7 +1048,23 @@ class FieldValueResolver
                 'label' => $name.' measured value',
                 'type' => 'text',
                 'group' => 'This package',
-                'hint' => 'Optional numeric Result cell for '.$name.' (analyst measured value).',
+                'hint' => 'Measured value for '.$name.' (also used when Pass/Fail is printed in the result slot).',
+                'focused' => $focus,
+            ];
+            $sources[] = [
+                'key' => "test_{$slot}_pass_fail",
+                'label' => $name.' pass/fail',
+                'type' => 'text',
+                'group' => 'This package',
+                'hint' => 'Passed or Failed judgment for '.$name.'.',
+                'focused' => $focus,
+            ];
+            $sources[] = [
+                'key' => "test_{$slot}_method",
+                'label' => $name.' method',
+                'type' => 'text',
+                'group' => 'This package',
+                'hint' => 'Method used for '.$name.' (defaults from Procedures; analyst may override).',
                 'focused' => $focus,
             ];
             $sources[] = [
@@ -792,6 +1080,166 @@ class FieldValueResolver
         return $sources;
     }
 
+    /**
+     * Comma-separated names of this form's package (or bound) tests that are selected on the job.
+     * Multi-test food micro panels (FO26 / FO27) print the panel title instead.
+     */
+    private function testRequestedNames(JobOrder $jobOrder, ?ControlledForm $form): ?string
+    {
+        if (! $form) {
+            return null;
+        }
+
+        $panelTitle = $this->panelTestRequestedLabel($form);
+        if ($panelTitle !== null) {
+            return $panelTitle;
+        }
+
+        $form->loadMissing(['analysisPackage.analysisTypes', 'analysisTypes']);
+        $jobOrder->loadMissing(['analyses.analysisType']);
+
+        $typeIds = $form->analysisPackage
+            ? $form->analysisPackage->orderedTypeIds()
+            : $form->orderedTypeIds();
+
+        if ($typeIds === []) {
+            return null;
+        }
+
+        $waived = $jobOrder->waivedTypeIds();
+        $byType = $jobOrder->analyses
+            ->filter(fn (JobOrderAnalysis $line): bool => $line->analysis_type_id !== null)
+            ->keyBy(fn (JobOrderAnalysis $line): int => (int) $line->analysis_type_id);
+
+        $typesById = ($form->analysisPackage?->analysisTypes ?? $form->analysisTypes)
+            ->keyBy(fn (AnalysisType $type): int => (int) $type->id);
+
+        $names = [];
+        foreach ($typeIds as $typeId) {
+            $typeId = (int) $typeId;
+            if (in_array($typeId, $waived, true) || ! $byType->has($typeId)) {
+                continue;
+            }
+
+            $line = $byType->get($typeId);
+            $name = trim((string) ($line->name ?: $typesById->get($typeId)?->name ?: ''));
+            if ($name !== '') {
+                $names[] = $name;
+            }
+        }
+
+        return $names === [] ? null : implode(', ', $names);
+    }
+
+    private function sampleTestRequestedLabel(?ControlledForm $form): ?string
+    {
+        if (! $form) {
+            return null;
+        }
+
+        $panelTitle = $this->panelTestRequestedLabel($form);
+        if ($panelTitle !== null) {
+            return $panelTitle;
+        }
+
+        $form->loadMissing(['analysisPackage.analysisTypes', 'analysisTypes']);
+
+        $types = $form->analysisPackage
+            ? $form->analysisPackage->analysisTypes
+            : $form->analysisTypes;
+
+        $names = $types
+            ->map(fn (AnalysisType $type): string => trim((string) $type->name))
+            ->filter()
+            ->values()
+            ->all();
+
+        return $names === [] ? null : implode(', ', $names);
+    }
+
+    /**
+     * Multiline “Test Methods and References” block for selected analyses only.
+     * Same method resolution as nested matrix rows: result_method → Procedures → catalog.
+     *
+     * @param  Collection<int, JobOrderAnalysis>  $ordered
+     */
+    private function testMethodsReferencesBlock(Collection $ordered): ?string
+    {
+        $lines = [];
+        foreach ($ordered as $line) {
+            if (! $line instanceof JobOrderAnalysis) {
+                continue;
+            }
+
+            $name = trim((string) ($line->name ?: $line->analysisType?->name ?: ''));
+            if ($name === '') {
+                continue;
+            }
+
+            $method = filled($line->result_method)
+                ? trim((string) $line->result_method)
+                : trim((string) (DynamicTestMatrix::methodForAnalysisType($line->analysisType) ?? ''));
+
+            $lines[] = $method !== '' ? $name.' — '.$method : $name;
+        }
+
+        return $lines === [] ? null : implode("\n", $lines);
+    }
+
+    private function sampleTestMethodsReferencesBlock(?ControlledForm $form): ?string
+    {
+        if (! $form) {
+            return null;
+        }
+
+        $form->loadMissing(['analysisPackage.analysisTypes', 'analysisTypes']);
+
+        $types = $form->analysisPackage
+            ? collect($form->analysisPackage->orderedTypeIds())
+                ->map(fn (int $id) => $form->analysisPackage?->analysisTypes->firstWhere('id', $id))
+                ->filter()
+                ->values()
+            : collect($form->orderedTypeIds())
+                ->map(fn (int $id) => $form->analysisTypes->firstWhere('id', $id))
+                ->filter()
+                ->values();
+
+        if ($types->isEmpty()) {
+            $types = ($form->analysisPackage?->analysisTypes ?? $form->analysisTypes)->values();
+        }
+
+        $lines = [];
+        foreach ($types as $type) {
+            if (! $type instanceof AnalysisType) {
+                continue;
+            }
+
+            $name = trim((string) $type->name);
+            if ($name === '') {
+                continue;
+            }
+
+            $method = trim((string) (DynamicTestMatrix::methodForAnalysisType($type) ?? ''));
+            $lines[] = $method !== '' ? $name.' — '.$method : $name;
+        }
+
+        return $lines === [] ? null : implode("\n", $lines);
+    }
+
+    /**
+     * Panel title for multi-test food micro result sheets (Test Requested header).
+     */
+    private function panelTestRequestedLabel(?ControlledForm $form): ?string
+    {
+        return match ($form?->form_code) {
+            'LSP-7.8-FO26' => 'Microbiological Food Test',
+            'LSP-7.8-FO27' => 'Food Micro Sugar Test',
+            'LSP-7.8-F016-CAP' => 'Chloramphenicol (chemical residue)',
+            'LSP-7.8-F016-NO2' => 'Nitrite Content',
+            default => null,
+        };
+    }
+
     private static function isFocusedSourceKey(string $key): bool
     {
         return in_array($key, [
@@ -803,17 +1251,27 @@ class FieldValueResolver
             'results.water_supply',
             'results.sampling_point',
             'results.classification',
+            'results.test_requested',
+            'results.test_methods_references',
             'results.collection_datetime',
             'results.receipt_at',
             'results.examination_datetime',
             'results.report_date',
             'results.release_date',
             'results.sample_description',
+            'results.specimen',
             'results.sample_code',
             'results.sample_received_at',
             'results.sampling_datetime',
             'results.analysis_datetime',
             'results.analyst_name',
+            'results.analyst_name_2',
+            'results.analyst_name_3',
+            'results.analyst_name_4',
+            'results.analyst_prc',
+            'results.analyst_prc_2',
+            'results.analyst_prc_3',
+            'results.analyst_prc_4',
             'job_orders.reference_no',
             'samples.sample_code',
         ], true);

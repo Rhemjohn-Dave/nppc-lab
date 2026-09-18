@@ -1,0 +1,48 @@
+---
+description: Keep Form Designer overlays and filled PDF previews aligned (FPDI mm authority)
+globs: resources/js/pages/admin/form-designer.tsx,resources/js/components/pdf-preview-dialog.tsx,resources/js/components/pdf-blob-canvas-viewer.tsx,resources/js/lib/controlled-pdf-viewport.ts,app/Services/ControlledFormStorage.php,app/Services/ControlledPdfFiller.php,config/*form_fields.php,docs/CONTROLLED_FORMS.md
+alwaysApply: false
+---
+
+# Form Designer / PDF preview parity
+
+Misalignment and “tiny preview” are recurring. Treat them as **coordinate / scale bugs**, not styling nits.
+
+## Authority chain
+
+1. **Canonical PDF on disk** (after upload / `PdfCompatibilityNormalizer`)
+2. **FPDI `ControlledFormStorage::pageMetrics` / `inspectPdf`** → `page_width_mm` × `page_height_mm`
+3. **Form Designer** places overlays in those millimetres (`canonical_page` Inertia prop)
+4. **`ControlledPdfFiller`** draws with the same FPDI template size via `AddPage` + `SetXY` mm
+5. **Preview UI** (`PdfBlobCanvasViewer`) is display-only — fit-to-width; Print/Download use the raw filled blob
+
+Never re-derive authoritative page mm from client pdf.js alone. pdf.js may use a different box than FPDI; stretch the raster to the FPDI mm basis (`pdfjsViewportScaleForFpdiMm` in `controlled-pdf-viewport.ts`).
+
+## Do / Don’t
+
+| Do | Don’t |
+|----|--------|
+| Treat **canonical PDF + FPDI mm** as coordinate authority | Hard-code blueprint `page` sizes copied from another form without measuring |
+| **Upload/attach PDF before `importBlueprint`**; export after Designer calibration | Import blueprint against wrong/stale `page_width_mm` |
+| Verify **calibration PDF** + populated preview **download** before activating | Rely on iframe/native PDF chrome as alignment proof |
+| Use shared helpers in `resources/js/lib/controlled-pdf-viewport.ts` | Add independent scale hacks (e.g. arbitrary `0.85`) on the designer canvas |
+| When changing matrix/table layout, check **both** React matrix preview and `ControlledPdfFiller::writeDynamicTestMatrix` | Assume React preview matches TCPDF drawing |
+
+## Checklist when adding or editing a controlled form
+
+- [ ] Official PDF under `resources/forms/official/`; attach to revision (metrics sync via `syncRevisionPageMetrics`)
+- [ ] Blueprint `page.width` / `page.height` match FPDI inspect of that file (±0.5 mm)
+- [ ] Place fields in Form Designer; download **calibration** overlay — boxes sit on blanks
+- [ ] Populated preview **download** matches designer (not only on-screen canvas)
+- [ ] `php artisan controlled-forms:export-blueprints --form=CODE` after calibration
+- [ ] Preview dialog uses `PdfBlobCanvasViewer` (fit width) — do not regress to letterboxed iframe-only viewing
+
+## Symptoms
+
+| Symptom | Likely cause |
+|---------|----------------|
+| Preview modal tiny with dark side gutters | Browser iframe letterboxing — use canvas fit-width viewer |
+| Download/print overlays shifted vs designer | pdf.js mm ≠ FPDI mm, or blueprint `page` ≠ canonical |
+| Whole layout scaled wrong after import | Blueprint page size copied from another form; re-measure and re-export |
+
+See also: `controlled-pdf-forms.mdc`, `docs/CONTROLLED_FORMS.md` (Designer / preview parity).

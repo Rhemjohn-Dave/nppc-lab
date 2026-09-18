@@ -65,6 +65,7 @@ export type AnalystDashboardTask = {
     assigned_to?: number | null;
     assignee_name?: string | null;
     is_mine?: boolean;
+    can_work?: boolean;
     category_label?: string | null;
 };
 

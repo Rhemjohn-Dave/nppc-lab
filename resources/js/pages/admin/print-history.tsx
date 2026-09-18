@@ -1,4 +1,5 @@
 import { Head } from '@inertiajs/react';
+import LimsWorkspace from '@/components/lims/lims-workspace';
 import { useState } from 'react';
 import TablePagination from '@/components/table-pagination';
 import { Button } from '@/components/ui/button';
@@ -33,7 +34,7 @@ export default function PrintHistory({ logs, filters }: Props) {
     return (
         <>
             <Head title="Print History" />
-            <div className="flex flex-col gap-5 p-4">
+            <LimsWorkspace>
                 <div>
                     <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
                         Print History
@@ -99,7 +100,7 @@ export default function PrintHistory({ logs, filters }: Props) {
                     to={logs.to}
                     total={logs.total}
                 />
-            </div>
+            </LimsWorkspace>
         </>
     );
 }

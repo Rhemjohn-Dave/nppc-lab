@@ -1,0 +1,33 @@
+---
+description: Laravel controllers, services, migrations, and tests for NPPC LIMS
+globs: app/**/*.php,database/**/*.php,tests/**/*.php,routes/**/*.php
+alwaysApply: false
+---
+
+# Laravel backend conventions
+
+## Structure
+
+- Put orchestration in **services** (`JobOrderService`, `ControlledFormService`, `FieldValueResolver`) — not fat controllers.
+- Use **enums** in `app/Enums/` for statuses, categories, scopes (avoid magic strings in DB-facing code).
+- **Notifications** under `app/Notifications/` for workflow events (review, assignment, release).
+
+## Validation and intake
+
+- Intake and admin writes: validate in controller (or Form Request) to match existing keys; empty optional fields often store trimmed `''`.
+- Do not rename Inertia prop keys or POST fields without updating both `resources/js` and tests.
+
+## Migrations
+
+- One concern per migration; use `heal_*` or `seed_*` names for data fixes.
+- Package/form catalog changes often touch `OfficialAnalysisCatalog`, `AnalysisPackage`, and controlled form bindings — follow existing migrations in `database/migrations/`.
+
+## Controlled form resolution (do not bypass)
+
+- Job Order: `ControlledForm::jobOrderFormFor($job)` (General vs Aqua variant).
+- Results: package binding first; types-only via `combination_key` or subset rules — see `AnalysisResultReportResolver`.
+
+## Tests
+
+- Feature tests in `tests/Feature/`; name methods `test_*`.
+- After intake/JO/payment/sampling changes, run related filters (e.g. `JobOrderSamplingPaymentTest`, `AnalysisPackageTest`).

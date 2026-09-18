@@ -43,6 +43,18 @@ return [
                     'hint' => 'Intake classification, including Others specified text.',
                 ],
                 [
+                    'key' => 'results.test_requested',
+                    'label' => 'Test requested',
+                    'type' => 'text',
+                    'hint' => 'Name(s) of tests on this result sheet (from the bound package / selected members).',
+                ],
+                [
+                    'key' => 'results.test_methods_references',
+                    'label' => 'Test Methods and References',
+                    'type' => 'text',
+                    'hint' => 'Multiline block under the results table. One line per selected test: name — method. Method from analyst result_method, else Procedures (analysis_types.method), else catalog. Waived/unchecked tests omitted.',
+                ],
+                [
                     'key' => 'results.collection_datetime',
                     'label' => 'Date/Time of Collection',
                     'type' => 'date',
@@ -65,6 +77,12 @@ return [
                     'label' => 'Sample Description',
                     'type' => 'text',
                     'hint' => 'Prints “Water in sterile bottle” when that Field Data (Potability) option is selected on the RFA. Not the RFA Sample Code/Description.',
+                ],
+                [
+                    'key' => 'results.specimen',
+                    'label' => 'Specimen',
+                    'type' => 'text',
+                    'hint' => 'From intake when Food Products / Proximate (or related food) tests are selected.',
                 ],
                 [
                     'key' => 'results.sample_code',
@@ -117,6 +135,10 @@ return [
                 ['key' => 'job_orders.sampling_date', 'label' => 'Sampling Date', 'type' => 'date'],
                 ['key' => 'job_orders.sampling_time', 'label' => 'Sampling Time', 'type' => 'text'],
                 ['key' => 'job_orders.sample_collected_by', 'label' => 'Sample Collected By', 'type' => 'text'],
+                ['key' => 'job_orders.sampling_site', 'label' => 'Sampling Site', 'type' => 'text'],
+                ['key' => 'job_orders.specimen', 'label' => 'Specimen', 'type' => 'text', 'hint' => 'Food / Proximate specimen from intake.'],
+                ['key' => 'job_orders.payment_mode', 'label' => 'Payment Mode', 'type' => 'text'],
+                ['key' => 'job_orders.payment_terms', 'label' => 'Payment Terms', 'type' => 'text'],
                 ['key' => 'job_orders.classification', 'label' => 'Sample Classification', 'type' => 'text'],
                 ['key' => 'job_orders.ownership_type', 'label' => 'Ownership Type', 'type' => 'text'],
                 ['key' => 'job_orders.field_data', 'label' => 'Field Data', 'type' => 'multiline'],
@@ -127,9 +149,14 @@ return [
                 ['key' => 'job_orders.total_cost', 'label' => 'Total Cost', 'type' => 'currency'],
                 ['key' => 'job_orders.created_at', 'label' => 'Kiosk submitted date/time', 'type' => 'date'],
                 ['key' => 'job_orders.received_at', 'label' => 'Lab received date (Receiving desk)', 'type' => 'date'],
-                ['key' => 'job_orders.reviewed_at', 'label' => 'Reviewed Date', 'type' => 'date'],
+                ['key' => 'job_orders.jo_approved_at', 'label' => 'JO approved date (Head)', 'type' => 'date'],
+                ['key' => 'job_orders.reviewed_at', 'label' => 'Results released date', 'type' => 'date'],
                 ['key' => 'job_orders.received_by_name', 'label' => 'Received By', 'type' => 'signature'],
                 ['key' => 'job_orders.reviewed_by_name', 'label' => 'Reviewed By', 'type' => 'signature'],
+                ['key' => 'conforme_name', 'label' => 'Conforme name (customer)', 'type' => 'text'],
+                ['key' => 'conforme_date', 'label' => 'Conforme date (submitted)', 'type' => 'date'],
+                ['key' => 'received_date', 'label' => 'Received by date', 'type' => 'date'],
+                ['key' => 'reviewed_date', 'label' => 'Reviewed by date (JO approval)', 'type' => 'date'],
             ],
         ],
         [
@@ -149,27 +176,94 @@ return [
                 ['key' => 'job_orders.wastewater_source:faucet', 'label' => 'Source: Faucet', 'type' => 'checkbox'],
                 ['key' => 'job_orders.wastewater_source:tank', 'label' => 'Source: Tank', 'type' => 'checkbox'],
                 ['key' => 'job_orders.wastewater_source:deepwell', 'label' => 'Source: Deep well', 'type' => 'checkbox'],
+                ['key' => 'job_orders.wastewater_source:sea', 'label' => 'Aqua source: Sea Water', 'type' => 'checkbox'],
+                ['key' => 'job_orders.wastewater_source:brackish', 'label' => 'Aqua source: Brackish Water', 'type' => 'checkbox'],
+                ['key' => 'job_orders.wastewater_source:river', 'label' => 'Aqua source: River Water', 'type' => 'checkbox'],
                 ['key' => 'job_orders.field_data:sterile_bottle', 'label' => 'Potability: sterile bottle', 'type' => 'checkbox'],
+                ['key' => 'job_orders.payment_mode:cash', 'label' => 'Payment: Cash', 'type' => 'checkbox'],
+                ['key' => 'job_orders.payment_mode:billing_partial', 'label' => 'Payment: Billing/Partial', 'type' => 'checkbox'],
+                ['key' => 'job_orders.payment_mode:check', 'label' => 'Payment: Check', 'type' => 'checkbox'],
+                ['key' => 'job_orders.payment_terms:15_days', 'label' => 'Payment terms: 15 days', 'type' => 'checkbox'],
+                ['key' => 'job_orders.payment_terms:30_days', 'label' => 'Payment terms: 30 days', 'type' => 'checkbox'],
             ],
         ],
         [
             'label' => 'Samples',
             'categories' => ['job_order', 'analysis_result'],
-            'sources' => [
-                ['key' => 'samples[]', 'label' => 'Samples table', 'type' => 'table', 'hint' => 'Repeating rows: sample_code, description, matrix, quantity, unit, remarks'],
-                ['key' => 'samples.sample_code', 'label' => 'First sample code', 'type' => 'text'],
-                ['key' => 'samples.description', 'label' => 'First sample description', 'type' => 'text'],
-            ],
+            'sources' => array_values(array_merge(
+                [
+                    ['key' => 'samples[]', 'label' => 'Samples table', 'type' => 'table', 'hint' => 'Repeating rows: sample_code, description, control_number, matrix, quantity, unit, remarks. Control numbers use A/B suffixes when the job has 2+ samples.'],
+                    ['key' => 'samples.sample_code', 'label' => 'First sample code', 'type' => 'text'],
+                    ['key' => 'samples.description', 'label' => 'First sample description', 'type' => 'text'],
+                ],
+                array_merge(
+                    ...array_map(static function (int $i): array {
+                        $column = $i <= 8 ? 'left' : 'right';
+
+                        return [
+                            [
+                                'key' => "sample_code_{$i}",
+                                'label' => "RFA sample line {$i} (code + description)",
+                                'type' => 'text',
+                                'hint' => "Dual-column Job Order sample grid ({$column}; lines 1–8 left, 9–16 right).",
+                            ],
+                            [
+                                'key' => "control_number_{$i}",
+                                'label' => "RFA control number line {$i}",
+                                'type' => 'text',
+                                'hint' => 'Same job reference; adds A/B/C… when the job has 2+ samples. Lines 1–8 left, 9–16 right.',
+                            ],
+                        ];
+                    }, range(1, 16))
+                ),
+            )),
         ],
         [
             'label' => 'Analyses / tests',
             'categories' => ['job_order', 'analysis_result'],
-            'sources' => [
-                ['key' => 'analyses[]', 'label' => 'Analyses table', 'type' => 'table', 'hint' => 'Repeating rows: name, category, unit_price, total_cost, result_value, result_unit'],
-                ['key' => 'analyses.selected:{code}', 'label' => 'Test selected (use checkbox_true_value = analysis code)', 'type' => 'checkbox'],
-                ['key' => 'results.issued_date', 'label' => 'Issued date', 'type' => 'date'],
-                ['key' => 'results.analyst_name', 'label' => 'Analyst name', 'type' => 'signature'],
-            ],
+            'sources' => array_values(array_merge(
+                [
+                    ['key' => 'analyses[]', 'label' => 'Analyses table', 'type' => 'table', 'hint' => 'Repeating rows: name, category, unit_price, total_cost, result_value, result_unit. Prefer bill_* line slots for dual-column RFA billing grids.'],
+                    ['key' => 'billing_total', 'label' => 'Billing total (RFA, left)', 'type' => 'currency', 'hint' => 'Job total under the left Parameters column when ≤10 billing lines.'],
+                    ['key' => 'billing_total_right', 'label' => 'Billing total (RFA, right)', 'type' => 'currency', 'hint' => 'Job total under the right Parameters column when billing lines spill past 10 (slots 11–20).'],
+                    ['key' => 'analyses.selected:{code}', 'label' => 'Test selected (use checkbox_true_value = analysis code)', 'type' => 'checkbox'],
+                    ['key' => 'results.issued_date', 'label' => 'Issued date', 'type' => 'date'],
+                    ['key' => 'results.analyst_name', 'label' => 'Analyst name (slot 1)', 'type' => 'signature', 'hint' => 'Confirmed at export — name only. Map PRC separately via Analyst PRC. FO2: Reviewed by.'],
+                    ['key' => 'results.analyst_name_2', 'label' => 'Analyst name (slot 2)', 'type' => 'signature', 'hint' => 'Second analyst when the form is configured for 2+ signatories. FO2: Noted By.'],
+                    ['key' => 'results.analyst_name_3', 'label' => 'Analyst name (slot 3)', 'type' => 'signature', 'hint' => 'Third signatory (FO2 Certified Correct 1).'],
+                    ['key' => 'results.analyst_name_4', 'label' => 'Analyst name (slot 4)', 'type' => 'signature', 'hint' => 'Fourth signatory (FO2 Certified Correct 2).'],
+                    ['key' => 'results.analyst_prc', 'label' => 'Analyst PRC (slot 1)', 'type' => 'text', 'hint' => 'PRC ID only (not appended to the name field).'],
+                    ['key' => 'results.analyst_prc_2', 'label' => 'Analyst PRC (slot 2)', 'type' => 'text'],
+                    ['key' => 'results.analyst_prc_3', 'label' => 'Analyst PRC (slot 3)', 'type' => 'text'],
+                    ['key' => 'results.analyst_prc_4', 'label' => 'Analyst PRC (slot 4)', 'type' => 'text'],
+                ],
+                array_merge(
+                    ...array_map(static function (int $i): array {
+                        $side = $i <= 10 ? 'left' : 'right';
+
+                        return [
+                            [
+                                'key' => "bill_param_{$i}",
+                                'label' => "RFA billing parameter line {$i} ({$side})",
+                                'type' => 'text',
+                                'hint' => 'Dual-column Parameters grid: lines 1–10 left, 11–20 right. Filled after Receiving prices the job.',
+                            ],
+                            [
+                                'key' => "bill_price_{$i}",
+                                'label' => "RFA billing price/test line {$i} ({$side})",
+                                'type' => 'currency',
+                                'hint' => 'Unit price for billing line '.$i.'.',
+                            ],
+                            [
+                                'key' => "bill_total_{$i}",
+                                'label' => "RFA billing total-cost line {$i} ({$side})",
+                                'type' => 'currency',
+                                'hint' => 'Line total (qty × price) for billing line '.$i.'.',
+                            ],
+                        ];
+                    }, range(1, 20))
+                ),
+            )),
         ],
     ],
 ];

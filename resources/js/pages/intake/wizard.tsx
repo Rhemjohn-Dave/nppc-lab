@@ -1,8 +1,21 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Check, ChevronDown, Plus, Search, Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import InputError from '@/components/input-error';
+import FormSection from '@/components/intake/form-section';
+import IntakeField from '@/components/intake/intake-field';
+import IntakeIndividualTestCatalog from '@/components/intake/intake-individual-test-catalog';
+import IntakePackageRow from '@/components/intake/intake-package-row';
+import IntakePageShell from '@/components/intake/intake-page-shell';
+import IntakeSampleRow from '@/components/intake/intake-sample-row';
+import IntakeStepHeader from '@/components/intake/intake-step-header';
+import IntakeStepper from '@/components/intake/intake-stepper';
+import IntakeStickyFooter from '@/components/intake/intake-sticky-footer';
+import IntakeTypePresetRow, {
+    type IntakeTypePreset,
+} from '@/components/intake/intake-type-preset-row';
+import TestsRequestSummary from '@/components/intake/tests-request-summary';
 import NppcLogo from '@/components/nppc-logo';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -19,6 +32,7 @@ type CategoryGroup = {
         code: string;
         name: string;
         default_price: string;
+        catalog_scope: string;
     }>;
 };
 
@@ -29,14 +43,19 @@ type IntakePackage = {
     description: string | null;
     default_price: string | number;
     form_code: string | null;
+    report_layout: 'controlled_form' | 'dynamic_matrix';
     classifications: string[];
+    category: string | null;
     category_label: string | null;
     analysis_type_ids: number[];
+    visible_for_aqua: boolean;
+    visible_for_non_aqua: boolean;
     tests: Array<{
         id: number;
         code: string;
         name: string;
         default_price: string;
+        catalog_scope: string;
     }>;
 };
 
@@ -52,7 +71,29 @@ type Prefill = {
 type Options = {
     ownership: string[];
     classifications: string[];
+    other_classification_options: string[];
     wastewater_sources: string[];
+    aqua_sources: string[];
+};
+
+const PAYMENT_MODE_OPTIONS = [
+    { value: 'cash', label: 'Cash' },
+    { value: 'billing_partial', label: 'Billing / Partial' },
+    { value: 'check', label: 'Check' },
+] as const;
+
+const PAYMENT_TERMS_OPTIONS = [
+    { value: '15_days', label: '15 days' },
+    { value: '30_days', label: '30 days' },
+] as const;
+
+const CLASSIFICATION_BLURBS: Record<string, string> = {
+    Aqua: 'Aquaculture water and related samples',
+    Potability: 'Drinking-water analysis',
+    Wastewater: 'Wastewater analysis',
+    Agriculture: 'Agricultural samples',
+    'Academic/Research': 'Research-related requests',
+    Others: 'Other laboratory requests',
 };
 
 type SampleDraft = {
@@ -67,11 +108,12 @@ type SampleDraft = {
 type Props = {
     categories: CategoryGroup[];
     packages?: IntakePackage[];
+    type_presets?: IntakeTypePreset[];
     prefill: Prefill;
     options: Options;
 };
 
-const steps = ['Customer', 'Samples', 'Details', 'Tests', 'Review'] as const;
+const steps = ['Customer', 'Details', 'Samples', 'Tests', 'Review'] as const;
 
 const emptySample = (): SampleDraft => ({
     sample_code: '',
@@ -96,7 +138,7 @@ function ChoiceChip({
             type="button"
             onClick={onClick}
             className={cn(
-                'min-h-11 rounded-xl border px-4 py-2 text-sm font-medium transition',
+                'min-h-9 rounded-xl border px-3 py-1.5 text-sm font-medium transition',
                 active
                     ? 'border-[#1A3694] bg-[#1A3694] text-white shadow-sm'
                     : 'border-slate-200 bg-white text-slate-700 hover:border-[#5282D3]',
@@ -107,9 +149,121 @@ function ChoiceChip({
     );
 }
 
+function ReviewRow({
+    label,
+    value,
+    className,
+}: {
+    label: string;
+    value: string;
+    className?: string;
+}) {
+    return (
+        <div className={cn('min-w-0', className)}>
+            <p className="text-xs tracking-wide text-slate-500 uppercase">
+                {label}
+            </p>
+            <p className="text-sm break-words text-slate-800">
+                {value.trim() || '—'}
+            </p>
+        </div>
+    );
+}
+
+function ReviewEditButton({ onClick }: { onClick: () => void }) {
+    return (
+        <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8"
+            onClick={onClick}
+        >
+            Edit
+        </Button>
+    );
+}
+
+function RadioOption({
+    name,
+    value,
+    checked,
+    label,
+    hint,
+    onChange,
+}: {
+    name: string;
+    value: string;
+    checked: boolean;
+    label: string;
+    hint?: string;
+    onChange: () => void;
+}) {
+    return (
+        <label
+            className={cn(
+                'flex min-h-9 cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2 text-sm transition',
+                checked
+                    ? 'border-[#1A3694] bg-[#1A3694]/[0.06] text-[#1A3694] shadow-sm'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-[#5282D3]',
+            )}
+        >
+            <input
+                type="radio"
+                name={name}
+                value={value}
+                checked={checked}
+                onChange={onChange}
+                className="size-4 shrink-0 accent-[#1A3694]"
+            />
+            <span className="min-w-0">
+                <span className="font-medium">{label}</span>
+                {hint ? (
+                    <span className="mt-0.5 block text-xs text-slate-500">
+                        {hint}
+                    </span>
+                ) : null}
+            </span>
+        </label>
+    );
+}
+
+function isGenericOtherCategory(label: string): boolean {
+    return label.trim().toLowerCase() === 'other';}
+
+const FOOD_CATEGORY_SLUGS = new Set([
+    'food_products_microbiological',
+    'proximate_analysis',
+    'other_food_analysis',
+    'nutrifacts',
+    'phytochemical',
+]);
+
+function isAquaClassificationValue(classification: string): boolean {
+    const value = classification.toLowerCase();
+    if (!value.includes('aqua')) {
+        return false;
+    }
+
+    return !value.includes('potability') && !value.includes('wastewater');
+}
+
+function scopeVisible(scope: string, isAqua: boolean): boolean {
+    if (scope === 'both') {
+        return true;
+    }
+
+    if (scope === 'aqua') {
+        return isAqua;
+    }
+
+    return !isAqua;
+}
+
 export default function IntakeWizard({
     categories,
     packages = [],
+    type_presets = [],
     prefill,
     options,
 }: Props) {
@@ -118,6 +272,8 @@ export default function IntakeWizard({
     };
     const [step, setStep] = useState(0);
     const [submitting, setSubmitting] = useState(false);
+    const [attemptedContinue, setAttemptedContinue] = useState(false);
+    const [mobileSummaryOpen, setMobileSummaryOpen] = useState(false);
     const [customer, setCustomer] = useState({
         customer_name: prefill.customer_name ?? '',
         customer_email: prefill.customer_email ?? '',
@@ -130,27 +286,73 @@ export default function IntakeWizard({
     );
     const [classification, setClassification] = useState('');
     const [classificationOther, setClassificationOther] = useState('');
+    const [classificationOtherSpecify, setClassificationOtherSpecify] =
+        useState('');
     const [samplingDate, setSamplingDate] = useState('');
     const [samplingTime, setSamplingTime] = useState('');
     const [sampleCollectedBy, setSampleCollectedBy] = useState('');
+    const [samplingSite, setSamplingSite] = useState('');
+    const [specimen, setSpecimen] = useState('');
+    const [paymentMode, setPaymentMode] = useState('');
+    const [paymentTerms, setPaymentTerms] = useState('');
     const [fieldData, setFieldData] = useState('');
     const [sterileBottle, setSterileBottle] = useState(false);
+    const [potabilityOpen, setPotabilityOpen] = useState(false);
     const [sampleStorageTemp, setSampleStorageTemp] = useState('');
     const [wastewaterSource, setWastewaterSource] = useState('');
     const [wastewaterSourceOther, setWastewaterSourceOther] = useState('');
     const [otherTests, setOtherTests] = useState('');
-    const [openCategory, setOpenCategory] = useState<string | null>(
-        categories[0]?.category ?? null,
-    );
+    const [activeCategory, setActiveCategory] = useState<string | null>(null);
+    const [browseTestsOpen, setBrowseTestsOpen] = useState(false);
     const [testsQuery, setTestsQuery] = useState('');
     const [selectedTypes, setSelectedTypes] = useState<number[]>([]);
     const [selectedPackageIds, setSelectedPackageIds] = useState<number[]>([]);
+    const [selectedPresetKeys, setSelectedPresetKeys] = useState<string[]>([]);
     const [samples, setSamples] = useState<SampleDraft[]>([emptySample()]);
+    const [expandedSample, setExpandedSample] = useState<number | null>(0);
+    const nextSampleFocusRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        setAttemptedContinue(false);
+    }, [step]);
+
+    useEffect(() => {
+        if (nextSampleFocusRef.current === null) {
+            return;
+        }
+        const index = nextSampleFocusRef.current;
+        nextSampleFocusRef.current = null;
+        document
+            .getElementById(`sample-card-${index}`)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        (
+            document.getElementById(
+                `sample_code_${index}`,
+            ) as HTMLInputElement | null
+        )?.focus();
+    }, [samples.length]);
 
     const selectedTypeSet = useMemo(
         () => new Set(selectedTypes),
         [selectedTypes],
     );
+
+    const resolvedClassification =
+        classification === 'Others'
+            ? classificationOther.trim()
+                ? isGenericOtherCategory(classificationOther) &&
+                  classificationOtherSpecify.trim()
+                    ? `Others: Other — ${classificationOtherSpecify.trim()}`
+                    : `Others: ${classificationOther.trim()}`
+                : 'Others'
+            : classification;
+
+    const resolvedSampleSource =
+        wastewaterSource === 'Others'
+            ? wastewaterSourceOther.trim()
+                ? `Others: ${wastewaterSourceOther.trim()}`
+                : 'Others'
+            : wastewaterSource;
 
     const selectedItems = useMemo(() => {
         const map = new Map<number, { name: string; price: string }>();
@@ -170,47 +372,109 @@ export default function IntakeWizard({
                 }),
             ),
         );
+        type_presets.forEach((preset) =>
+            preset.tests.forEach((item) =>
+                map.set(item.id, {
+                    name: item.name,
+                    price: String(item.default_price ?? '0'),
+                }),
+            ),
+        );
 
         return selectedTypes.map((id) => map.get(id)).filter(Boolean) as Array<{
             name: string;
             price: string;
         }>;
-    }, [categories, packages, selectedTypes]);
+    }, [categories, packages, type_presets, selectedTypes]);
 
-    const filteredCategories = useMemo(() => {
-        const needle = testsQuery.trim().toLowerCase();
-        if (!needle) {
-            return categories;
-        }
+    const isAquaClassification = isAquaClassificationValue(
+        resolvedClassification,
+    );
 
+    const scopedPackages = useMemo(() => {
+        return packages.filter((pkg) =>
+            isAquaClassification
+                ? pkg.visible_for_aqua
+                : pkg.visible_for_non_aqua,
+        );
+    }, [packages, isAquaClassification]);
+
+    const scopedCategories = useMemo(() => {
         return categories
             .map((group) => ({
                 ...group,
                 items: group.items.filter((item) =>
-                    `${item.code} ${item.name}`.toLowerCase().includes(needle),
+                    scopeVisible(
+                        item.catalog_scope || 'non_aqua',
+                        isAquaClassification,
+                    ),
                 ),
             }))
             .filter((group) => group.items.length > 0);
-    }, [categories, testsQuery]);
+    }, [categories, isAquaClassification]);
 
-    const resolvedClassification =
-        classification === 'Others'
-            ? classificationOther.trim()
-                ? `Others: ${classificationOther.trim()}`
-                : 'Others'
-            : classification;
+    const needsSpecimen = useMemo(() => {
+        if (classification === 'Others') {
+            const otherLabel = classificationOther.trim().toLowerCase();
+            if (
+                otherLabel !== '' &&
+                categories.some(
+                    (group) =>
+                        FOOD_CATEGORY_SLUGS.has(group.category ?? '') &&
+                        group.label.trim().toLowerCase() === otherLabel,
+                )
+            ) {
+                return true;
+            }
+        }
 
-    const resolvedSampleSource =
-        wastewaterSource === 'Others'
-            ? wastewaterSourceOther.trim()
-                ? `Others: ${wastewaterSourceOther.trim()}`
-                : 'Others'
-            : wastewaterSource;
+        const typeCategory = new Map<number, string>();
+        categories.forEach((group) => {
+            const slug = group.category ?? '';
+            group.items.forEach((item) => typeCategory.set(item.id, slug));
+        });
+        packages.forEach((pkg) => {
+            const slug = pkg.category ?? '';
+            pkg.tests.forEach((item) => {
+                if (!typeCategory.has(item.id)) {
+                    typeCategory.set(item.id, slug);
+                }
+            });
+        });
+
+        if (
+            selectedPackageIds.some((id) => {
+                const pkg = packages.find((row) => row.id === id);
+                return pkg?.category
+                    ? FOOD_CATEGORY_SLUGS.has(pkg.category)
+                    : false;
+            })
+        ) {
+            return true;
+        }
+
+        return selectedTypes.some((id) =>
+            FOOD_CATEGORY_SLUGS.has(typeCategory.get(id) ?? ''),
+        );
+    }, [
+        categories,
+        classification,
+        classificationOther,
+        packages,
+        selectedPackageIds,
+        selectedTypes,
+    ]);
+
+    useEffect(() => {
+        if (!needsSpecimen && specimen) {
+            setSpecimen('');
+        }
+    }, [needsSpecimen, specimen]);
 
     const suggestedPackages = useMemo(() => {
         const value = resolvedClassification.toLowerCase();
 
-        return packages.filter((pkg) => {
+        return scopedPackages.filter((pkg) => {
             if (pkg.classifications.length === 0) {
                 return true;
             }
@@ -219,20 +483,154 @@ export default function IntakeWizard({
                 value.includes(tag.toLowerCase()),
             );
         });
-    }, [packages, resolvedClassification]);
+    }, [scopedPackages, resolvedClassification]);
 
     const otherPackages = useMemo(
         () =>
-            packages.filter(
+            scopedPackages.filter(
                 (pkg) => !suggestedPackages.some((item) => item.id === pkg.id),
             ),
-        [packages, suggestedPackages],
+        [scopedPackages, suggestedPackages],
     );
+
+    const suggestedTypePresets = useMemo(() => {
+        const needle = resolvedClassification.toLowerCase();
+        if (!needle) {
+            return [];
+        }
+
+        return type_presets.filter((preset) =>
+            preset.classifications.some((label) =>
+                needle.includes(label.toLowerCase()),
+            ),
+        );
+    }, [type_presets, resolvedClassification]);
+
+    const otherTypePresets = useMemo(
+        () =>
+            type_presets.filter(
+                (preset) =>
+                    !suggestedTypePresets.some((item) => item.key === preset.key),
+            ),
+        [type_presets, suggestedTypePresets],
+    );
+
+    useEffect(() => {
+        const allowedTypeIds = new Set<number>();
+        scopedCategories.forEach((group) =>
+            group.items.forEach((item) => allowedTypeIds.add(item.id)),
+        );
+        scopedPackages.forEach((pkg) =>
+            pkg.analysis_type_ids.forEach((id) => allowedTypeIds.add(id)),
+        );
+        type_presets.forEach((preset) =>
+            preset.analysis_type_ids.forEach((id) => allowedTypeIds.add(id)),
+        );
+
+        setSelectedTypes((current) => {
+            const next = current.filter((id) => allowedTypeIds.has(id));
+
+            return next.length === current.length ? current : next;
+        });
+        setSelectedPackageIds((current) => {
+            const next = current.filter((id) =>
+                scopedPackages.some((pkg) => pkg.id === id),
+            );
+
+            return next.length === current.length ? current : next;
+        });
+        setSelectedPresetKeys((current) => {
+            const next = current.filter((key) =>
+                type_presets.some((preset) => preset.key === key),
+            );
+
+            return next.length === current.length ? current : next;
+        });
+    }, [
+        isAquaClassification,
+        scopedCategories,
+        scopedPackages,
+        type_presets,
+    ]);
 
     const estimatedTotal = selectedItems.reduce(
         (sum, item) => sum + Number(item.price || 0),
         0,
     );
+
+    const catalogItemsForSummary = useMemo(() => {
+        const seen = new Set<number>();
+        const items: Array<{
+            id: number;
+            name: string;
+            default_price: string;
+        }> = [];
+
+        const push = (id: number, name: string, default_price: string) => {
+            if (seen.has(id)) {
+                return;
+            }
+            seen.add(id);
+            items.push({ id, name, default_price });
+        };
+
+        categories.forEach((group) =>
+            group.items.forEach((item) =>
+                push(item.id, item.name, item.default_price),
+            ),
+        );
+        packages.forEach((pkg) =>
+            pkg.tests.forEach((item) =>
+                push(item.id, item.name, item.default_price),
+            ),
+        );
+        type_presets.forEach((preset) =>
+            preset.tests.forEach((item) =>
+                push(
+                    item.id,
+                    item.name,
+                    String(item.default_price ?? '0'),
+                ),
+            ),
+        );
+
+        return items;
+    }, [categories, packages, type_presets]);
+
+    /** Tests picked from the catalog rather than covered by a package or preset. */
+    const individualSelectedCount = useMemo(() => {
+        const covered = new Set<number>();
+        scopedPackages
+            .filter((pkg) => selectedPackageIds.includes(pkg.id))
+            .forEach((pkg) =>
+                pkg.analysis_type_ids.forEach((id) => covered.add(id)),
+            );
+        type_presets
+            .filter((preset) => selectedPresetKeys.includes(preset.key))
+            .forEach((preset) =>
+                preset.analysis_type_ids.forEach((id) => covered.add(id)),
+            );
+
+        return selectedTypes.filter((id) => !covered.has(id)).length;
+    }, [
+        scopedPackages,
+        selectedPackageIds,
+        type_presets,
+        selectedPresetKeys,
+        selectedTypes,
+    ]);
+
+    /** Open the catalog automatically when returning with catalog-only picks. */
+    const browseAutoOpenRef = useRef(false);
+    useEffect(() => {
+        if (step !== 3 || browseAutoOpenRef.current) {
+            return;
+        }
+        if (individualSelectedCount > 0) {
+            browseAutoOpenRef.current = true;
+            setBrowseTestsOpen(true);
+        }
+    }, [step, individualSelectedCount]);
 
     function toggleType(id: number) {
         setSelectedTypes((current) =>
@@ -247,13 +645,9 @@ export default function IntakeWizard({
         const selected = selectedPackageIds.includes(pkg.id);
 
         if (selected) {
-            const remaining = packages.filter(
-                (item) =>
-                    selectedPackageIds.includes(item.id) && item.id !== pkg.id,
-            );
-            const keep = new Set(
-                remaining.flatMap((item) => item.analysis_type_ids),
-            );
+            const keep = keptTypeIdsExcluding(memberIds, {
+                exceptPackageId: pkg.id,
+            });
             setSelectedPackageIds((current) =>
                 current.filter((id) => id !== pkg.id),
             );
@@ -295,88 +689,119 @@ export default function IntakeWizard({
         );
     }
 
-    function renderPackageCard(pkg: IntakePackage) {
-        const selected = selectedPackageIds.includes(pkg.id);
-        const selectedMemberCount = pkg.analysis_type_ids.filter((id) =>
-            selectedTypes.includes(id),
-        ).length;
+    function keptTypeIdsExcluding(
+        memberIds: number[],
+        options: { exceptPackageId?: number; exceptPresetKey?: string } = {},
+    ): Set<number> {
+        const keep = new Set<number>();
 
+        packages
+            .filter(
+                (item) =>
+                    selectedPackageIds.includes(item.id) &&
+                    item.id !== options.exceptPackageId,
+            )
+            .forEach((item) =>
+                item.analysis_type_ids.forEach((id) => keep.add(id)),
+            );
+
+        type_presets
+            .filter(
+                (preset) =>
+                    selectedPresetKeys.includes(preset.key) &&
+                    preset.key !== options.exceptPresetKey,
+            )
+            .forEach((preset) =>
+                preset.analysis_type_ids.forEach((id) => keep.add(id)),
+            );
+
+        return keep;
+    }
+
+    function toggleTypePreset(preset: IntakeTypePreset) {
+        const memberIds = preset.analysis_type_ids;
+        const selected = selectedPresetKeys.includes(preset.key);
+
+        if (selected) {
+            const keep = keptTypeIdsExcluding(memberIds, {
+                exceptPresetKey: preset.key,
+            });
+            setSelectedPresetKeys((current) =>
+                current.filter((key) => key !== preset.key),
+            );
+            setSelectedTypes((current) =>
+                current.filter((id) => !memberIds.includes(id) || keep.has(id)),
+            );
+            return;
+        }
+
+        setSelectedPresetKeys((current) => [...current, preset.key]);
+        setSelectedTypes((current) => [
+            ...new Set([...current, ...memberIds]),
+        ]);
+    }
+
+    function toggleTypePresetMember(preset: IntakeTypePreset, typeId: number) {
+        if (!selectedPresetKeys.includes(preset.key)) {
+            return;
+        }
+
+        const memberIds = preset.analysis_type_ids;
+        const currentlyOn = selectedTypes.includes(typeId);
+        const selectedMembers = memberIds.filter((id) =>
+            currentlyOn
+                ? id !== typeId && selectedTypes.includes(id)
+                : selectedTypes.includes(id) || id === typeId,
+        );
+
+        if (currentlyOn && selectedMembers.length === 0) {
+            toggleTypePreset(preset);
+            return;
+        }
+
+        if (currentlyOn) {
+            setSelectedTypes((current) => current.filter((id) => id !== typeId));
+            return;
+        }
+
+        setSelectedTypes((current) =>
+            current.includes(typeId) ? current : [...current, typeId],
+        );
+    }
+
+    function presetEstimatedPrice(preset: IntakeTypePreset): number {
+        return preset.tests.reduce(
+            (sum, test) => sum + Number(test.default_price || 0),
+            0,
+        );
+    }
+
+    function renderPackageRow(pkg: IntakePackage) {
         return (
-            <div
+            <IntakePackageRow
                 key={pkg.id}
-                className={cn(
-                    'rounded-2xl border p-4 text-left transition',
-                    selected
-                        ? 'border-[#1A3694] bg-[#eef3fb] shadow-sm'
-                        : 'border-slate-200 bg-white hover:border-[#5282D3]',
-                )}
-            >
-                <button
-                    type="button"
-                    onClick={() => togglePackage(pkg)}
-                    className="w-full text-left"
-                >
-                    <div className="flex items-start justify-between gap-3">
-                        <p className="font-semibold text-[#1A3694]">{pkg.name}</p>
-                        <span className="shrink-0 text-sm font-semibold text-slate-700">
-                            ₱{Number(pkg.default_price).toFixed(2)}
-                        </span>
-                    </div>
-                    {pkg.description && (
-                        <p className="mt-1 text-sm text-slate-600">
-                            {pkg.description}
-                        </p>
-                    )}
-                    {pkg.form_code && (
-                        <p className="mt-2 font-mono text-[11px] text-muted-foreground">
-                            {pkg.form_code}
-                        </p>
-                    )}
-                    {selected && (
-                        <p className="mt-2 text-xs font-medium text-emerald-700">
-                            Selected · {selectedMemberCount}/
-                            {pkg.tests.length} tests
-                        </p>
-                    )}
-                </button>
-                {selected ? (
-                    <div className="mt-3 space-y-2 border-t border-[#d7e2f5] pt-3">
-                        <p className="text-xs text-muted-foreground">
-                            Uncheck tests you do not need. Those slots print as
-                            “-” on the package result form.
-                        </p>
-                        {pkg.tests.map((test) => {
-                            const checked = selectedTypes.includes(test.id);
+                pkg={pkg}
+                selected={selectedPackageIds.includes(pkg.id)}
+                selectedTypes={selectedTypes}
+                onTogglePackage={() => togglePackage(pkg)}
+                onToggleMember={(typeId) => togglePackageMember(pkg, typeId)}
+            />
+        );
+    }
 
-                            return (
-                                <label
-                                    key={test.id}
-                                    className="flex items-start gap-2 text-sm text-slate-700"
-                                >
-                                    <Checkbox
-                                        checked={checked}
-                                        onCheckedChange={() =>
-                                            togglePackageMember(pkg, test.id)
-                                        }
-                                    />
-                                    <span>
-                                        <span className="font-medium">
-                                            {test.name}
-                                        </span>
-                                        <span className="mt-0.5 block font-mono text-[11px] text-muted-foreground">
-                                            {test.code}
-                                        </span>
-                                    </span>
-                                </label>
-                            );
-                        })}
-                    </div>
-                ) : (
-                    <p className="mt-2 text-xs text-slate-500">
-                        {pkg.tests.map((test) => test.name).join(' · ')}
-                    </p>
-                )}
-            </div>
+    function renderTypePresetRow(preset: IntakeTypePreset) {
+        return (
+            <IntakeTypePresetRow
+                key={preset.key}
+                preset={preset}
+                selected={selectedPresetKeys.includes(preset.key)}
+                selectedTypes={selectedTypes}
+                estimatedPrice={presetEstimatedPrice(preset)}
+                onTogglePreset={() => toggleTypePreset(preset)}
+                onToggleMember={(typeId) =>
+                    toggleTypePresetMember(preset, typeId)
+                }
+            />
         );
     }
 
@@ -401,23 +826,36 @@ export default function IntakeWizard({
         }
 
         if (step === 1) {
-            return samples.every((sample) => sample.description.trim());
-        }
-
-        if (step === 2) {
             if (!classification) {
                 return false;
             }
 
-            if (classification === 'Others' && !classificationOther.trim()) {
-                return false;
+            if (classification === 'Others') {
+                if (!classificationOther.trim()) {
+                    return false;
+                }
+
+                if (
+                    isGenericOtherCategory(classificationOther) &&
+                    !classificationOtherSpecify.trim()
+                ) {
+                    return false;
+                }
             }
 
             if (wastewaterSource === 'Others' && !wastewaterSourceOther.trim()) {
                 return false;
             }
 
+            if (paymentMode === 'billing_partial' && !paymentTerms) {
+                return false;
+            }
+
             return true;
+        }
+
+        if (step === 2) {
+            return samples.length > 0;
         }
 
         if (step === 3) {
@@ -432,7 +870,7 @@ export default function IntakeWizard({
     }
 
     function stepError(index: number) {
-        if (index !== step) {
+        if (index !== step || !attemptedContinue) {
             return null;
         }
 
@@ -441,11 +879,31 @@ export default function IntakeWizard({
         }
 
         if (step === 1 && !canContinue()) {
-            return 'Each sample needs at least a description.';
+            if (!classification) {
+                return 'Choose a classification before continuing.';
+            }
+
+            if (classification === 'Others' && !classificationOther.trim()) {
+                return 'Select a parameter category for Others.';
+            }
+
+            if (
+                classification === 'Others' &&
+                isGenericOtherCategory(classificationOther) &&
+                !classificationOtherSpecify.trim()
+            ) {
+                return 'Specify the Other classification.';
+            }
+
+            if (paymentMode === 'billing_partial' && !paymentTerms) {
+                return 'Select 15 or 30 day terms for Billing / Partial.';
+            }
+
+            return 'Complete the required sample details before continuing.';
         }
 
         if (step === 2 && !canContinue()) {
-            return 'Choose a classification before continuing.';
+            return 'Add at least one sample before continuing.';
         }
 
         if (step === 3 && !canContinue()) {
@@ -453,6 +911,15 @@ export default function IntakeWizard({
         }
 
         return null;
+    }
+
+    function goNext() {
+        if (!canContinue()) {
+            setAttemptedContinue(true);
+            return;
+        }
+        setAttemptedContinue(false);
+        setStep((s) => s + 1);
     }
 
     function submit() {
@@ -466,6 +933,13 @@ export default function IntakeWizard({
                 sampling_date: samplingDate || null,
                 sampling_time: samplingTime || null,
                 sample_collected_by: sampleCollectedBy || null,
+                sampling_site: samplingSite.trim() || null,
+                specimen: needsSpecimen ? specimen.trim() || null : null,
+                payment_mode: paymentMode || null,
+                payment_terms:
+                    paymentMode === 'billing_partial'
+                        ? paymentTerms || null
+                        : null,
                 field_data: sterileBottle
                     ? fieldData.trim()
                         ? `Water in sterile bottle. ${fieldData.trim()}`
@@ -487,127 +961,56 @@ export default function IntakeWizard({
         );
     }
 
-    const progress = ((step + 1) / steps.length) * 100;
+    const hasPotabilityData = sterileBottle || fieldData.trim().length > 0;
+
     const stepHints = [
-        'Tell us who you are',
-        'Describe your samples',
-        'Sampling and classification',
-        'Choose laboratory tests',
-        'Confirm and submit',
+        'Enter your contact information.',
+        'Tell us about your request and sample.',
+        'Add the samples you are submitting.',
+        'Select the analyses you need.',
+        'Review your request before submitting.',
     ] as const;
 
     return (
-        <div className="relative min-h-screen overflow-hidden bg-[#f4f7fc] text-slate-900">
+        <>
             <Head title="Request for Analysis" />
-
-            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-56 overflow-hidden sm:h-64">
-                <img
-                    src="/nppc.jpg"
-                    alt=""
-                    className="size-full object-cover object-[center_28%] opacity-40"
-                />
-                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,42,120,0.72)_0%,rgba(244,247,252,0.92)_72%,#f4f7fc_100%)]" />
-            </div>
-
-            <div className="relative mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
-                <header className="intake-enter mb-8 flex flex-wrap items-start justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                        <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white shadow-md ring-4 ring-white/40 sm:size-16">
+            <IntakePageShell
+            header={
+                <header className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+                    <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+                        <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white shadow-md ring-4 ring-white/40 sm:size-12">
                             <NppcLogo className="h-[90%] w-[90%]" />
                         </div>
-                        <div>
-                            <p className="text-xs font-medium tracking-[0.2em] text-white/80 uppercase">
-                                Customer intake
+                        <div className="min-w-0">
+                            <p className="truncate text-[10px] font-medium tracking-[0.16em] text-white/80 uppercase sm:text-xs">
+                                NPPC Analytical & Diagnostic Laboratory
                             </p>
-                            <h1 className="font-heading text-3xl font-semibold text-white sm:text-4xl">
+                            <h1 className="font-heading text-xl font-semibold text-white sm:text-2xl">
                                 Request for Analysis
                             </h1>
-                            <p className="mt-1 text-sm text-white/75">
-                                {stepHints[step]}
+                            <p className="mt-0.5 truncate text-xs text-white/80 sm:text-sm">
+                                Customer Intake Portal · {stepHints[step]}
                             </p>
                         </div>
                     </div>
                     <Button
                         asChild
                         variant="outline"
-                        className="h-11 border-white/30 bg-white/95 text-[#1A3694] hover:bg-white"
+                        className="h-10 shrink-0 border-white/30 bg-white/95 text-[#1A3694] hover:bg-white"
                     >
                         <Link href="/intake">Cancel</Link>
                     </Button>
                 </header>
+            }
+        >
+            <IntakeStepper
+                steps={steps}
+                step={step}
+                onStepSelect={setStep}
+                error={stepError(step)}
+            />
 
-                <div className="intake-enter-delay mb-6 rounded-2xl border border-[#1A3694]/10 bg-white/90 p-4 shadow-[0_10px_30px_rgba(26,54,148,0.06)] backdrop-blur">
-                    <div className="mb-3 flex items-center justify-between text-sm">
-                        <span className="font-semibold text-[#1A3694]">
-                            Step {step + 1} of {steps.length}
-                        </span>
-                        <span className="tabular-nums text-slate-500">
-                            {Math.round(progress)}%
-                        </span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-[#e8eef8]">
-                        <div
-                            className="h-full rounded-full bg-[#1A3694] transition-all duration-500 ease-out"
-                            style={{ width: `${progress}%` }}
-                        />
-                    </div>
-                    <ol className="mt-4 grid grid-cols-5 gap-2">
-                        {steps.map((label, index) => {
-                            const done = index < step;
-                            const current = index === step;
-
-                            return (
-                                <li
-                                    key={label}
-                                    className="flex min-w-0 flex-col items-center gap-1.5 text-center"
-                                >
-                                    <button
-                                        type="button"
-                                        disabled={!done}
-                                        onClick={() => done && setStep(index)}
-                                        className={cn(
-                                            'flex size-8 items-center justify-center rounded-full text-xs font-semibold transition',
-                                            current &&
-                                                'bg-[#1A3694] text-white shadow-sm',
-                                            done &&
-                                                'bg-[#5282D3]/25 text-[#1A3694] hover:bg-[#5282D3]/35',
-                                            !current &&
-                                                !done &&
-                                                'bg-slate-100 text-slate-400',
-                                            done && 'cursor-pointer',
-                                        )}
-                                    >
-                                        {done ? (
-                                            <Check className="size-4" />
-                                        ) : (
-                                            index + 1
-                                        )}
-                                    </button>
-                                    <span
-                                        className={cn(
-                                            'hidden truncate text-[11px] font-medium sm:block',
-                                            current
-                                                ? 'text-[#1A3694]'
-                                                : 'text-slate-500',
-                                        )}
-                                    >
-                                        {label}
-                                    </span>
-                                </li>
-                            );
-                        })}
-                    </ol>
-                    {stepError(step) && (
-                        <p className="mt-3 text-sm text-amber-700">
-                            {stepError(step)}
-                        </p>
-                    )}
-                </div>
-
-                <div
-                    key={step}
-                    className="intake-enter rounded-3xl border border-[#1A3694]/10 bg-white p-5 shadow-[0_16px_48px_rgba(26,54,148,0.08)] sm:p-8"
-                >
+            <div key={step} className="intake-enter min-w-0">
                     {errors?.analysis_type_ids && (
                         <InputError
                             className="mb-4"
@@ -616,264 +1019,248 @@ export default function IntakeWizard({
                     )}
 
                     {step === 0 && (
-                        <div className="space-y-5">
-                            <div className="border-b border-slate-100 pb-4">
-                                <h2 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                                    Your details
-                                </h2>
-                                <p className="mt-1 text-sm text-slate-600">
-                                    Name and email are required so we can notify
-                                    you when results are ready for pickup.
-                                    Contact number is recommended.
-                                </p>
-                            </div>
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                {(
-                                    [
-                                        [
-                                            'customer_name',
-                                            'Full name *',
-                                            'text',
-                                        ],
-                                        ['customer_email', 'Email *', 'email'],
-                                        [
-                                            'customer_contact',
-                                            'Contact number',
-                                            'tel',
-                                        ],
-                                        ['company_name', 'Company', 'text'],
-                                        ['customer_address', 'Address', 'text'],
-                                    ] as const
-                                ).map(([key, label, type]) => (
-                                    <div
-                                        key={key}
-                                        className={
-                                            key === 'customer_address'
-                                                ? 'sm:col-span-2'
-                                                : ''
+                        <div className="w-full space-y-4">
+                            <IntakeStepHeader
+                                title="Customer"
+                                hint="Enter your contact information."
+                            />
+
+                            <FormSection title="Contact details" first>
+                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                                    <IntakeField
+                                        label="Full name"
+                                        htmlFor="customer_name"
+                                        required
+                                        error={
+                                            !customer.customer_name.trim() &&
+                                            attemptedContinue
+                                                ? 'Full name is required.'
+                                                : null
                                         }
                                     >
-                                        <Label htmlFor={key}>{label}</Label>
                                         <Input
-                                            id={key}
-                                            type={type}
-                                            className="mt-1 h-11"
-                                            value={customer[key]}
+                                            id="customer_name"
+                                            type="text"
+                                            autoComplete="name"
+                                            className="h-10 w-full text-sm"
+                                            value={customer.customer_name}
+                                            aria-invalid={
+                                                !!stepError(0) &&
+                                                !customer.customer_name.trim()
+                                            }
                                             onChange={(e) =>
                                                 setCustomer((c) => ({
                                                     ...c,
-                                                    [key]: e.target.value,
+                                                    customer_name:
+                                                        e.target.value,
                                                 }))
                                             }
                                         />
-                                        {key === 'customer_name' &&
-                                            !customer.customer_name.trim() && (
-                                                <p className="mt-1 text-xs text-muted-foreground">
-                                                    Required for the Request for
-                                                    Analysis.
-                                                </p>
-                                            )}
-                                        {key === 'customer_email' &&
-                                            !customer.customer_email.trim() && (
-                                                <p className="mt-1 text-xs text-muted-foreground">
-                                                    Required so NPPC can notify
-                                                    you when results are ready.
-                                                </p>
-                                            )}
-                                    </div>
-                                ))}
-                            </div>
-                            <div>
-                                <Label>Type of ownership</Label>
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                    {options.ownership.map((item) => (
-                                        <ChoiceChip
-                                            key={item}
-                                            active={ownershipType === item}
-                                            onClick={() =>
-                                                setOwnershipType(
-                                                    ownershipType === item
-                                                        ? ''
-                                                        : item,
-                                                )
+                                    </IntakeField>
+                                    <IntakeField
+                                        label="Email"
+                                        htmlFor="customer_email"
+                                        required
+                                        error={
+                                            !customer.customer_email.trim() &&
+                                            attemptedContinue
+                                                ? 'Email is required.'
+                                                : null
+                                        }
+                                    >
+                                        <Input
+                                            id="customer_email"
+                                            type="email"
+                                            autoComplete="email"
+                                            className="h-10 w-full text-sm"
+                                            value={customer.customer_email}
+                                            aria-invalid={
+                                                !!stepError(0) &&
+                                                !customer.customer_email.trim()
                                             }
-                                        >
-                                            {item}
-                                        </ChoiceChip>
-                                    ))}
+                                            onChange={(e) =>
+                                                setCustomer((c) => ({
+                                                    ...c,
+                                                    customer_email:
+                                                        e.target.value,
+                                                }))
+                                            }
+                                        />
+                                    </IntakeField>
+                                    <IntakeField
+                                        label="Contact number"
+                                        htmlFor="customer_contact"
+                                    >
+                                        <Input
+                                            id="customer_contact"
+                                            type="tel"
+                                            autoComplete="tel"
+                                            className="h-10 w-full text-sm"
+                                            value={customer.customer_contact}
+                                            onChange={(e) =>
+                                                setCustomer((c) => ({
+                                                    ...c,
+                                                    customer_contact:
+                                                        e.target.value,
+                                                }))
+                                            }
+                                        />
+                                    </IntakeField>
+                                    <IntakeField
+                                        label="Company / Organization"
+                                        htmlFor="company_name"
+                                    >
+                                        <Input
+                                            id="company_name"
+                                            type="text"
+                                            autoComplete="organization"
+                                            className="h-10 w-full text-sm"
+                                            value={customer.company_name}
+                                            onChange={(e) =>
+                                                setCustomer((c) => ({
+                                                    ...c,
+                                                    company_name:
+                                                        e.target.value,
+                                                }))
+                                            }
+                                        />
+                                    </IntakeField>
                                 </div>
+                            </FormSection>
+
+                            <div className="grid gap-3 border-t border-slate-100 pt-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start lg:gap-6">
+                                <FormSection title="Address" first>
+                                    <Textarea
+                                        id="customer_address"
+                                        rows={2}
+                                        className="min-h-0 w-full py-2 text-sm"
+                                        placeholder="Street, barangay, city / municipality"
+                                        value={customer.customer_address}
+                                        onChange={(e) =>
+                                            setCustomer((c) => ({
+                                                ...c,
+                                                customer_address:
+                                                    e.target.value,
+                                            }))
+                                        }
+                                    />
+                                </FormSection>
+
+                                <FormSection title="Ownership" first>
+                                    <div
+                                        className="flex flex-wrap gap-2"
+                                        role="group"
+                                        aria-label="Type of ownership"
+                                    >
+                                        {options.ownership.map((item) => (
+                                            <ChoiceChip
+                                                key={item}
+                                                active={ownershipType === item}
+                                                onClick={() =>
+                                                    setOwnershipType(
+                                                        ownershipType === item
+                                                            ? ''
+                                                            : item,
+                                                    )
+                                                }
+                                            >
+                                                {item}
+                                            </ChoiceChip>
+                                        ))}
+                                    </div>
+                                </FormSection>
                             </div>
                         </div>
                     )}
 
-                    {step === 1 && (
-                        <div className="space-y-4">
-                            <div className="border-b border-slate-100 pb-4">
-                                <h2 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                                    Samples
-                                </h2>
-                                <p className="mt-1 text-sm text-slate-600">
-                                    Add each sample you are submitting today.
-                                </p>
-                            </div>
-                            {samples.map((sample, index) => (
-                                <div
-                                    key={index}
-                                    className="rounded-2xl border border-slate-200 bg-[#f8fafc] p-4"
-                                >
-                                    <div className="mb-3 flex items-center justify-between">
-                                        <p className="font-medium text-[#1A3694]">
-                                            Sample {index + 1}
-                                        </p>
-                                        <div className="flex items-center gap-2">
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() =>
-                                                    setSamples((current) => {
-                                                        const copy = {
-                                                            ...current[index],
-                                                            sample_code: '',
-                                                        };
+                    {step === 2 && (
+                        <div className="w-full space-y-3">
+                            <IntakeStepHeader
+                                title="Samples"
+                                hint={
+                                    samples.length > 1
+                                        ? `${samples.length} samples in this request.`
+                                        : 'Add the samples you are submitting.'
+                                }
+                            />
 
-                                                        return [
-                                                            ...current.slice(
-                                                                0,
-                                                                index + 1,
-                                                            ),
-                                                            copy,
-                                                            ...current.slice(
-                                                                index + 1,
-                                                            ),
-                                                        ];
-                                                    })
+                            <div className="space-y-2">
+                                {samples.map((sample, index) => (
+                                    <IntakeSampleRow
+                                        key={index}
+                                        sample={sample}
+                                        index={index}
+                                        expanded={
+                                            samples.length === 1 ||
+                                            expandedSample === index
+                                        }
+                                        collapsible={samples.length > 1}
+                                        removable={samples.length > 1}
+                                        onToggleExpand={() =>
+                                            setExpandedSample((current) =>
+                                                current === index
+                                                    ? null
+                                                    : index,
+                                            )
+                                        }
+                                        onChange={(key, value) =>
+                                            updateSample(index, key, value)
+                                        }
+                                        onDuplicate={() => {
+                                            nextSampleFocusRef.current =
+                                                index + 1;
+                                            setExpandedSample(index + 1);
+                                            setSamples((current) => {
+                                                const copy = {
+                                                    ...current[index],
+                                                    sample_code: '',
+                                                };
+
+                                                return [
+                                                    ...current.slice(
+                                                        0,
+                                                        index + 1,
+                                                    ),
+                                                    copy,
+                                                    ...current.slice(index + 1),
+                                                ];
+                                            });
+                                        }}
+                                        onRemove={() => {
+                                            setSamples((current) =>
+                                                current.filter(
+                                                    (_, i) => i !== index,
+                                                ),
+                                            );
+                                            setExpandedSample((current) => {
+                                                if (current === null) {
+                                                    return null;
                                                 }
-                                            >
-                                                Duplicate
-                                            </Button>
-                                            {samples.length > 1 && (
-                                                <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() =>
-                                                        setSamples((current) =>
-                                                            current.filter(
-                                                                (_, i) =>
-                                                                    i !== index,
-                                                            ),
-                                                        )
-                                                    }
-                                                >
-                                                    <Trash2 className="size-4" />
-                                                    Remove
-                                                </Button>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="grid gap-3 sm:grid-cols-2">
-                                        <div>
-                                            <Label>Sample code</Label>
-                                            <Input
-                                                className="mt-1 h-11 bg-white"
-                                                value={sample.sample_code}
-                                                onChange={(e) =>
-                                                    updateSample(
-                                                        index,
-                                                        'sample_code',
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                        </div>
-                                        <div>
-                                            <Label>Description *</Label>
-                                            <Input
-                                                className="mt-1 h-11 bg-white"
-                                                value={sample.description}
-                                                onChange={(e) =>
-                                                    updateSample(
-                                                        index,
-                                                        'description',
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                        </div>
-                                        <div>
-                                            <Label>Matrix</Label>
-                                            <Input
-                                                className="mt-1 h-11 bg-white"
-                                                placeholder="Water, soil, food…"
-                                                value={sample.matrix}
-                                                onChange={(e) =>
-                                                    updateSample(
-                                                        index,
-                                                        'matrix',
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div>
-                                                <Label>Quantity</Label>
-                                                <Input
-                                                    className="mt-1 h-11 bg-white"
-                                                    value={sample.quantity}
-                                                    onChange={(e) =>
-                                                        updateSample(
-                                                            index,
-                                                            'quantity',
-                                                            e.target.value,
-                                                        )
-                                                    }
-                                                />
-                                            </div>
-                                            <div>
-                                                <Label>Unit</Label>
-                                                <Input
-                                                    className="mt-1 h-11 bg-white"
-                                                    placeholder="mL, g…"
-                                                    value={sample.unit}
-                                                    onChange={(e) =>
-                                                        updateSample(
-                                                            index,
-                                                            'unit',
-                                                            e.target.value,
-                                                        )
-                                                    }
-                                                />
-                                            </div>
-                                        </div>
-                                        <div className="sm:col-span-2">
-                                            <Label>Remarks</Label>
-                                            <Input
-                                                className="mt-1 h-11 bg-white"
-                                                value={sample.remarks}
-                                                onChange={(e) =>
-                                                    updateSample(
-                                                        index,
-                                                        'remarks',
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
+
+                                                return current > index
+                                                    ? current - 1
+                                                    : Math.min(
+                                                          current,
+                                                          samples.length - 2,
+                                                      );
+                                            });
+                                        }}
+                                    />
+                                ))}
+                            </div>
+
                             <Button
                                 type="button"
                                 variant="outline"
-                                className="h-11 border-[#1A3694]/20 text-[#1A3694]"
-                                onClick={() =>
+                                className="h-10 w-full border-dashed border-[#1A3694]/40 text-[#1A3694] hover:bg-[#eef3fb] sm:w-auto"
+                                onClick={() => {
+                                    nextSampleFocusRef.current = samples.length;
+                                    setExpandedSample(samples.length);
                                     setSamples((current) => [
                                         ...current,
                                         emptySample(),
-                                    ])
-                                }
+                                    ]);
+                                }}
                             >
                                 <Plus className="size-4" />
                                 Add another sample
@@ -881,542 +1268,1001 @@ export default function IntakeWizard({
                         </div>
                     )}
 
-                    {step === 2 && (
-                        <div className="space-y-5">
-                            <div className="border-b border-slate-100 pb-4">
-                                <h2 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                                    Sample details
-                                </h2>
-                                <p className="mt-1 text-sm text-slate-600">
-                                    These appear on the official Request for
-                                    Analysis form.
-                                </p>
-                            </div>
+                    {step === 1 && (
+                        <div className="w-full space-y-4">
+                            <IntakeStepHeader
+                                title="Request details"
+                                hint="Tell us about your request and sample."
+                            />
 
-                            <div>
-                                <Label>Sample classification *</Label>
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                    {options.classifications.map((item) => (
-                                        <ChoiceChip
-                                            key={item}
-                                            active={classification === item}
-                                            onClick={() =>
-                                                setClassification(item)
-                                            }
-                                        >
-                                            {item}
-                                        </ChoiceChip>
-                                    ))}
-                                </div>
-                                {classification === 'Others' && (
-                                    <Input
-                                        className="mt-3 h-11"
-                                        placeholder="Please specify classification"
-                                        value={classificationOther}
-                                        onChange={(e) =>
-                                            setClassificationOther(
-                                                e.target.value,
-                                            )
-                                        }
-                                    />
-                                )}
-                            </div>
+                            <FormSection title="Classification" first>
+                                <div
+                                    className="flex flex-wrap gap-2"
+                                    role="group"
+                                    aria-label="Sample classification"
+                                >
+                                    {options.classifications.map((item) => {
+                                        const active = classification === item;
 
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <div>
-                                    <Label htmlFor="sampling_date">
-                                        Sampling date
-                                    </Label>
-                                    <Input
-                                        id="sampling_date"
-                                        type="date"
-                                        className="mt-1 h-11"
-                                        value={samplingDate}
-                                        onChange={(e) =>
-                                            setSamplingDate(e.target.value)
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <Label htmlFor="sampling_time">
-                                        Sampling time
-                                    </Label>
-                                    <Input
-                                        id="sampling_time"
-                                        type="time"
-                                        className="mt-1 h-11"
-                                        value={samplingTime}
-                                        onChange={(e) =>
-                                            setSamplingTime(e.target.value)
-                                        }
-                                    />
-                                </div>
-                                <div className="sm:col-span-2">
-                                    <Label htmlFor="sample_collected_by">
-                                        Sample collected by
-                                    </Label>
-                                    <Input
-                                        id="sample_collected_by"
-                                        className="mt-1 h-11"
-                                        value={sampleCollectedBy}
-                                        onChange={(e) =>
-                                            setSampleCollectedBy(e.target.value)
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <Label>Field data (Potability)</Label>
-                                    <label className="mt-2 flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm">
-                                        <Checkbox
-                                            checked={sterileBottle}
-                                            onCheckedChange={(checked) =>
-                                                setSterileBottle(checked === true)
-                                            }
-                                        />
-                                        <span>Water in sterile bottle</span>
-                                    </label>
-                                    <Textarea
-                                        id="field_data"
-                                        className="mt-3"
-                                        placeholder="Other potability notes (optional)"
-                                        value={fieldData}
-                                        onChange={(e) =>
-                                            setFieldData(e.target.value)
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <Label htmlFor="sample_storage_temp">
-                                        Sample storage temp. (as received)
-                                    </Label>
-                                    <Input
-                                        id="sample_storage_temp"
-                                        className="mt-1 h-11"
-                                        placeholder="e.g. Ambient / 4°C"
-                                        value={sampleStorageTemp}
-                                        onChange={(e) =>
-                                            setSampleStorageTemp(e.target.value)
-                                        }
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <Label>Sample source</Label>
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                    Same field as the Request for Analysis
-                                    (Local water district, Tank, Faucet,
-                                    Deepwell). Used as Sampling Point on the
-                                    drinking-water result sheet.
-                                </p>
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                    {options.wastewater_sources.map((item) => (
-                                        <ChoiceChip
-                                            key={item}
-                                            active={wastewaterSource === item}
-                                            onClick={() => {
-                                                setWastewaterSource(
-                                                    wastewaterSource === item
-                                                        ? ''
-                                                        : item,
-                                                );
-                                                if (item !== 'Others') {
-                                                    setWastewaterSourceOther('');
+                                        return (
+                                            <button
+                                                key={item}
+                                                type="button"
+                                                title={
+                                                    CLASSIFICATION_BLURBS[
+                                                        item
+                                                    ] ??
+                                                    'Laboratory analysis request'
                                                 }
-                                            }}
-                                        >
-                                            {item}
-                                        </ChoiceChip>
-                                    ))}
+                                                aria-pressed={active}
+                                                onClick={() => {
+                                                    setClassification(item);
+                                                    setWastewaterSource('');
+                                                    setWastewaterSourceOther(
+                                                        '',
+                                                    );
+                                                    if (item !== 'Others') {
+                                                        setClassificationOther(
+                                                            '',
+                                                        );
+                                                        setClassificationOtherSpecify(
+                                                            '',
+                                                        );
+                                                    }
+                                                }}
+                                                className={cn(
+                                                    'min-h-10 rounded-xl border px-3 py-1.5 text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-[#1A3694]/40 focus-visible:outline-none',
+                                                    active
+                                                        ? 'border-[#1A3694] bg-[#1A3694] text-white shadow-sm'
+                                                        : 'border-slate-200 bg-white text-slate-700 hover:border-[#5282D3]',
+                                                )}
+                                            >
+                                                {item}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
-                                {wastewaterSource === 'Others' && (
-                                    <Input
-                                        className="mt-3 h-11"
-                                        placeholder="Please specify sample source"
-                                        value={wastewaterSourceOther}
-                                        onChange={(e) =>
-                                            setWastewaterSourceOther(
-                                                e.target.value,
-                                            )
-                                        }
-                                    />
+                                {attemptedContinue && !classification && (
+                                    <p
+                                        className="text-sm text-red-600"
+                                        role="alert"
+                                    >
+                                        Please select a classification.
+                                    </p>
                                 )}
+                                {classification === 'Others' && (
+                                    <div className="grid grid-cols-1 gap-3 pt-1 md:grid-cols-2">
+                                        <IntakeField
+                                            label="Parameter category"
+                                            htmlFor="classification_other"
+                                            required
+                                            error={errors?.classification}
+                                        >
+                                            <select
+                                                id="classification_other"
+                                                className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus-visible:border-[#1A3694] focus-visible:ring-2 focus-visible:ring-[#1A3694]/20"
+                                                value={classificationOther}
+                                                onChange={(e) => {
+                                                    setClassificationOther(
+                                                        e.target.value,
+                                                    );
+                                                    if (
+                                                        !isGenericOtherCategory(
+                                                            e.target.value,
+                                                        )
+                                                    ) {
+                                                        setClassificationOtherSpecify(
+                                                            '',
+                                                        );
+                                                    }
+                                                }}
+                                            >
+                                                <option value="">
+                                                    Select category…
+                                                </option>
+                                                {(
+                                                    options.other_classification_options ??
+                                                    []
+                                                ).map((label) => (
+                                                    <option
+                                                        key={label}
+                                                        value={label}
+                                                    >
+                                                        {label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </IntakeField>
+                                        {isGenericOtherCategory(
+                                            classificationOther,
+                                        ) && (
+                                            <IntakeField
+                                                label="Specify"
+                                                htmlFor="classification_other_specify"
+                                                required
+                                            >
+                                                <Input
+                                                    id="classification_other_specify"
+                                                    className="h-10 text-sm"
+                                                    placeholder="Describe the analysis type"
+                                                    value={
+                                                        classificationOtherSpecify
+                                                    }
+                                                    onChange={(e) =>
+                                                        setClassificationOtherSpecify(
+                                                            e.target.value,
+                                                        )
+                                                    }
+                                                />
+                                            </IntakeField>
+                                        )}
+                                    </div>
+                                )}
+                            </FormSection>
+
+                            <div className="grid gap-3 border-t border-slate-100 pt-3 lg:grid-cols-2 lg:items-start lg:gap-6">
+                                <FormSection title="Sampling details" first>
+                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                        <IntakeField
+                                            label="Sampling date"
+                                            htmlFor="sampling_date"
+                                        >
+                                            <Input
+                                                id="sampling_date"
+                                                type="date"
+                                                className="h-10 w-full text-sm"
+                                                value={samplingDate}
+                                                onChange={(e) =>
+                                                    setSamplingDate(
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
+                                        </IntakeField>
+                                        <IntakeField
+                                            label="Sampling time"
+                                            htmlFor="sampling_time"
+                                        >
+                                            <Input
+                                                id="sampling_time"
+                                                type="time"
+                                                className="h-10 w-full text-sm"
+                                                value={samplingTime}
+                                                onChange={(e) =>
+                                                    setSamplingTime(
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
+                                        </IntakeField>
+                                        <IntakeField
+                                            label="Sample collected by"
+                                            htmlFor="sample_collected_by"
+                                        >
+                                            <Input
+                                                id="sample_collected_by"
+                                                className="h-10 w-full text-sm"
+                                                value={sampleCollectedBy}
+                                                onChange={(e) =>
+                                                    setSampleCollectedBy(
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
+                                        </IntakeField>
+                                        <IntakeField
+                                            label="Sampling site"
+                                            htmlFor="sampling_site"
+                                            error={errors?.sampling_site}
+                                        >
+                                            <Input
+                                                id="sampling_site"
+                                                className="h-10 w-full text-sm"
+                                                placeholder="e.g. Plant gate / Well location"
+                                                value={samplingSite}
+                                                onChange={(e) =>
+                                                    setSamplingSite(
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
+                                        </IntakeField>
+                                        {needsSpecimen ? (
+                                            <IntakeField
+                                                label="Specimen"
+                                                htmlFor="specimen"
+                                                error={errors?.specimen}
+                                                hint="Printed on Food / Proximate result sheets when mapped in Form Designer."
+                                            >
+                                                <Input
+                                                    id="specimen"
+                                                    className="h-10 w-full text-sm"
+                                                    placeholder="e.g. Dried fish / Chicken breast"
+                                                    value={specimen}
+                                                    onChange={(e) =>
+                                                        setSpecimen(
+                                                            e.target.value,
+                                                        )
+                                                    }
+                                                />
+                                            </IntakeField>
+                                        ) : null}
+                                        <IntakeField
+                                            label="Sample storage temp."
+                                            htmlFor="sample_storage_temp"
+                                            hint="(as received)"
+                                            className="md:col-span-2"
+                                        >
+                                            <Input
+                                                id="sample_storage_temp"
+                                                className="h-10 w-full text-sm"
+                                                placeholder="e.g. Ambient / 4°C"
+                                                value={sampleStorageTemp}
+                                                onChange={(e) =>
+                                                    setSampleStorageTemp(
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
+                                        </IntakeField>
+                                        {classification !== 'Aqua' && (
+                                            <div className="md:col-span-2">
+                                                {potabilityOpen ? (
+                                                    <div className="space-y-2">
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <Label>
+                                                                Field data
+                                                                (Potability)
+                                                            </Label>
+                                                            <button
+                                                                type="button"
+                                                                className="text-xs font-medium text-[#365BB0] hover:underline"
+                                                                onClick={() =>
+                                                                    setPotabilityOpen(
+                                                                        false,
+                                                                    )
+                                                                }
+                                                            >
+                                                                Hide
+                                                            </button>
+                                                        </div>
+                                                        <label className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                                                            <Checkbox
+                                                                checked={
+                                                                    sterileBottle
+                                                                }
+                                                                onCheckedChange={(
+                                                                    checked,
+                                                                ) =>
+                                                                    setSterileBottle(
+                                                                        checked ===
+                                                                            true,
+                                                                    )
+                                                                }
+                                                            />
+                                                            <span>
+                                                                Water in sterile
+                                                                bottle
+                                                            </span>
+                                                        </label>
+                                                        <Textarea
+                                                            id="field_data"
+                                                            rows={2}
+                                                            className="min-h-0 py-2 text-sm"
+                                                            placeholder="Other potability notes (optional)"
+                                                            value={fieldData}
+                                                            onChange={(e) =>
+                                                                setFieldData(
+                                                                    e.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                        />
+                                                    </div>
+                                                ) : (
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        className="h-10 w-full border-dashed border-[#1A3694]/40 text-[#1A3694] hover:bg-[#eef3fb] sm:w-auto"
+                                                        onClick={() =>
+                                                            setPotabilityOpen(
+                                                                true,
+                                                            )
+                                                        }
+                                                    >
+                                                        <Plus className="size-4" />
+                                                        {hasPotabilityData
+                                                            ? 'Edit potability field data'
+                                                            : 'Add potability field data'}
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </FormSection>
+
+                                <div className="space-y-3">
+                                    <FormSection title="Sample source" first>
+                                        <div className="flex flex-wrap gap-2">
+                                            {(classification === 'Aqua'
+                                                ? options.aqua_sources
+                                                : options.wastewater_sources
+                                            ).map((item) => (
+                                                <ChoiceChip
+                                                    key={item}
+                                                    active={
+                                                        wastewaterSource ===
+                                                        item
+                                                    }
+                                                    onClick={() => {
+                                                        setWastewaterSource(
+                                                            wastewaterSource ===
+                                                                item
+                                                                ? ''
+                                                                : item,
+                                                        );
+                                                        if (
+                                                            item !== 'Others'
+                                                        ) {
+                                                            setWastewaterSourceOther(
+                                                                '',
+                                                            );
+                                                        }
+                                                    }}
+                                                >
+                                                    {item}
+                                                </ChoiceChip>
+                                            ))}
+                                        </div>
+                                        {wastewaterSource === 'Others' && (
+                                            <Input
+                                                className="h-10 text-sm"
+                                                placeholder="Please specify sample source"
+                                                value={wastewaterSourceOther}
+                                                onChange={(e) =>
+                                                    setWastewaterSourceOther(
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
+                                        )}
+                                    </FormSection>
+
+                                    <FormSection title="Payment">
+                                        <div className="grid gap-2 md:grid-cols-3 md:gap-3">
+                                            {PAYMENT_MODE_OPTIONS.map(
+                                                (option) => (
+                                                    <RadioOption
+                                                        key={option.value}
+                                                        name="payment_mode"
+                                                        value={option.value}
+                                                        checked={
+                                                            paymentMode ===
+                                                            option.value
+                                                        }
+                                                        label={option.label}
+                                                        onChange={() => {
+                                                            setPaymentMode(
+                                                                option.value,
+                                                            );
+                                                            if (
+                                                                option.value !==
+                                                                'billing_partial'
+                                                            ) {
+                                                                setPaymentTerms(
+                                                                    '',
+                                                                );
+                                                            }
+                                                        }}
+                                                    />
+                                                ),
+                                            )}
+                                        </div>
+                                        {errors?.payment_mode && (
+                                            <p className="text-xs text-red-600">
+                                                {errors.payment_mode}
+                                            </p>
+                                        )}
+                                        {paymentMode ===
+                                            'billing_partial' && (
+                                            <div className="space-y-2 border-t border-slate-200 pt-2">
+                                                <Label>
+                                                    Payment terms *{' '}
+                                                    <span className="font-normal text-slate-500">
+                                                        (required for Billing /
+                                                        Partial)
+                                                    </span>
+                                                </Label>
+                                                <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-3">
+                                                    {PAYMENT_TERMS_OPTIONS.map(
+                                                        (option) => (
+                                                            <RadioOption
+                                                                key={
+                                                                    option.value
+                                                                }
+                                                                name="payment_terms"
+                                                                value={
+                                                                    option.value
+                                                                }
+                                                                checked={
+                                                                    paymentTerms ===
+                                                                    option.value
+                                                                }
+                                                                label={
+                                                                    option.label
+                                                                }
+                                                                onChange={() =>
+                                                                    setPaymentTerms(
+                                                                        option.value,
+                                                                    )
+                                                                }
+                                                            />
+                                                        ),
+                                                    )}
+                                                </div>
+                                                {errors?.payment_terms && (
+                                                    <p className="text-xs text-red-600">
+                                                        {errors.payment_terms}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </FormSection>
+                                </div>
                             </div>
                         </div>
                     )}
 
                     {step === 3 && (
-                        <div className="space-y-4">
-                            <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-100 pb-4">
-                                <div>
-                                    <h2 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                                        Select analyses
-                                    </h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Choose a package when it matches your
-                                        sample, or pick individual tests.
-                                        Prices may be adjusted by Receiving.
-                                    </p>
-                                </div>
-                                <div className="rounded-xl bg-[#e8eef8] px-3 py-2 text-sm font-semibold text-[#1A3694]">
-                                    {selectedTypes.length} selected
-                                    {selectedTypes.length > 0
-                                        ? ` · Est. ₱${estimatedTotal.toFixed(2)}`
-                                        : ''}
-                                </div>
-                            </div>
-
-                            {packages.length > 0 && (
-                                <div className="space-y-3">
-                                    <div>
-                                        <p className="text-sm font-medium text-slate-900">
-                                            {suggestedPackages.length > 0
-                                                ? `Suggested packages${resolvedClassification ? ` for ${resolvedClassification}` : ''}`
-                                                : 'Analysis packages'}
-                                        </p>
-                                        <p className="mt-1 text-xs text-muted-foreground">
-                                            Select a package, then uncheck any
-                                            tests you do not need. The result
-                                            form stays the package sheet;
-                                            unchecked tests print as “-”.
-                                        </p>
-                                    </div>
-                                    <div className="grid gap-3 md:grid-cols-2">
-                                        {(suggestedPackages.length > 0
-                                            ? suggestedPackages
-                                            : packages
-                                        ).map((pkg) => renderPackageCard(pkg))}
-                                    </div>
-                                    {suggestedPackages.length > 0 &&
-                                        otherPackages.length > 0 && (
-                                            <div className="space-y-2">
-                                                <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                                                    Other packages
-                                                </p>
-                                                <div className="grid gap-3 md:grid-cols-2">
-                                                    {otherPackages.map((pkg) =>
-                                                        renderPackageCard(pkg),
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-                                </div>
-                            )}
-
-                            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-[#f8fafc] p-4 lg:flex-row lg:items-start lg:justify-between">
-                                <div className="max-w-xl">
-                                    <p className="text-sm font-medium text-slate-900">
-                                        Search and select tests
-                                    </p>
-                                    <p className="mt-1 text-xs text-muted-foreground">
-                                        Search by test code or name. Receiving
-                                        can still adjust prices after
-                                        submission.
-                                    </p>
-                                </div>
-                                <div className="relative w-full max-w-sm">
-                                    <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
-                                    <Input
-                                        className="pl-9"
-                                        placeholder="Search tests..."
-                                        value={testsQuery}
-                                        onChange={(e) =>
-                                            setTestsQuery(e.target.value)
-                                        }
-                                    />
-                                </div>
-                            </div>
-
-                            {filteredCategories.map((group) => {
-                                const selectedCount = group.items.filter(
-                                    (item) => selectedTypeSet.has(item.id),
-                                ).length;
-                                const open = openCategory === group.category;
-
-                                return (
-                                    <div
-                                        key={group.category}
-                                        className="overflow-hidden rounded-2xl border border-slate-200"
-                                    >
-                                        <button
-                                            type="button"
-                                            className="flex w-full items-center justify-between gap-3 bg-[#f8fafc] px-4 py-4 text-left"
-                                            onClick={() =>
-                                                setOpenCategory((current) =>
-                                                    current === group.category
-                                                        ? null
-                                                        : group.category,
-                                                )
-                                            }
-                                        >
-                                            <span className="font-semibold text-[#1A3694]">
-                                                {group.label}
-                                            </span>
-                                            <span className="flex items-center gap-2 text-xs text-slate-500">
-                                                {selectedCount} selected
-                                                <ChevronDown
-                                                    className={cn(
-                                                        'size-4 transition',
-                                                        open && 'rotate-180',
-                                                    )}
-                                                />
-                                            </span>
-                                        </button>
-                                        {open && (
-                                            <div className="grid gap-2 border-t px-4 py-3 sm:grid-cols-2">
-                                                {group.items.map((item) => {
-                                                    const checked =
-                                                        selectedTypeSet.has(
-                                                            item.id,
-                                                        );
-
-                                                    return (
-                                                        <label
-                                                            key={item.id}
-                                                            className={cn(
-                                                                'flex min-h-12 cursor-pointer items-start gap-3 rounded-xl border px-3 py-3 text-sm transition',
-                                                                checked
-                                                                    ? 'border-[#1A3694] bg-[#eef3fb]'
-                                                                    : 'border-slate-100 bg-white hover:border-[#5282D3]/40',
-                                                            )}
-                                                        >
-                                                            <Checkbox
-                                                                checked={
-                                                                    checked
-                                                                }
-                                                                onCheckedChange={() =>
-                                                                    toggleType(
-                                                                        item.id,
-                                                                    )
-                                                                }
-                                                                className="mt-0.5"
-                                                            />
-                                                            <span>
-                                                                <span className="font-medium">
-                                                                    {item.code}
-                                                                </span>{' '}
-                                                                {item.name}
-                                                                <span className="mt-0.5 block text-xs text-slate-500">
-                                                                    ₱
-                                                                    {Number(
-                                                                        item.default_price,
-                                                                    ).toFixed(
-                                                                        2,
-                                                                    )}
-                                                                </span>
-                                                            </span>
-                                                        </label>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-
+                        <div className="w-full space-y-4">
                             <div>
-                                <Label htmlFor="other_tests">Other tests</Label>
-                                <Input
-                                    id="other_tests"
-                                    className="mt-1 h-11"
-                                    value={otherTests}
-                                    onChange={(e) =>
-                                        setOtherTests(e.target.value)
-                                    }
-                                    placeholder="Describe any test not listed above"
-                                />
+                                <h2 className="font-heading text-lg font-semibold text-[#1A3694] sm:text-xl">
+                                    Tests
+                                </h2>
+                                <p className="text-sm text-slate-600">
+                                    Select analyses for your
+                                    {samples.length > 1
+                                        ? ' samples. The same tests apply to all samples.'
+                                        : ' sample.'}
+                                </p>
                             </div>
 
-                            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
-                                    Selected tests summary
-                                </p>
-                                {selectedItems.length > 0 ? (
-                                    <ul className="mt-2 space-y-1 text-sm">
-                                        {selectedItems.slice(0, 8).map((item) => (
-                                            <li
-                                                key={item.name}
-                                                className="flex justify-between gap-3"
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                                    Sample
+                                </span>
+                                {samples.map((sample, index) => (
+                                    <span
+                                        key={index}
+                                        className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-sm text-slate-700"
+                                    >
+                                        {[
+                                            sample.sample_code.trim() ||
+                                                `Sample ${index + 1}`,
+                                            sample.matrix.trim() || null,
+                                            sample.quantity.trim()
+                                                ? `${sample.quantity.trim()}${sample.unit.trim() ? ` ${sample.unit.trim()}` : ''}`
+                                                : null,
+                                        ]
+                                            .filter(Boolean)
+                                            .join(' · ')}
+                                    </span>
+                                ))}
+                            </div>
+
+                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] lg:items-start xl:grid-cols-[minmax(0,1fr)_340px]">
+                                <div className="min-w-0 space-y-4">
+                                    {type_presets.length > 0 && (
+                                        <div className="space-y-2">
+                                            <p className="text-sm font-semibold text-slate-900">
+                                                Test panels
+                                            </p>
+                                            <div className="space-y-2">
+                                                {(suggestedTypePresets.length >
+                                                0
+                                                    ? suggestedTypePresets
+                                                    : type_presets
+                                                ).map((preset) =>
+                                                    renderTypePresetRow(preset),
+                                                )}
+                                            </div>
+                                            {suggestedTypePresets.length > 0 &&
+                                                otherTypePresets.length > 0 && (
+                                                    <details className="group">
+                                                        <summary className="cursor-pointer text-xs font-medium text-[#365BB0] hover:underline [&::-webkit-details-marker]:hidden">
+                                                            Other test panels (
+                                                            {
+                                                                otherTypePresets.length
+                                                            }
+                                                            )
+                                                        </summary>
+                                                        <div className="mt-2 space-y-2">
+                                                            {otherTypePresets.map(
+                                                                (preset) =>
+                                                                    renderTypePresetRow(
+                                                                        preset,
+                                                                    ),
+                                                            )}
+                                                        </div>
+                                                    </details>
+                                                )}
+                                        </div>
+                                    )}
+
+                                    {scopedPackages.length > 0 && (
+                                        <div className="space-y-2">
+                                            <p className="text-sm font-semibold text-slate-900">
+                                                Recommended packages
+                                            </p>
+                                            <div className="space-y-2">
+                                                {(isAquaClassification
+                                                    ? scopedPackages
+                                                    : suggestedPackages.length >
+                                                        0
+                                                      ? suggestedPackages
+                                                      : scopedPackages
+                                                ).map((pkg) =>
+                                                    renderPackageRow(pkg),
+                                                )}
+                                            </div>
+                                            {!isAquaClassification &&
+                                                suggestedPackages.length > 0 &&
+                                                otherPackages.length > 0 && (
+                                                    <details className="group">
+                                                        <summary className="cursor-pointer text-xs font-medium text-[#365BB0] hover:underline [&::-webkit-details-marker]:hidden">
+                                                            Other packages (
+                                                            {
+                                                                otherPackages.length
+                                                            }
+                                                            )
+                                                        </summary>
+                                                        <div className="mt-2 space-y-2">
+                                                            {otherPackages.map(
+                                                                (pkg) =>
+                                                                    renderPackageRow(
+                                                                        pkg,
+                                                                    ),
+                                                            )}
+                                                        </div>
+                                                    </details>
+                                                )}
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-2 border-t border-slate-100 pt-3">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div>
+                                                <p className="text-sm font-semibold text-slate-900">
+                                                    Need a specific analysis?
+                                                </p>
+                                                {individualSelectedCount > 0 ? (
+                                                    <p className="text-sm text-slate-600">
+                                                        {individualSelectedCount}{' '}
+                                                        individual test
+                                                        {individualSelectedCount ===
+                                                        1
+                                                            ? ''
+                                                            : 's'}{' '}
+                                                        selected
+                                                    </p>
+                                                ) : null}
+                                            </div>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                className="h-10 border-[#1A3694]/30 text-[#1A3694] hover:bg-[#eef3fb]"
+                                                aria-expanded={browseTestsOpen}
+                                                onClick={() =>
+                                                    setBrowseTestsOpen(
+                                                        (open) => !open,
+                                                    )
+                                                }
                                             >
-                                                <span>{item.name}</span>
-                                                <span className="text-slate-500">
-                                                    ₱{Number(item.price).toFixed(2)}
-                                                </span>
-                                            </li>
-                                        ))}
-                                        {selectedItems.length > 8 && (
-                                            <li className="text-xs text-muted-foreground">
-                                                +{selectedItems.length - 8} more selected
-                                            </li>
+                                                {browseTestsOpen
+                                                    ? 'Hide individual tests'
+                                                    : 'Browse individual tests'}
+                                            </Button>
+                                        </div>
+
+                                        {browseTestsOpen && (
+                                            <IntakeIndividualTestCatalog
+                                                categories={scopedCategories}
+                                                query={testsQuery}
+                                                onQueryChange={setTestsQuery}
+                                                activeCategory={activeCategory}
+                                                onActiveCategoryChange={
+                                                    setActiveCategory
+                                                }
+                                                selectedTypeIds={
+                                                    selectedTypeSet
+                                                }
+                                                onToggleType={toggleType}
+                                            />
                                         )}
-                                    </ul>
-                                ) : (
-                                    <p className="mt-2 text-sm text-muted-foreground">
-                                        No listed tests selected yet.
-                                    </p>
+                                    </div>
+
+                                    <FormSection title="Other / special test request">
+                                        <Textarea
+                                            id="other_tests"
+                                            rows={2}
+                                            className="w-full bg-white"
+                                            value={otherTests}
+                                            onChange={(e) =>
+                                                setOtherTests(e.target.value)
+                                            }
+                                            placeholder="Describe an analysis that is not listed…"
+                                        />
+                                        {attemptedContinue &&
+                                            selectedTypes.length === 0 &&
+                                            selectedPackageIds.length === 0 &&
+                                            !otherTests.trim() && (
+                                                <p
+                                                    className="text-sm text-red-600"
+                                                    role="alert"
+                                                >
+                                                    Select at least one listed
+                                                    test, package, or describe
+                                                    another test.
+                                                </p>
+                                            )}
+                                    </FormSection>
+                                </div>
+
+                                <aside className="sticky top-3 hidden self-start rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm lg:block">
+                                    <TestsRequestSummary
+                                        packages={scopedPackages}
+                                        selectedPackageIds={selectedPackageIds}
+                                        selectedTypes={selectedTypes}
+                                        catalogItems={catalogItemsForSummary}
+                                        sampleCount={samples.length}
+                                        otherTests={otherTests}
+                                        estimatedTotal={estimatedTotal}
+                                        variant="sidebar"
+                                    />
+                                </aside>
+                            </div>
+
+                            <div className="lg:hidden">
+                                <button
+                                    type="button"
+                                    className="flex w-full items-center justify-between rounded-xl border border-[#1A3694]/20 bg-[#eef3fb] px-3 py-2.5 text-sm font-medium text-[#1A3694]"
+                                    aria-expanded={mobileSummaryOpen}
+                                    onClick={() =>
+                                        setMobileSummaryOpen((open) => !open)
+                                    }
+                                >
+                                    <span>
+                                        {selectedTypes.length} analyses · ₱
+                                        {estimatedTotal.toFixed(2)}
+                                    </span>
+                                    <span>
+                                        {mobileSummaryOpen
+                                            ? 'Hide'
+                                            : 'View selected'}
+                                    </span>
+                                </button>
+                                {mobileSummaryOpen && (
+                                    <div className="mt-2 rounded-xl border border-slate-200 bg-white p-3">
+                                        <TestsRequestSummary
+                                            packages={scopedPackages}
+                                            selectedPackageIds={
+                                                selectedPackageIds
+                                            }
+                                            selectedTypes={selectedTypes}
+                                            catalogItems={
+                                                catalogItemsForSummary
+                                            }
+                                            sampleCount={samples.length}
+                                            otherTests={otherTests}
+                                            estimatedTotal={estimatedTotal}
+                                            variant="inline"
+                                        />
+                                    </div>
                                 )}
                             </div>
                         </div>
                     )}
 
                     {step === 4 && (
-                        <div className="space-y-5">
-                            <div className="border-b border-slate-100 pb-4">
-                                <h2 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                                    Review before submit
-                                </h2>
-                                <p className="mt-1 text-sm text-slate-600">
-                                    Please confirm everything looks correct.
-                                    Receiving will finalize pricing.
-                                </p>
-                            </div>
+                        <div className="w-full space-y-4">
+                            <IntakeStepHeader
+                                title="Review"
+                                hint="Review your request before submitting."
+                            />
 
-                            <div className="grid gap-3 sm:grid-cols-2">
-                                <div className="rounded-2xl border border-slate-200 bg-[#f8fafc] p-4">
+                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] lg:items-start xl:grid-cols-[minmax(0,1fr)_340px]">
+                                <div className="min-w-0 space-y-3">
+                                    <FormSection
+                                        title="Customer"
+                                        first
+                                        action={
+                                            <ReviewEditButton
+                                                onClick={() => setStep(0)}
+                                            />
+                                        }
+                                    >
+                                        <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2 xl:grid-cols-3">
+                                            <ReviewRow
+                                                label="Name"
+                                                value={customer.customer_name}
+                                            />
+                                            <ReviewRow
+                                                label="Email"
+                                                value={customer.customer_email}
+                                            />
+                                            <ReviewRow
+                                                label="Contact"
+                                                value={
+                                                    customer.customer_contact
+                                                }
+                                            />
+                                            <ReviewRow
+                                                label="Company"
+                                                value={customer.company_name}
+                                            />
+                                            <ReviewRow
+                                                label="Ownership"
+                                                value={ownershipType}
+                                            />
+                                            <ReviewRow
+                                                label="Address"
+                                                value={
+                                                    customer.customer_address
+                                                }
+                                                className="sm:col-span-2 xl:col-span-3"
+                                            />
+                                        </div>
+                                    </FormSection>
+
+                                    <FormSection
+                                        title="Request details"
+                                        action={
+                                            <ReviewEditButton
+                                                onClick={() => setStep(1)}
+                                            />
+                                        }
+                                    >
+                                        <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2 xl:grid-cols-3">
+                                            <ReviewRow
+                                                label="Classification"
+                                                value={resolvedClassification}
+                                            />
+                                            <ReviewRow
+                                                label="Sampling"
+                                                value={[
+                                                    samplingDate,
+                                                    samplingTime,
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(' ')}
+                                            />
+                                            <ReviewRow
+                                                label="Collected by"
+                                                value={sampleCollectedBy}
+                                            />
+                                            <ReviewRow
+                                                label="Sampling site"
+                                                value={samplingSite}
+                                            />
+                                            {needsSpecimen ? (
+                                                <div className="sm:col-span-2 xl:col-span-3">
+                                                    <IntakeField
+                                                        label="Specimen"
+                                                        htmlFor="specimen_review"
+                                                        error={errors?.specimen}
+                                                    >
+                                                        <Input
+                                                            id="specimen_review"
+                                                            className="h-10 w-full text-sm"
+                                                            placeholder="e.g. Dried fish / Chicken breast"
+                                                            value={specimen}
+                                                            onChange={(e) =>
+                                                                setSpecimen(
+                                                                    e.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                        />
+                                                    </IntakeField>
+                                                </div>
+                                            ) : null}
+                                            <ReviewRow
+                                                label="Sample source"
+                                                value={resolvedSampleSource}
+                                            />
+                                            <ReviewRow
+                                                label="Storage temp"
+                                                value={sampleStorageTemp}
+                                            />
+                                            <ReviewRow
+                                                label="Payment"
+                                                value={
+                                                    paymentMode
+                                                        ? [
+                                                              PAYMENT_MODE_OPTIONS.find(
+                                                                  (o) =>
+                                                                      o.value ===
+                                                                      paymentMode,
+                                                              )?.label ??
+                                                                  paymentMode,
+                                                              paymentMode ===
+                                                                  'billing_partial' &&
+                                                              paymentTerms
+                                                                  ? PAYMENT_TERMS_OPTIONS.find(
+                                                                        (o) =>
+                                                                            o.value ===
+                                                                            paymentTerms,
+                                                                    )?.label
+                                                                  : null,
+                                                          ]
+                                                              .filter(Boolean)
+                                                              .join(' · ')
+                                                        : ''
+                                                }
+                                            />
+                                        </div>
+                                    </FormSection>
+
+                                    <FormSection
+                                        title="Samples"
+                                        action={
+                                            <ReviewEditButton
+                                                onClick={() => setStep(2)}
+                                            />
+                                        }
+                                    >
+                                        <ul className="divide-y divide-slate-100 text-sm">
+                                            {samples.map((sample, index) => (
+                                                <li
+                                                    key={index}
+                                                    className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2 first:pt-0 last:pb-0"
+                                                >
+                                                    <div className="min-w-0">
+                                                        <p className="font-medium text-[#1A3694]">
+                                                            Sample {index + 1}
+                                                            {sample.sample_code
+                                                                ? ` · ${sample.sample_code}`
+                                                                : ''}
+                                                        </p>
+                                                        {sample.description.trim() ? (
+                                                            <p className="text-slate-700">
+                                                                {
+                                                                    sample.description
+                                                                }
+                                                            </p>
+                                                        ) : null}
+                                                    </div>
+                                                    <p className="text-slate-600">
+                                                        {[
+                                                            sample.matrix ||
+                                                                null,
+                                                            sample.quantity
+                                                                ? `${sample.quantity}${sample.unit ? ` ${sample.unit}` : ''}`
+                                                                : null,
+                                                            sample.remarks ||
+                                                                null,
+                                                        ]
+                                                            .filter(Boolean)
+                                                            .join(' · ') ||
+                                                            'No additional sample details'}
+                                                    </p>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </FormSection>
+
+                                    <FormSection
+                                        title="Analyses"
+                                        description="Selected for this request (job-order level)."
+                                        action={
+                                            <ReviewEditButton
+                                                onClick={() => setStep(3)}
+                                            />
+                                        }
+                                    >
+                                        <ul className="space-y-1 text-sm">
+                                            {selectedItems.map((item) => (
+                                                <li
+                                                    key={item.name}
+                                                    className="flex justify-between gap-3"
+                                                >
+                                                    <span className="min-w-0 truncate">
+                                                        {item.name}
+                                                    </span>
+                                                    <span className="shrink-0 text-slate-500">
+                                                        ₱
+                                                        {Number(
+                                                            item.price,
+                                                        ).toFixed(2)}
+                                                    </span>
+                                                </li>
+                                            ))}
+                                            {otherTests ? (
+                                                <li className="text-slate-700">
+                                                    <span className="font-medium">
+                                                        Other:{' '}
+                                                    </span>
+                                                    {otherTests}
+                                                </li>
+                                            ) : null}
+                                        </ul>
+                                    </FormSection>
+                                </div>
+
+                                <aside className="sticky top-3 self-start rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm">
                                     <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
-                                        Customer
-                                    </p>
-                                    <p className="mt-2 font-medium">
-                                        {customer.customer_name}
-                                    </p>
-                                    <p className="text-sm text-slate-600">
-                                        {[
-                                            customer.company_name,
-                                            customer.customer_contact,
-                                            customer.customer_email,
-                                        ]
-                                            .filter(Boolean)
-                                            .join(' · ') || '—'}
+                                        Cost summary
                                     </p>
                                     <p className="mt-1 text-sm text-slate-600">
-                                        {customer.customer_address ||
-                                            'No address provided'}
+                                        {samples.length} sample
+                                        {samples.length === 1 ? '' : 's'} ·{' '}
+                                        {selectedTypes.length} analyses
                                     </p>
-                                    {ownershipType && (
-                                        <p className="mt-2 text-sm">
-                                            Ownership: {ownershipType}
-                                        </p>
-                                    )}
-                                </div>
-                                <div className="rounded-2xl border border-slate-200 bg-[#f8fafc] p-4">
-                                    <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
-                                        Sample info
+                                    <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-sm">
+                                        <span>Laboratory analyses</span>
+                                        <span>
+                                            ₱{estimatedTotal.toFixed(2)}
+                                        </span>
+                                    </div>
+                                    <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 font-semibold text-[#1A3694]">
+                                        <span>Estimated total</span>
+                                        <span>
+                                            ₱{estimatedTotal.toFixed(2)}
+                                        </span>
+                                    </div>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        Receiving will finalize pricing.
                                     </p>
-                                    <p className="mt-2 text-sm">
-                                        Classification:{' '}
-                                        {resolvedClassification || '—'}
-                                    </p>
-                                    <p className="text-sm">
-                                        Sampling:{' '}
-                                        {[samplingDate, samplingTime]
-                                            .filter(Boolean)
-                                            .join(' ') || '—'}
-                                    </p>
-                                    <p className="text-sm">
-                                        Collected by: {sampleCollectedBy || '—'}
-                                    </p>
-                                    <p className="text-sm">
-                                        Sample source:{' '}
-                                        {resolvedSampleSource || '—'}
-                                    </p>
-                                    <p className="text-sm">
-                                        Field data:{' '}
-                                        {sterileBottle
-                                            ? fieldData.trim()
-                                                ? `Water in sterile bottle — ${fieldData.trim()}`
-                                                : 'Water in sterile bottle'
-                                            : fieldData || '—'}
-                                    </p>
-                                    <p className="text-sm">
-                                        Storage temp: {sampleStorageTemp || '—'}
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="rounded-2xl border border-slate-200 p-4">
-                                <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
-                                    Samples ({samples.length})
-                                </p>
-                                <ul className="mt-2 space-y-1 text-sm">
-                                    {samples.map((sample, index) => (
-                                        <li key={index}>
-                                            {index + 1}.{' '}
-                                            {sample.sample_code
-                                                ? `${sample.sample_code} — `
-                                                : ''}
-                                            {sample.description}
-                                            {sample.matrix
-                                                ? ` (${sample.matrix})`
-                                                : ''}
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-
-                            <div className="rounded-2xl border border-slate-200 p-4">
-                                <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
-                                    Requested analyses
-                                </p>
-                                <ul className="mt-2 space-y-1 text-sm">
-                                    {selectedItems.map((item) => (
-                                        <li
-                                            key={item.name}
-                                            className="flex justify-between gap-3"
-                                        >
-                                            <span>{item.name}</span>
-                                            <span className="text-slate-500">
-                                                ₱{Number(item.price).toFixed(2)}
-                                            </span>
-                                        </li>
-                                    ))}
-                                    {otherTests && <li>Other: {otherTests}</li>}
-                                </ul>
-                                <p className="mt-3 font-semibold text-[#1A3694]">
-                                    Estimated total: ₱
-                                    {estimatedTotal.toFixed(2)}
-                                </p>
+                                </aside>
                             </div>
                         </div>
                     )}
+            </div>
 
-                    <div className="mt-8 flex flex-col-reverse gap-3 border-t border-slate-100 pt-6 sm:flex-row sm:justify-between">
+            <IntakeStickyFooter
+                hint={
+                    step === 3 ? (
+                        <p className="mb-2 text-center text-sm font-medium text-[#1A3694] sm:text-left">
+                            {selectedTypes.length} selected · ₱
+                            {estimatedTotal.toFixed(2)}
+                        </p>
+                    ) : null
+                }
+            >
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="h-10"
+                        disabled={step === 0 || submitting}
+                        onClick={() => setStep((s) => Math.max(0, s - 1))}
+                    >
+                        Back
+                    </Button>
+                    {step < steps.length - 1 ? (
                         <Button
                             type="button"
-                            variant="outline"
-                            className="h-12"
-                            disabled={step === 0 || submitting}
-                            onClick={() => setStep((s) => Math.max(0, s - 1))}
+                            className="h-10 bg-[#1A3694] hover:bg-[#365BB0] sm:min-w-44"
+                            onClick={goNext}
                         >
-                            Back
+                            Continue
                         </Button>
-                        {step < steps.length - 1 ? (
-                            <Button
-                                type="button"
-                                className="h-12 bg-[#1A3694] hover:bg-[#365BB0] sm:min-w-44"
-                                disabled={!canContinue()}
-                                onClick={() => setStep((s) => s + 1)}
-                            >
-                                Continue
-                            </Button>
-                        ) : (
-                            <Button
-                                type="button"
-                                className="h-12 bg-[#1A3694] hover:bg-[#365BB0] sm:min-w-44"
-                                disabled={submitting}
-                                onClick={submit}
-                            >
-                                {submitting ? 'Submitting…' : 'Submit request'}
-                            </Button>
-                        )}
-                    </div>
+                    ) : (
+                        <Button
+                            type="button"
+                            className="h-10 bg-[#1A3694] hover:bg-[#365BB0] sm:min-w-44"
+                            disabled={submitting}
+                            onClick={submit}
+                        >
+                            {submitting
+                                ? 'Submitting…'
+                                : 'Submit Request for Analysis'}
+                        </Button>
+                    )}
                 </div>
-
-                <p className="mt-6 text-center text-xs text-slate-500">
-                    NPPC Analytical & Diagnostic Laboratory · Typical
-                    turnaround 5–7 working days
-                </p>
-            </div>
-        </div>
+            </IntakeStickyFooter>
+        </IntakePageShell>
+        </>
     );
 }
 

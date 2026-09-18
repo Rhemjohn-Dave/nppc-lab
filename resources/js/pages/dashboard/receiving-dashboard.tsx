@@ -21,13 +21,14 @@ export default function ReceivingDashboard({
         links.primary?.label ?? 'View all in Receiving Workspace';
 
     return (
-        <div className="flex flex-col gap-6">
-            <NeedsAttentionPanel data={needsAttention} />
-            <KpiGrid kpis={kpis} />
+        <div className="flex flex-col gap-3 md:gap-4">
+            <NeedsAttentionPanel data={needsAttention} compact />
+            <KpiGrid kpis={kpis} compact />
             <DashboardPreviewList
                 data={queue}
                 viewAllHref={viewAllHref}
                 viewAllLabel={viewAllLabel}
+                compact
             />
             <RecentActivity data={activity} compact />
         </div>

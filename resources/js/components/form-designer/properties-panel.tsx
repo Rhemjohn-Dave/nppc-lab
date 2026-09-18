@@ -11,6 +11,8 @@ import type { MatrixCellSelection, MatrixColumnConfig, MatrixTableConfig } from 
 
 type Props = {
     selected: DesignerField | null;
+    selectedCount?: number;
+    selectedFields?: DesignerField[];
     groupedSources: Array<[string, DataSource[]]>;
     canEdit: boolean;
     matrixCellSelection?: MatrixCellSelection | null;
@@ -18,10 +20,25 @@ type Props = {
     onUpdate: (patch: Partial<DesignerField>, recordHistory?: boolean) => void;
     onDuplicate: () => void;
     onDelete: () => void;
+    matrixPreviewRows?: Array<Record<string, string>>;
+    matrixDefaultConfig?: MatrixTableConfig | null;
 };
 
+function sharedAppearanceValue(
+    fields: DesignerField[],
+    key: 'font_size' | 'font_family' | 'alignment' | 'font_color',
+): string {
+    if (fields.length === 0) {
+        return '';
+    }
+
+    const first = String(fields[0][key] ?? '');
+
+    return fields.every((field) => String(field[key] ?? '') === first) ? first : '';
+}
+
 const TABLE_COLUMN_OPTIONS: Record<string, string[]> = {
-    'samples[]': ['sample_code', 'description', 'matrix', 'quantity', 'unit', 'remarks'],
+    'samples[]': ['sample_code', 'description', 'control_number', 'matrix', 'quantity', 'unit', 'remarks'],
     'analyses[]': [
         'name',
         'category',
@@ -35,6 +52,8 @@ const TABLE_COLUMN_OPTIONS: Record<string, string[]> = {
 
 export default function PropertiesPanel({
     selected,
+    selectedCount = selected ? 1 : 0,
+    selectedFields = selected ? [selected] : [],
     groupedSources,
     canEdit,
     matrixCellSelection = null,
@@ -42,7 +61,126 @@ export default function PropertiesPanel({
     onUpdate,
     onDuplicate,
     onDelete,
+    matrixPreviewRows,
+    matrixDefaultConfig = null,
 }: Props) {
+    if (selectedCount > 1) {
+        const fontSize = sharedAppearanceValue(selectedFields, 'font_size');
+        const fontFamily = sharedAppearanceValue(selectedFields, 'font_family');
+        const alignment = sharedAppearanceValue(selectedFields, 'alignment');
+        const fontColor = sharedAppearanceValue(selectedFields, 'font_color');
+
+        return (
+            <aside className="flex h-full min-h-0 flex-col bg-white">
+                <div className="shrink-0 border-b px-3 py-3">
+                    <h2 className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
+                        Field Properties
+                    </h2>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                        {selectedCount} fields selected
+                    </p>
+                </div>
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-3">
+                    <section className="space-y-2">
+                        <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+                            Appearance
+                        </p>
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                            Changes apply to every selected field. Empty means mixed values.
+                        </p>
+                        <div>
+                            <Label htmlFor="multi-font-size">Font size</Label>
+                            <Input
+                                id="multi-font-size"
+                                type="number"
+                                step="0.5"
+                                disabled={!canEdit}
+                                placeholder="Mixed"
+                                value={fontSize}
+                                onChange={(event) => {
+                                    const value = Number(event.target.value);
+
+                                    if (!Number.isFinite(value) || event.target.value === '') {
+                                        return;
+                                    }
+
+                                    onUpdate({ font_size: value });
+                                }}
+                                onBlur={() => onUpdate({}, true)}
+                            />
+                        </div>
+                        <div>
+                            <Label htmlFor="multi-font-family">Font</Label>
+                            <select
+                                id="multi-font-family"
+                                className="h-9 w-full rounded-md border bg-white px-2 text-sm"
+                                disabled={!canEdit}
+                                value={fontFamily}
+                                onChange={(event) =>
+                                    onUpdate({ font_family: event.target.value }, true)
+                                }
+                            >
+                                {!fontFamily && <option value="">Mixed</option>}
+                                <option value="calibri">Calibri</option>
+                                <option value="helvetica">Helvetica</option>
+                                <option value="times">Times</option>
+                                <option value="courier">Courier</option>
+                            </select>
+                        </div>
+                        <div>
+                            <Label htmlFor="multi-align">Alignment</Label>
+                            <select
+                                id="multi-align"
+                                className="h-9 w-full rounded-md border bg-white px-2 text-sm"
+                                disabled={!canEdit}
+                                value={alignment}
+                                onChange={(event) =>
+                                    onUpdate({ alignment: event.target.value }, true)
+                                }
+                            >
+                                {!alignment && <option value="">Mixed</option>}
+                                <option value="L">Left</option>
+                                <option value="C">Center</option>
+                                <option value="R">Right</option>
+                            </select>
+                        </div>
+                        <div>
+                            <Label htmlFor="multi-color">Text color</Label>
+                            <Input
+                                id="multi-color"
+                                type="color"
+                                disabled={!canEdit}
+                                value={fontColor.startsWith('#') ? fontColor : '#000000'}
+                                onChange={(event) =>
+                                    onUpdate({ font_color: event.target.value }, true)
+                                }
+                            />
+                            {!fontColor && (
+                                <p className="mt-1 text-[10px] text-muted-foreground">
+                                    Mixed colors — picking one applies to all.
+                                </p>
+                            )}
+                        </div>
+                    </section>
+
+                    <Separator />
+
+                    <div className="space-y-2">
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                            Drag to move together, or press Delete to remove them.
+                        </p>
+                        {canEdit && (
+                            <Button type="button" variant="destructive" size="sm" onClick={onDelete}>
+                                <Trash2 className="size-3.5" />
+                                Delete selected
+                            </Button>
+                        )}
+                    </div>
+                </div>
+            </aside>
+        );
+    }
+
     if (!selected) {
         return (
             <aside className="flex h-full min-h-0 flex-col bg-white">
@@ -334,6 +472,7 @@ export default function PropertiesPanel({
                             canEdit={canEdit}
                             onUpdate={onUpdate}
                             onClearSelection={() => onClearMatrixCell?.()}
+                            packagePreviewRows={matrixPreviewRows}
                         />
                         <Separator />
                     </>
@@ -415,14 +554,21 @@ export default function PropertiesPanel({
                                             (tableConfig as MatrixTableConfig).method_font_size ??
                                             Math.max(5, selected.font_size - 1)
                                         }
-                                        onChange={(event) =>
+                                        onChange={(event) => {
+                                            const next = Number(event.target.value);
                                             onUpdate({
                                                 table_config: {
                                                     ...tableConfig,
-                                                    method_font_size: Number(event.target.value),
+                                                    method_font_size:
+                                                        Number.isFinite(next) && next > 0
+                                                            ? next
+                                                            : Math.max(
+                                                                  5,
+                                                                  selected.font_size - 1,
+                                                              ),
                                                 },
-                                            })
-                                        }
+                                            });
+                                        }}
                                         onBlur={() => onUpdate({}, true)}
                                     />
                                 </div>
@@ -502,6 +648,27 @@ export default function PropertiesPanel({
                             <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
                                 Dynamic test matrix
                             </p>
+                            {matrixDefaultConfig && Object.keys(matrixDefaultConfig).length > 0 && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 w-full text-xs"
+                                    disabled={!canEdit}
+                                    onClick={() =>
+                                        onUpdate(
+                                            {
+                                                table_config: {
+                                                    ...matrixDefaultConfig,
+                                                },
+                                            },
+                                            true,
+                                        )
+                                    }
+                                >
+                                    Apply package preset
+                                </Button>
+                            )}
                             <div className="grid grid-cols-2 gap-2">
                                 <div>
                                     <Label htmlFor="prop-matrix-row-height">Body row height (mm)</Label>
@@ -592,6 +759,10 @@ export default function PropertiesPanel({
                             </label>
                             <div>
                                 <Label htmlFor="prop-matrix-preview-rows">Preview rows in designer</Label>
+                                <p className="text-[11px] text-muted-foreground">
+                                    Uses bound package members and Methods when
+                                    available; otherwise sample proximate rows.
+                                </p>
                                 <Input
                                     id="prop-matrix-preview-rows"
                                     type="number"

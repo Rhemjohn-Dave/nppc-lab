@@ -84,7 +84,7 @@ class AnalysisResultReport
      *
      * @return array<string, mixed>
      */
-    public function manifest(string $templateUrl, ?string $pdfUrl, ?string $fillMode = null): array
+    public function manifest(string $templateUrl, ?string $pdfUrl, ?string $fillMode = null, array $extra = []): array
     {
         return [
             'kind' => $this->kind,
@@ -97,6 +97,7 @@ class AnalysisResultReport
             'fill_mode' => $fillMode ?? $this->fillMode(),
             'values' => $this->values,
             'filename' => $this->filename,
+            ...$extra,
         ];
     }
 

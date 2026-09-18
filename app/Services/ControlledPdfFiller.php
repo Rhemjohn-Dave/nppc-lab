@@ -39,7 +39,7 @@ class ControlledPdfFiller
                     continue;
                 }
 
-                $this->writeField($pdf, $field->toOverlayArray(), $values[$name]);
+                $this->writeField($pdf, $field->toOverlayArray(), $values[$name], $values);
             }
         }
 
@@ -122,13 +122,14 @@ class ControlledPdfFiller
 
     /**
      * @param  array{name: string, type: string, page: int, x: float, y: float, w: float, h: float, font_size: float, align: string, font_family?: string, font_color?: string, table_config?: array<int|string, mixed>|null}  $field
+     * @param  array<string, mixed>  $allValues
      */
-    private function writeField(Fpdi $pdf, array $field, mixed $value): void
+    private function writeField(Fpdi $pdf, array $field, mixed $value, array $allValues = []): void
     {
         $type = $field['type'] ?? 'text';
 
         if ($type === ControlledFormFieldType::DynamicTestMatrix->value && is_array($value)) {
-            $this->writeDynamicTestMatrix($pdf, $field, $value);
+            $this->writeDynamicTestMatrix($pdf, $field, $value, $allValues);
 
             return;
         }
@@ -152,10 +153,6 @@ class ControlledPdfFiller
             return;
         }
 
-        if ($value === null || $value === '') {
-            return;
-        }
-
         if ((float) $field['w'] < 1 || (float) $field['h'] < 1) {
             return;
         }
@@ -166,17 +163,49 @@ class ControlledPdfFiller
             $align = 'L';
         }
 
+        $x = (float) $field['x'];
+        $y = (float) $field['y'];
+        $w = (float) $field['w'];
+        $h = (float) $field['h'];
+
+        $options = is_array($field['options'] ?? null) ? $field['options'] : [];
+        $cover = ($options['cover'] ?? false) === true;
+        if ($cover) {
+            $pdf->SetFillColor(255, 255, 255);
+            $pdf->Rect($x, $y, $w, $h, 'F');
+        }
+
+        if ($value === null || $value === '') {
+            return;
+        }
+
         $this->applyColor($pdf, $field['font_color'] ?? null);
         $this->applyTcpdfFont($pdf, (string) ($field['font_family'] ?? TcpdfCalibriFont::FAMILY), '', $fontSize);
-        $pdf->SetXY((float) $field['x'], (float) $field['y']);
+        $pdf->SetXY($x, $y);
 
         if ($type === ControlledFormFieldType::Multiline->value) {
-            $pdf->MultiCell((float) $field['w'], (float) $field['h'], (string) $value, 0, $align, false, 1);
+            $lineHeight = max(3.0, $fontSize * 0.42);
+            $pdf->MultiCell(
+                $w,
+                $lineHeight,
+                (string) $value,
+                0,
+                $align,
+                false,
+                1,
+                $x,
+                $y,
+                true,
+                0,
+                false,
+                true,
+                $h,
+            );
 
             return;
         }
 
-        $pdf->Cell((float) $field['w'], (float) $field['h'], (string) $value, 0, 0, $align, false, '', 1);
+        $pdf->Cell($w, $h, (string) $value, 0, 0, $align, false, '', 1);
     }
 
     /**
@@ -234,19 +263,32 @@ class ControlledPdfFiller
     /**
      * @param  array{x: float, y: float, w: float, h: float, font_size: float, align: string, font_family?: string, font_color?: string, table_config?: array<int|string, mixed>|null}  $field
      * @param  list<array<string, mixed>>  $rows
+     * @param  array<string, mixed>  $values
      */
-    private function writeDynamicTestMatrix(Fpdi $pdf, array $field, array $rows): void
+    private function writeDynamicTestMatrix(Fpdi $pdf, array $field, array $rows, array $values = []): void
     {
-        $config = is_array($field['table_config'] ?? null) ? $field['table_config'] : DynamicTestMatrix::defaultConfig();
+        $rawConfig = is_array($field['table_config'] ?? null) ? $field['table_config'] : DynamicTestMatrix::defaultConfig();
+        $config = DynamicTestMatrix::normalizeStoredTableConfig(
+            (string) ($field['name'] ?? ''),
+            ControlledFormFieldType::DynamicTestMatrix,
+            $rawConfig,
+            null,
+        );
+        if (! is_array($config)) {
+            $config = DynamicTestMatrix::defaultConfig();
+        }
         $columns = is_array($config['columns'] ?? null) && $config['columns'] !== []
             ? $config['columns']
             : DynamicTestMatrix::defaultConfig()['columns'];
+        $columns = DynamicTestMatrix::resolveHeaderSources($columns, $values);
         $rowHeight = (float) ($config['row_height_mm'] ?? 7);
         $headerRow = (bool) ($config['header_row'] ?? true);
         $border = (bool) ($config['border'] ?? true);
         $fontSize = (float) ($field['font_size'] ?? 8);
         $requestedFamily = (string) ($field['font_family'] ?? TcpdfCalibriFont::FAMILY);
-        $methodFontSize = isset($config['method_font_size']) && is_numeric($config['method_font_size'])
+        $methodFontSize = isset($config['method_font_size'])
+            && is_numeric($config['method_font_size'])
+            && (float) $config['method_font_size'] > 0
             ? (float) $config['method_font_size']
             : max(6, $fontSize - 1);
         $headerBold = ($config['header_bold'] ?? true) !== false;
@@ -264,10 +306,10 @@ class ControlledPdfFiller
         $w = (float) $field['w'];
         $h = (float) $field['h'];
         $maxY = $y + $h;
-        $currentY = $y;
 
         $this->applyColor($pdf, $field['font_color'] ?? null);
 
+        $headerHeight = 0.0;
         if ($headerRow) {
             $headerHeight = $this->measureMatrixHeaderRowHeight(
                 $columns,
@@ -276,10 +318,51 @@ class ControlledPdfFiller
                 $configuredHeaderHeight,
             );
 
-            if ($currentY + $headerHeight > $maxY) {
+            if ($y + $headerHeight > $maxY) {
                 return;
             }
+        }
 
+        // Measure natural body heights for rows that fit; do not invent empty slots.
+        $bodyPlan = [];
+        $naturalBodyTotal = 0.0;
+        $cursorAfterHeader = $y + $headerHeight;
+
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $natural = $this->measureMatrixBodyRowHeight(
+                $pdf,
+                $row,
+                $columns,
+                $w,
+                $bodyRowHeight,
+                $fontSize,
+                $methodFontSize,
+                $requestedFamily,
+                $testNameBold,
+            );
+
+            if ($cursorAfterHeader + $naturalBodyTotal + $natural > $maxY + 0.01) {
+                break;
+            }
+
+            $bodyPlan[] = ['row' => $row, 'natural' => $natural];
+            $naturalBodyTotal += $natural;
+        }
+
+        $availableBody = max(0.0, $h - $headerHeight);
+        $naturalHeights = array_column($bodyPlan, 'natural');
+        $stretchBody = ($config['stretch_body'] ?? true) !== false;
+        $stretchHeights = $stretchBody
+            ? DynamicTestMatrix::stretchBodyRowHeights($naturalHeights, $availableBody)
+            : array_values($naturalHeights);
+
+        $currentY = $y;
+
+        if ($headerRow && $headerHeight > 0) {
             $this->writeMatrixHeaderRow(
                 $pdf,
                 $columns,
@@ -295,31 +378,13 @@ class ControlledPdfFiller
             $currentY += $headerHeight;
         }
 
-        foreach ($rows as $row) {
-            if (! is_array($row)) {
-                continue;
-            }
-
-            $lineHeight = $this->measureMatrixBodyRowHeight(
-                $pdf,
-                $row,
-                $columns,
-                $w,
-                $bodyRowHeight,
-                $fontSize,
-                $methodFontSize,
-                $requestedFamily,
-                $testNameBold,
-            );
-
-            if ($currentY + $lineHeight > $maxY) {
-                break;
-            }
+        foreach ($bodyPlan as $index => $item) {
+            $lineHeight = $stretchHeights[$index] ?? $item['natural'];
 
             $this->writeMatrixBodyRow(
                 $pdf,
                 $columns,
-                $row,
+                $item['row'],
                 $x,
                 $currentY,
                 $w,
@@ -331,6 +396,16 @@ class ControlledPdfFiller
                 $testNameBold,
             );
             $currentY += $lineHeight;
+        }
+
+        // Stretch-on (Milk/FO2): frame the full designer field box.
+        // Stretch-off (Nitrite): frame content only so leftover capacity is not a giant empty cell.
+        $contentHeight = max(0.0, $currentY - $y);
+        $frameHeight = $stretchBody ? $h : $contentHeight;
+        if ($border && $frameHeight > 0.5) {
+            $pdf->SetDrawColor(0, 0, 0);
+            $pdf->SetLineWidth(0.15);
+            $pdf->Rect($x, $y, $w, $frameHeight);
         }
     }
 
@@ -374,33 +449,83 @@ class ControlledPdfFiller
             }
 
             $label = (string) ($column['label'] ?? strtoupper((string) $column['key']));
-            $sublabel = isset($column['sublabel']) ? (string) $column['sublabel'] : '';
+            $sublines = $this->matrixHeaderSublines($column);
             $padding = 1.0;
             $gap = 0.35;
             $labelLineHeight = $this->matrixLineHeight($colFontSize);
+            $subAlign = strtoupper((string) ($column['sublabel_align'] ?? $align));
+            if (! in_array($subAlign, ['L', 'C', 'R'], true)) {
+                $subAlign = $align;
+            }
 
-            if ($sublabel !== '') {
+            if ($sublines !== []) {
                 $subFontSize = max(6, $colFontSize - 1);
                 $subLineHeight = $this->matrixLineHeight($subFontSize);
                 $startY = $y + $padding;
 
                 $this->applyTcpdfFont($pdf, $requestedFamily, $headerBold ? 'B' : '', $colFontSize);
-                $pdf->SetXY($cursorX, $startY);
-                $pdf->Cell($colWidth, $labelLineHeight, $label, 0, 0, $align);
+                $this->writeAlignedMatrixText(
+                    $pdf,
+                    $cursorX,
+                    $startY,
+                    $colWidth,
+                    $labelLineHeight,
+                    $label,
+                    $align,
+                );
 
                 $this->applyTcpdfFont($pdf, $requestedFamily, '', $subFontSize);
-                $pdf->SetXY($cursorX, $startY + $labelLineHeight + $gap);
-                $pdf->Cell($colWidth, $subLineHeight, $sublabel, 0, 0, $align);
+                $lineY = $startY + $labelLineHeight + $gap;
+                foreach ($sublines as $subline) {
+                    $this->writeAlignedMatrixText(
+                        $pdf,
+                        $cursorX,
+                        $lineY,
+                        $colWidth,
+                        $subLineHeight,
+                        $subline,
+                        $subAlign,
+                    );
+                    $lineY += $subLineHeight;
+                }
             } else {
                 $startY = $y + (($rowHeight - $labelLineHeight) / 2);
 
                 $this->applyTcpdfFont($pdf, $requestedFamily, $headerBold ? 'B' : '', $colFontSize);
-                $pdf->SetXY($cursorX, $startY);
-                $pdf->Cell($colWidth, $labelLineHeight, $label, 0, 0, $align);
+                $this->writeAlignedMatrixText(
+                    $pdf,
+                    $cursorX,
+                    $startY,
+                    $colWidth,
+                    $labelLineHeight,
+                    $label,
+                    $align,
+                );
             }
 
             $cursorX += $colWidth;
         }
+    }
+
+    private function writeAlignedMatrixText(
+        Fpdi $pdf,
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        string $text,
+        string $align,
+    ): void {
+        $textWidth = $pdf->GetStringWidth($text);
+        $pad = 0.6;
+        $drawX = match ($align) {
+            'R' => $x + max($pad, $width - $textWidth - $pad),
+            'C' => $x + max(0.0, ($width - $textWidth) / 2),
+            default => $x + $pad,
+        };
+
+        $pdf->SetXY($drawX, $y);
+        $pdf->Cell(max($textWidth, 0.1), $height, $text, 0, 0, 'L');
     }
 
     /**
@@ -446,7 +571,9 @@ class ControlledPdfFiller
 
             if ($key === 'test') {
                 $name = (string) ($row['test'] ?? '');
-                $method = (string) ($row['test_method'] ?? '');
+                $nestMethod = ! $this->matrixHasColumnKey($columns, 'method');
+                $method = $nestMethod ? (string) ($row['test_method'] ?? '') : '';
+                $detail = (string) ($row['test_detail'] ?? '');
                 $innerWidth = max(1.0, $colWidth - 1.6);
                 $padding = 1.0;
                 $gap = 0.35;
@@ -460,8 +587,31 @@ class ControlledPdfFiller
                     $textY += $nameLineHeight;
                 }
 
-                if ($method !== '') {
+                if ($detail !== '') {
                     if ($name !== '') {
+                        $textY += $gap;
+                    }
+
+                    $this->applyTcpdfFont($pdf, $requestedFamily, '', $methodFontSize);
+                    $detailLineHeight = $this->matrixLineHeight($methodFontSize);
+                    $pdf->SetXY($cursorX + 0.8, $textY);
+                    $pdf->MultiCell(
+                        $innerWidth,
+                        $detailLineHeight,
+                        $detail,
+                        0,
+                        $align,
+                        false,
+                        1,
+                        $cursorX + 0.8,
+                        $textY,
+                        true,
+                    );
+                    $textY += $pdf->getLastH();
+                }
+
+                if ($method !== '') {
+                    if ($name !== '' || $detail !== '') {
                         $textY += $gap;
                     }
 
@@ -486,8 +636,27 @@ class ControlledPdfFiller
                 if ($text !== '') {
                     $this->applyTcpdfFont($pdf, $requestedFamily, '', $colFontSize);
                     $lineHeight = $this->matrixLineHeight($colFontSize);
-                    $pdf->SetXY($cursorX + 0.8, $y + ($rowHeight / 2) - ($lineHeight / 2));
-                    $pdf->Cell($colWidth - 1.6, $lineHeight, $text, 0, 0, $align);
+                    $innerWidth = max(1.0, $colWidth - 1.6);
+                    $wrap = in_array($key, ['method', 'acceptable_values', 'remarks'], true)
+                        || strlen($text) > 40;
+
+                    if ($wrap) {
+                        $pdf->MultiCell(
+                            $innerWidth,
+                            $lineHeight,
+                            $text,
+                            0,
+                            $align,
+                            false,
+                            1,
+                            $cursorX + 0.8,
+                            $y + 1.0,
+                            true,
+                        );
+                    } else {
+                        $pdf->SetXY($cursorX + 0.8, $y + ($rowHeight / 2) - ($lineHeight / 2));
+                        $pdf->Cell($innerWidth, $lineHeight, $text, 0, 0, $align);
+                    }
                 }
             }
 
@@ -517,18 +686,44 @@ class ControlledPdfFiller
                 ? (float) $column['header_font_size']
                 : $fontSize;
             $labelLineHeight = $this->matrixLineHeight($colFontSize);
-            $sublabel = isset($column['sublabel']) ? (string) $column['sublabel'] : '';
+            $sublines = $this->matrixHeaderSublines($column);
             $colHeight = $padding + $labelLineHeight + $padding;
 
-            if ($sublabel !== '') {
+            if ($sublines !== []) {
                 $subLineHeight = $this->matrixLineHeight(max(6, $colFontSize - 1));
-                $colHeight = $padding + $labelLineHeight + $gap + $subLineHeight + $padding;
+                $colHeight = $padding + $labelLineHeight + $gap + (count($sublines) * $subLineHeight) + $padding;
             }
 
             $maxHeight = max($maxHeight, $colHeight);
         }
 
         return $maxHeight;
+    }
+
+    /**
+     * @param  array<string, mixed>  $column
+     * @return list<string>
+     */
+    private function matrixHeaderSublines(array $column): array
+    {
+        if (isset($column['sublabels']) && is_array($column['sublabels'])) {
+            return array_values(array_filter(
+                array_map(static fn ($line): string => trim((string) $line), $column['sublabels']),
+                static fn (string $line): bool => $line !== '',
+            ));
+        }
+
+        $sublabel = isset($column['sublabel']) ? (string) $column['sublabel'] : '';
+        if ($sublabel === '') {
+            return [];
+        }
+
+        $parts = preg_split("/\r\n|\n|\r/", $sublabel) ?: [];
+
+        return array_values(array_filter(
+            array_map(static fn ($line): string => trim((string) $line), $parts),
+            static fn (string $line): bool => $line !== '',
+        ));
     }
 
     /**
@@ -560,41 +755,77 @@ class ControlledPdfFiller
         string $requestedFamily,
         bool $testNameBold,
     ): float {
-        $testColumn = $this->matrixTestColumn($columns);
-        if ($testColumn === null) {
-            return $baseRowHeight;
-        }
-
-        $name = (string) ($row['test'] ?? '');
-        $method = (string) ($row['test_method'] ?? '');
-        if ($name === '' && $method === '') {
-            return $baseRowHeight;
-        }
-
-        $colWidth = $this->matrixColumnWidth($columns, $testColumn, $totalWidth);
-        $colFontSize = isset($testColumn['font_size']) && is_numeric($testColumn['font_size'])
-            ? (float) $testColumn['font_size']
-            : $fontSize;
-        $innerWidth = max(1.0, $colWidth - 1.6);
         $padding = 1.0;
         $gap = 0.35;
-        $height = $padding;
+        $maxHeight = $baseRowHeight;
+        $separateMethodColumn = $this->matrixHasColumnKey($columns, 'method');
 
-        if ($name !== '') {
-            $this->applyTcpdfFont($pdf, $requestedFamily, $testNameBold ? 'B' : '', $colFontSize);
-            $height += $this->matrixLineHeight($colFontSize);
-        }
-
-        if ($method !== '') {
-            if ($name !== '') {
-                $height += $gap;
+        foreach ($columns as $column) {
+            if (! is_array($column) || ! isset($column['key'])) {
+                continue;
             }
 
-            $this->applyTcpdfFont($pdf, $requestedFamily, '', $methodFontSize);
-            $height += $pdf->getStringHeight($innerWidth, $method);
+            $key = (string) $column['key'];
+            $colWidth = $this->matrixColumnWidth($columns, $column, $totalWidth);
+            $colFontSize = isset($column['font_size']) && is_numeric($column['font_size'])
+                ? (float) $column['font_size']
+                : $fontSize;
+            $innerWidth = max(1.0, $colWidth - 1.6);
+            $height = $padding;
+
+            if ($key === 'test') {
+                $name = (string) ($row['test'] ?? '');
+                $method = $separateMethodColumn ? '' : (string) ($row['test_method'] ?? '');
+                $detail = (string) ($row['test_detail'] ?? '');
+
+                if ($name !== '') {
+                    $this->applyTcpdfFont($pdf, $requestedFamily, $testNameBold ? 'B' : '', $colFontSize);
+                    $height += $this->matrixLineHeight($colFontSize);
+                }
+
+                if ($detail !== '') {
+                    if ($name !== '') {
+                        $height += $gap;
+                    }
+
+                    $this->applyTcpdfFont($pdf, $requestedFamily, '', $methodFontSize);
+                    $height += $pdf->getStringHeight($innerWidth, $detail);
+                }
+
+                if ($method !== '') {
+                    if ($name !== '' || $detail !== '') {
+                        $height += $gap;
+                    }
+
+                    $this->applyTcpdfFont($pdf, $requestedFamily, '', $methodFontSize);
+                    $height += $pdf->getStringHeight($innerWidth, $method);
+                }
+            } else {
+                $text = $this->matrixCellValue($row, $key);
+                if ($text !== '') {
+                    $this->applyTcpdfFont($pdf, $requestedFamily, '', $colFontSize);
+                    $height += $pdf->getStringHeight($innerWidth, $text);
+                }
+            }
+
+            $maxHeight = max($maxHeight, $height + $padding);
         }
 
-        return max($baseRowHeight, $height + $padding);
+        return $maxHeight;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $columns
+     */
+    private function matrixHasColumnKey(array $columns, string $key): bool
+    {
+        foreach ($columns as $column) {
+            if (is_array($column) && ($column['key'] ?? null) === $key) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function matrixLineHeight(float $fontSizePt): float
@@ -608,11 +839,19 @@ class ControlledPdfFiller
      */
     private function matrixColumnWidth(array $columns, array $column, float $totalWidth): float
     {
-        $widthPct = (float) ($column['width_pct'] ?? 0);
+        $widths = DynamicTestMatrix::normalizedColumnWidths($columns, $totalWidth);
 
-        return $widthPct > 0
-            ? ($totalWidth * ($widthPct / 100))
-            : ($totalWidth / max(1, count($columns)));
+        foreach ($columns as $index => $candidate) {
+            if (! is_array($candidate)) {
+                continue;
+            }
+
+            if ($candidate === $column || ($candidate['key'] ?? null) === ($column['key'] ?? null)) {
+                return (float) ($widths[$index] ?? 0);
+            }
+        }
+
+        return $totalWidth / max(1, count($columns));
     }
 
     /**

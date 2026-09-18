@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\ControlledFormCategory;
 use App\Enums\ControlledFormFieldType;
 use App\Enums\ControlledFormRevisionStatus;
+use App\Enums\JobOrderVariant;
 use App\Models\AnalysisPackage;
 use App\Models\AnalysisType;
 use App\Models\ControlledForm;
@@ -13,6 +14,7 @@ use App\Models\ControlledFormRevision;
 use App\Models\User;
 use App\Support\DynamicTestMatrix;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -38,6 +40,7 @@ class ControlledFormService
                 'description' => $data['description'] ?? null,
                 'department' => $data['department'] ?? null,
                 'category' => $data['category'] ?? ControlledFormCategory::JobOrder->value,
+                'job_order_variant' => $this->resolveJobOrderVariant($data),
                 'combination_key' => $data['combination_key'] ?? null,
             ]);
 
@@ -56,6 +59,10 @@ class ControlledFormService
                 $this->attachFile($form, $revision, $file);
             }
 
+            if (! $revision->fields()->exists() && $this->hasBlueprint($form)) {
+                $this->importBlueprint($revision);
+            }
+
             $this->audit->record('form.uploaded', $form, $user, null, [
                 'form_code' => $form->form_code,
                 'revision' => $revision->revision,
@@ -70,17 +77,41 @@ class ControlledFormService
      */
     public function updateForm(ControlledForm $form, array $data, User $user): ControlledForm
     {
-        $old = $form->only(['name', 'description', 'department']);
+        $old = $form->only([
+            'name',
+            'description',
+            'department',
+            'analyst_signatory_slots',
+            'analyst_require_prc',
+        ]);
         $form->fill([
             'name' => $data['name'] ?? $form->name,
             'description' => $data['description'] ?? $form->description,
             'department' => $data['department'] ?? $form->department,
+            'analyst_signatory_slots' => isset($data['analyst_signatory_slots'])
+                ? max(1, min(4, (int) $data['analyst_signatory_slots']))
+                : $form->analyst_signatory_slots,
+            'analyst_require_prc' => array_key_exists('analyst_require_prc', $data)
+                ? (bool) $data['analyst_require_prc']
+                : $form->analyst_require_prc,
         ]);
         $form->save();
 
         $this->applyBindings($form, $data);
 
-        $this->audit->record('form.edited', $form, $user, $old, $form->only(['name', 'description', 'department']));
+        $this->audit->record(
+            'form.edited',
+            $form,
+            $user,
+            $old,
+            $form->only([
+                'name',
+                'description',
+                'department',
+                'analyst_signatory_slots',
+                'analyst_require_prc',
+            ]),
+        );
 
         return $form->fresh(['revisions', 'currentRevision', 'analysisTypes']) ?? $form;
     }
@@ -118,6 +149,8 @@ class ControlledFormService
 
             if ($previous && $previous->fields()->exists() && ! ($data['blank_fields'] ?? false)) {
                 $this->copyFields($previous, $revision);
+            } elseif (! $revision->fields()->exists() && $this->hasBlueprint($form)) {
+                $this->importBlueprint($revision);
             }
 
             $this->audit->record('form.revision_created', $revision, $user, null, [
@@ -140,12 +173,15 @@ class ControlledFormService
         $revision->fill($stored);
         $revision->save();
 
+        // Re-confirm FPDI metrics after write (authoritative for designer + fill).
+        $this->storage->syncRevisionPageMetrics($revision->fresh() ?? $revision);
+
         $this->audit->record('form.uploaded', $revision, request()->user(), null, [
             'original_name' => $revision->original_name,
             'sha256' => $revision->sha256,
         ]);
 
-        return $revision;
+        return $revision->fresh() ?? $revision;
     }
 
     /**
@@ -204,8 +240,16 @@ class ControlledFormService
 
                 $tableConfig = $field['table_config'] ?? null;
                 if ($type === ControlledFormFieldType::DynamicTestMatrix && ! is_array($tableConfig)) {
-                    $tableConfig = DynamicTestMatrix::defaultConfig();
+                    $revision->loadMissing('form.analysisPackage');
+                    $tableConfig = DynamicTestMatrix::configForForm($revision->form);
                 }
+                $revision->loadMissing('form');
+                $tableConfig = DynamicTestMatrix::normalizeStoredTableConfig(
+                    $name,
+                    $type,
+                    $tableConfig,
+                    $revision->form,
+                );
 
                 ControlledFormField::query()->create([
                     'controlled_form_revision_id' => $revision->id,
@@ -237,9 +281,70 @@ class ControlledFormService
             }
         });
 
+        // Bust Head/Analyst overlay PDF cache keyed on revision.updated_at.
+        $revision->touch();
+        $revision->refresh();
+
         $this->audit->record('field.mapping_changed', $revision, $user, null, [
             'field_count' => count($payload),
         ]);
+    }
+
+    /**
+     * Build in-memory field models for preview without persisting.
+     *
+     * @param  list<array<string, mixed>>  $payload
+     * @return Collection<int, ControlledFormField>
+     */
+    public function ephemeralFields(array $payload, ?ControlledForm $form = null): Collection
+    {
+        $fields = collect();
+
+        foreach (array_values($payload) as $index => $field) {
+            $type = ControlledFormFieldType::tryFrom((string) ($field['field_type'] ?? 'text'))
+                ?? ControlledFormFieldType::Text;
+
+            $name = (string) ($field['name'] ?? '');
+            if ($name === '') {
+                $name = Str::slug((string) ($field['label'] ?? 'field'), '_').'_'.($index + 1);
+            }
+
+            $tableConfig = $field['table_config'] ?? null;
+            if ($type === ControlledFormFieldType::DynamicTestMatrix && ! is_array($tableConfig)) {
+                $tableConfig = DynamicTestMatrix::configForForm($form);
+            }
+            $tableConfig = DynamicTestMatrix::normalizeStoredTableConfig(
+                $name,
+                $type,
+                $tableConfig,
+                $form,
+            );
+
+            $fields->push(new ControlledFormField([
+                'name' => $name,
+                'label' => (string) ($field['label'] ?? $name),
+                'field_type' => $type,
+                'page_number' => max(1, (int) ($field['page_number'] ?? 1)),
+                'x' => (float) ($field['x'] ?? 0),
+                'y' => (float) ($field['y'] ?? 0),
+                'width' => (float) ($field['width'] ?? $type->defaultWidth()),
+                'height' => (float) ($field['height'] ?? $type->defaultHeight()),
+                'font_size' => $field['font_size'] ?? 11,
+                'font_family' => $field['font_family'] ?? 'calibri',
+                'font_color' => $field['font_color'] ?? '#000000',
+                'alignment' => $field['alignment'] ?? 'L',
+                'data_source_key' => isset($field['data_source_key']) && is_string($field['data_source_key']) && $field['data_source_key'] !== ''
+                    ? $field['data_source_key']
+                    : null,
+                'format' => $field['format'] ?? null,
+                'checkbox_true_value' => $field['checkbox_true_value'] ?? null,
+                'options' => $field['options'] ?? null,
+                'table_config' => $tableConfig,
+                'z_order' => (int) ($field['z_order'] ?? $index),
+            ]));
+        }
+
+        return $fields->values();
     }
 
     /**
@@ -347,45 +452,126 @@ class ControlledFormService
         }
     }
 
+    public function hasBlueprint(?ControlledForm $form): bool
+    {
+        return $this->blueprintConfigKey($form) !== null;
+    }
+
+    public function blueprintConfigKey(?ControlledForm $form): ?string
+    {
+        if (! $form) {
+            return null;
+        }
+
+        $map = config('controlled_form_blueprints', []);
+        $key = $map[$form->form_code] ?? null;
+
+        if (is_string($key) && $key !== '' && is_array(config($key))) {
+            return $key;
+        }
+
+        // Legacy RFA fallback when form_code map is incomplete.
+        if ($form->category === ControlledFormCategory::JobOrder) {
+            $isAqua = ($form->job_order_variant === JobOrderVariant::Aqua)
+                || ($form->form_code === ControlledForm::RFA_AQUA_FORM_CODE);
+
+            return $isAqua ? 'rfa_aqua_form_fields' : 'rfa_form_fields';
+        }
+
+        return null;
+    }
+
+    /**
+     * @deprecated Use importBlueprint()
+     */
     public function importRfaBlueprint(ControlledFormRevision $revision): void
     {
-        /** @var list<array{name: string, type: string, page: int, x: float, y: float, w: float, h: float, font_size?: float, align?: string}> $fields */
-        $fields = config('rfa_form_fields.fields', []);
+        $this->importBlueprint($revision);
+    }
+
+    public function importBlueprint(ControlledFormRevision $revision): void
+    {
+        $revision->loadMissing('form');
+        $form = $revision->form;
+        $configKey = $this->blueprintConfigKey($form);
+
+        if ($configKey === null) {
+            throw ValidationException::withMessages([
+                'blueprint' => 'No field blueprint is registered for this controlled form.',
+            ]);
+        }
+
+        /** @var list<array<string, mixed>> $fields */
+        $fields = config("{$configKey}.fields", []);
         $payload = [];
 
-        foreach ($fields as $index => $field) {
-            $name = (string) $field['name'];
-            $type = ($field['type'] ?? 'text') === 'checkbox'
-                ? ControlledFormFieldType::Checkbox->value
-                : (($field['type'] ?? '') === 'multiline'
-                    ? ControlledFormFieldType::Multiline->value
-                    : ControlledFormFieldType::Text->value);
-
-            $payload[] = [
-                'name' => $name,
-                'label' => $this->labelFromName($name),
-                'field_type' => $type,
-                'page_number' => (int) ($field['page'] ?? 1),
-                'x' => (float) $field['x'],
-                'y' => (float) $field['y'],
-                'width' => (float) $field['w'],
-                'height' => (float) $field['h'],
-                'font_size' => $field['font_size'] ?? 11,
-                'alignment' => $field['align'] ?? 'L',
-                'data_source_key' => $this->rfaDataSource($name),
-                'z_order' => $index,
-            ];
-        }
+        $blueprintPage = config("{$configKey}.page", []);
+        $blueprintWidth = isset($blueprintPage['width']) ? (float) $blueprintPage['width'] : 0.0;
+        $blueprintHeight = isset($blueprintPage['height']) ? (float) $blueprintPage['height'] : 0.0;
 
         // Only apply blueprint page dimensions when the revision has no canonical PDF yet.
         // Once a real PDF is attached, its actual dimensions take precedence.
         if (! $revision->hasCanonicalPdf()) {
-            $page = config('rfa_form_fields.page', []);
-            if (isset($page['width'])) {
-                $revision->page_width_mm = $page['width'];
-                $revision->page_height_mm = $page['height'] ?? $revision->page_height_mm;
-                $revision->save();
+            if (isset($blueprintPage['width'])) {
+                $revision->page_width_mm = (float) $blueprintPage['width'];
             }
+
+            if (isset($blueprintPage['height'])) {
+                $revision->page_height_mm = (float) $blueprintPage['height'];
+            }
+
+            $revision->save();
+        }
+
+        $targetWidth = (float) ($revision->page_width_mm ?: $blueprintWidth);
+        $targetHeight = (float) ($revision->page_height_mm ?: $blueprintHeight);
+
+        $scaleX = ($blueprintWidth > 0 && $targetWidth > 0) ? ($targetWidth / $blueprintWidth) : 1.0;
+        $scaleY = ($blueprintHeight > 0 && $targetHeight > 0) ? ($targetHeight / $blueprintHeight) : 1.0;
+
+        $isRfaBlueprint = in_array($configKey, ['rfa_form_fields', 'rfa_aqua_form_fields'], true);
+
+        foreach ($fields as $index => $field) {
+            $name = (string) $field['name'];
+            $type = ControlledFormFieldType::tryFrom((string) ($field['type'] ?? 'text'))
+                ?? match ((string) ($field['type'] ?? 'text')) {
+                    'checkbox' => ControlledFormFieldType::Checkbox,
+                    'multiline' => ControlledFormFieldType::Multiline,
+                    'date' => ControlledFormFieldType::Date,
+                    'signature' => ControlledFormFieldType::Signature,
+                    default => ControlledFormFieldType::Text,
+                };
+
+            $dataSource = isset($field['data_source_key']) && is_string($field['data_source_key']) && $field['data_source_key'] !== ''
+                ? $field['data_source_key']
+                : ($isRfaBlueprint ? $this->rfaDataSource($name) : $name);
+
+            if ($type === ControlledFormFieldType::DynamicTestMatrix) {
+                $dataSource = null;
+            }
+
+            $payload[] = [
+                'name' => $name,
+                'label' => isset($field['label']) && is_string($field['label']) && $field['label'] !== ''
+                    ? $field['label']
+                    : $this->labelFromName($name),
+                'field_type' => $type->value,
+                'page_number' => (int) ($field['page'] ?? 1),
+                // Blueprint coordinates are measured against the blueprint page size.
+                // Scale to the actual uploaded/canonical PDF page size so placement matches.
+                'x' => ((float) $field['x']) * $scaleX,
+                'y' => ((float) $field['y']) * $scaleY,
+                'width' => ((float) $field['w']) * $scaleX,
+                'height' => ((float) $field['h']) * $scaleY,
+                'font_size' => $field['font_size'] ?? 11,
+                'font_family' => $field['font_family'] ?? 'calibri',
+                'font_color' => $field['font_color'] ?? '#000000',
+                'alignment' => $field['align'] ?? 'L',
+                'data_source_key' => $dataSource,
+                'options' => is_array($field['options'] ?? null) ? $field['options'] : null,
+                'table_config' => is_array($field['table_config'] ?? null) ? $field['table_config'] : null,
+                'z_order' => $index,
+            ];
         }
 
         $this->replaceFields($revision, $payload, $revision->creator ?? User::query()->first());
@@ -402,10 +588,14 @@ class ControlledFormService
             $name === 'sampling_date' => 'job_orders.sampling_date',
             $name === 'sampling_time' => 'job_orders.sampling_time',
             $name === 'sample_collected_by' => 'job_orders.sample_collected_by',
+            $name === 'sampling_site' => 'job_orders.sampling_site',
             $name === 'other_tests' => 'job_orders.other_tests',
-            $name === 'billing_total' => 'job_orders.total_cost',
+            $name === 'billing_total' => 'billing_total',
+            $name === 'billing_total_right' => 'billing_total_right',
+            $name === 'conforme_name' => 'job_orders.customer_name',
+            $name === 'conforme_date' => 'conforme_date',
             $name === 'received_date' => 'job_orders.received_at',
-            $name === 'reviewed_date' => 'job_orders.reviewed_at',
+            $name === 'reviewed_date' => 'job_orders.jo_approved_at',
             $name === 'ownership_private' => 'job_orders.ownership_type:private',
             $name === 'ownership_commercial' => 'job_orders.ownership_type:commercial',
             $name === 'ownership_public' => 'job_orders.ownership_type:public',
@@ -420,6 +610,11 @@ class ControlledFormService
             $name === 'ww_faucet' => 'job_orders.wastewater_source:faucet',
             $name === 'ww_tank' => 'job_orders.wastewater_source:tank',
             $name === 'ww_deepwell' => 'job_orders.wastewater_source:deepwell',
+            $name === 'payment_cash' => 'job_orders.payment_mode:cash',
+            $name === 'payment_billing_partial' => 'job_orders.payment_mode:billing_partial',
+            $name === 'payment_check' => 'job_orders.payment_mode:check',
+            $name === 'payment_terms_15' => 'job_orders.payment_terms:15_days',
+            $name === 'payment_terms_30' => 'job_orders.payment_terms:30_days',
             str_starts_with($name, 'chk_') => 'analyses.selected:'.strtoupper(str_replace('_', '-', substr($name, 4))),
             default => $name,
         };
@@ -515,6 +710,68 @@ class ControlledFormService
         }
 
         return $trimmed;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function resolveJobOrderVariant(array $data): ?string
+    {
+        $category = $data['category'] ?? ControlledFormCategory::JobOrder->value;
+
+        if ($category !== ControlledFormCategory::JobOrder->value
+            && $category !== ControlledFormCategory::JobOrder) {
+            return null;
+        }
+
+        if (! empty($data['job_order_variant'])) {
+            return is_string($data['job_order_variant'])
+                ? $data['job_order_variant']
+                : $data['job_order_variant']->value;
+        }
+
+        $code = strtoupper(trim((string) ($data['form_code'] ?? '')));
+
+        return $code === ControlledForm::RFA_AQUA_FORM_CODE
+            ? JobOrderVariant::Aqua->value
+            : JobOrderVariant::General->value;
+    }
+
+    /**
+     * Repair package-bound analysis-result forms whose type pivot was never synced.
+     * Without this, FO4/FO5 resolve by package id but fill zero test_* slots.
+     */
+    public static function healEmptyPackageResultBindings(): int
+    {
+        $service = app(self::class);
+        $healed = 0;
+
+        $forms = ControlledForm::query()
+            ->where('category', ControlledFormCategory::AnalysisResult)
+            ->whereNotNull('analysis_package_id')
+            ->with(['analysisPackage.analysisTypes', 'analysisTypes'])
+            ->get();
+
+        foreach ($forms as $form) {
+            $package = $form->analysisPackage;
+            if (! $package) {
+                continue;
+            }
+
+            if ($form->orderedTypeIds() !== []) {
+                continue;
+            }
+
+            $typeIds = $package->orderedTypeIds();
+            if ($typeIds === []) {
+                continue;
+            }
+
+            $service->syncBindings($form, $typeIds, $package->id);
+            $healed++;
+        }
+
+        return $healed;
     }
 
     /**

@@ -97,16 +97,18 @@ class HistoryController extends Controller
             404,
         );
 
-        $jobOrder->load(['samples', 'analyses', 'receiver', 'reviewer']);
-
         return Inertia::render('rfa/print', [
-            'jobOrder' => JobOrderFormPresenter::toArray($jobOrder, withResults: true),
+            'jobOrder' => [
+                'id' => $jobOrder->id,
+                'reference_no' => $jobOrder->reference_no,
+            ],
+            'pdfUrl' => "/history/{$jobOrder->id}/pdf?inline=1",
             'copies' => 1,
             'showResults' => true,
         ]);
     }
 
-    public function pdf(JobOrder $jobOrder): HttpResponse
+    public function pdf(Request $request, JobOrder $jobOrder): HttpResponse
     {
         abort_unless(
             $jobOrder->status === JobOrderStatus::ReadyForPickup,
@@ -115,6 +117,10 @@ class HistoryController extends Controller
 
         $jobOrder->load(['samples', 'analyses', 'receiver', 'reviewer']);
 
-        return RfaPdfExporter::download($jobOrder, showResults: true);
+        return RfaPdfExporter::download(
+            $jobOrder,
+            showResults: true,
+            inline: $request->boolean('inline'),
+        );
     }
 }

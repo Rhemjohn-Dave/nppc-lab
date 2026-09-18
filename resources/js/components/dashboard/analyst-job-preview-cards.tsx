@@ -18,6 +18,7 @@ type Props = {
     empty: string;
     viewAllHref: string;
     viewAllLabel: string;
+    compact?: boolean;
 };
 
 function toProgressTasks(
@@ -44,7 +45,7 @@ function assigneeLabel(task: AnalystDashboardJobGroup['tasks'][number]): string 
     }
 
     if (task.assignee_name) {
-        return `Assigned to ${task.assignee_name}`;
+        return `Suggested: ${task.assignee_name}`;
     }
 
     return 'Unassigned';
@@ -55,6 +56,7 @@ export default function AnalystJobPreviewCards({
     empty,
     viewAllHref,
     viewAllLabel,
+    compact = false,
 }: Props) {
     const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
@@ -88,7 +90,10 @@ export default function AnalystJobPreviewCards({
                         <li key={job.id}>
                             <Link
                                 href={workspaceHref}
-                                className="block px-4 py-4 transition hover:bg-[#f8fafc]"
+                                className={cn(
+                                    'block transition hover:bg-[#f8fafc]',
+                                    compact ? 'px-3 py-2.5' : 'px-4 py-4',
+                                )}
                                 onClick={(event) => {
                                     const target = event.target as HTMLElement;
                                     if (target.closest('[data-expand]')) {
@@ -99,7 +104,7 @@ export default function AnalystJobPreviewCards({
                             >
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex flex-wrap items-center gap-2">
                                             <button
                                                 type="button"
                                                 data-expand
@@ -129,24 +134,45 @@ export default function AnalystJobPreviewCards({
                                                 · {tasks.length} test
                                                 {tasks.length === 1 ? '' : 's'}
                                             </span>
-                                        </div>
-                                        <p className="mt-1 truncate text-sm text-slate-800">
-                                            {job.customer_name}
-                                        </p>
-                                        <p className="truncate text-xs text-muted-foreground">
-                                            {jobMetaLine(job)}
-                                        </p>
-                                        <div className="mt-3 flex flex-wrap items-center gap-3">
                                             <AnalystStatusBadge
                                                 status={aggregate.key}
                                                 label={aggregate.label}
                                             />
-                                            <span className="text-xs text-slate-600">
-                                                {progress.done} / {progress.total}{' '}
-                                                yours
-                                            </span>
                                         </div>
-                                        <div className="mt-2 h-1.5 max-w-xs overflow-hidden rounded-full bg-slate-100">
+                                        <p
+                                            className={cn(
+                                                'truncate text-sm text-slate-800',
+                                                compact ? 'mt-0.5' : 'mt-1',
+                                            )}
+                                        >
+                                            {job.customer_name}
+                                            {compact
+                                                ? ` · ${progress.done}/${progress.total} yours`
+                                                : ''}
+                                        </p>
+                                        {!compact && (
+                                            <p className="truncate text-xs text-muted-foreground">
+                                                {jobMetaLine(job)}
+                                            </p>
+                                        )}
+                                        {!compact && (
+                                            <div className="mt-3 flex flex-wrap items-center gap-3">
+                                                <AnalystStatusBadge
+                                                    status={aggregate.key}
+                                                    label={aggregate.label}
+                                                />
+                                                <span className="text-xs text-slate-600">
+                                                    {progress.done} /{' '}
+                                                    {progress.total} yours
+                                                </span>
+                                            </div>
+                                        )}
+                                        <div
+                                            className={cn(
+                                                'h-1.5 max-w-xs overflow-hidden rounded-full bg-slate-100',
+                                                compact ? 'mt-1.5' : 'mt-2',
+                                            )}
+                                        >
                                             <div
                                                 className={cn(
                                                     'h-full rounded-full',
@@ -163,7 +189,12 @@ export default function AnalystJobPreviewCards({
                                 </div>
                                 {expanded && (
                                     <ul
-                                        className="mt-3 space-y-2 rounded-lg border bg-[#fafbfc] p-3"
+                                        className={cn(
+                                            'space-y-2 rounded-lg border bg-[#fafbfc]',
+                                            compact
+                                                ? 'mt-2 p-2.5'
+                                                : 'mt-3 p-3',
+                                        )}
                                         onClick={(event) =>
                                             event.stopPropagation()
                                         }

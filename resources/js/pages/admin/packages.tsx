@@ -1,7 +1,10 @@
-import { Head, useForm, usePage } from '@inertiajs/react';
-import { Plus } from 'lucide-react';
+import { Head, router, useForm } from '@inertiajs/react';
+import LimsWorkspace from '@/components/lims/lims-workspace';
+import { Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import AnalysisTypePicker from '@/components/analysis-type-picker';
+import ConfirmDialog from '@/components/confirm-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -69,9 +72,10 @@ export default function AdminPackages({
     analysisGroups,
     analysts = [],
 }: Props) {
-    const { flash } = usePage().props as { flash?: { success?: string } };
     const [open, setOpen] = useState(false);
     const [editing, setEditing] = useState<PackageRow | null>(null);
+    const [deleting, setDeleting] = useState<PackageRow | null>(null);
+    const [deletingBusy, setDeletingBusy] = useState(false);
     const form = useForm(emptyForm);
 
     function openCreate() {
@@ -128,7 +132,7 @@ export default function AdminPackages({
     return (
         <>
             <Head title="Analysis packages" />
-            <div className="flex flex-col gap-5 p-4">
+            <LimsWorkspace>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
@@ -138,11 +142,6 @@ export default function AdminPackages({
                             Packages appear on the kiosk as one tap and expand
                             into individual tests for analysts.
                         </p>
-                        {flash?.success && (
-                            <p className="mt-2 text-sm text-emerald-700">
-                                {flash.success}
-                            </p>
-                        )}
                     </div>
                     <Button
                         className="bg-[#1A3694] hover:bg-[#365BB0]"
@@ -199,13 +198,24 @@ export default function AdminPackages({
                                         </Badge>
                                     </td>
                                     <td className="px-3 py-2">
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => openEdit(row)}
-                                        >
-                                            Edit
-                                        </Button>
+                                        <div className="flex flex-wrap gap-2">
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => openEdit(row)}
+                                            >
+                                                Edit
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="text-red-700 hover:bg-red-50 hover:text-red-800"
+                                                onClick={() => setDeleting(row)}
+                                            >
+                                                <Trash2 className="size-3.5" />
+                                                Delete
+                                            </Button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -223,7 +233,7 @@ export default function AdminPackages({
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </LimsWorkspace>
 
             <Dialog open={open} onOpenChange={setOpen}>
                 <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-2xl">
@@ -336,9 +346,10 @@ export default function AdminPackages({
                                     </option>
                                 </select>
                                 <p className="text-xs text-muted-foreground">
-                                    Dynamic matrix prints only selected tests as
-                                    table rows. Add a Dynamic test matrix region
-                                    on the bound controlled form.
+                                    Variable-row result table; unchecked kiosk
+                                    members are omitted from the PDF. The bound
+                                    Analysis Result form must include a Dynamic
+                                    test matrix region in Form Designer.
                                 </p>
                                 {form.errors.report_layout && (
                                     <p className="text-sm text-red-600">
@@ -429,6 +440,54 @@ export default function AdminPackages({
                     </form>
                 </DialogContent>
             </Dialog>
+
+            <ConfirmDialog
+                open={deleting !== null}
+                onOpenChange={(open) => {
+                    if (!open && !deletingBusy) {
+                        setDeleting(null);
+                    }
+                }}
+                title="Delete package?"
+                description={
+                    deleting ? (
+                        <>
+                            Delete <span className="font-medium">{deleting.code}</span>{' '}
+                            ({deleting.name})? This removes the package from the
+                            catalog. Past job orders keep their test lines; only
+                            the package link is cleared.
+                        </>
+                    ) : null
+                }
+                confirmLabel="Delete"
+                processingLabel="Deleting…"
+                variant="destructive"
+                processing={deletingBusy}
+                onConfirm={() => {
+                    if (!deleting) {
+                        return;
+                    }
+
+                    const id = deleting.id;
+                    setDeletingBusy(true);
+                    router.delete(`/admin/packages/${id}`, {
+                        preserveScroll: true,
+                        onSuccess: () => {
+                            setDeleting(null);
+                        },
+                        onError: (errors) => {
+                            const message =
+                                (typeof errors.package === 'string' &&
+                                    errors.package) ||
+                                'Could not delete this package.';
+                            toast.error(message);
+                        },
+                        onFinish: () => {
+                            setDeletingBusy(false);
+                        },
+                    });
+                }}
+            />
         </>
     );
 }

@@ -18,7 +18,7 @@ class ResetOperationalDataTest extends TestCase
     {
         $this->seed();
 
-        $type = AnalysisType::query()->where('code', 'PC-07')->firstOrFail();
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
 
         $this->post('/intake/job-orders', [
             'customer_name' => 'Keep Me Customer',

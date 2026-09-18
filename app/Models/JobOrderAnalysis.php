@@ -20,9 +20,11 @@ use Illuminate\Support\Carbon;
  * @property JobOrderAnalysisStatus $status
  * @property int|null $assigned_to
  * @property string|null $result_value
+ * @property string|null $result_pass_fail
  * @property string|null $result_measurement
  * @property string|null $result_unit
  * @property string|null $result_remarks
+ * @property string|null $result_method
  * @property Carbon|null $completed_at
  * @property-read JobOrder $jobOrder
  * @property-read AnalysisType|null $analysisType
@@ -42,9 +44,11 @@ class JobOrderAnalysis extends Model
         'status',
         'assigned_to',
         'result_value',
+        'result_pass_fail',
         'result_measurement',
         'result_unit',
         'result_remarks',
+        'result_method',
         'completed_at',
     ];
 

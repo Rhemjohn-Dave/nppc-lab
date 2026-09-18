@@ -1,0 +1,36 @@
+---
+description: Building and editing LIMS React/Inertia forms (intake, admin CRUD)
+globs: resources/js/pages/**/*.tsx,resources/js/components/intake/**/*
+alwaysApply: false
+---
+
+# LIMS UI forms (React / Inertia)
+
+These rules apply to **screens users fill in the browser**, not controlled PDF overlays.
+
+## Composition
+
+- **Sections:** `@/components/intake/form-section` — title + optional description, `border-t` dividers (`first` skips top rule).
+- **Extract** repeated step UI (package rows, summaries) to `@/components/intake/*` with props only — no duplicated submit logic.
+- **Labels:** `@/components/ui/label` + `htmlFor`; inputs from `@/components/ui/input`, `textarea`, `checkbox`.
+
+## Validation UX
+
+- Mirror server rules in client `canContinue` / step guards; set `attemptedContinue` when user hits Next on invalid step.
+- Optional fields: omit required asterisk; allow empty string in payload when backend marks `nullable`.
+- Payment/classification conditional blocks: show dependent fields only when parent value matches (see intake wizard step 2).
+
+## Data integrity (intake tests step)
+
+- Do not change **`estimatedTotal`** formula or package toggle semantics unless product owner requests it.
+- Summary UI may **group** package vs individual lines for display only; persistence stays `selectedTypes` / package ids as today.
+
+## Admin CRUD forms
+
+- Follow existing admin pages under `resources/js/pages/admin/` (tables, dialogs, Inertia `router.post/put/delete`).
+- Catalog edits (analysis types, packages) must stay consistent with `catalog_scope`, aqua visibility flags, and package `analysis_type_ids`.
+
+## Accessibility
+
+- Accordion/category toggles: `aria-expanded` on trigger buttons.
+- Errors: visible text + `role="alert"` for step-level messages.

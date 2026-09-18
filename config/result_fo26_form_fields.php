@@ -1,0 +1,238 @@
+<?php
+
+/**
+ * Field blueprint for LSP-7.8-FO26.
+ * Captured from Form Designer ACTIVE revision 03
+ * via `php artisan controlled-forms:export-blueprints`.
+ */
+
+return array (
+  'page' => 
+  array (
+    'width' => 215.9,
+    'height' => 279.4,
+    'unit' => 'mm',
+  ),
+  'fields' => 
+  array (
+    0 => 
+    array (
+      'name' => 'results.customer',
+      'label' => 'Client',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 35.675,
+      'y' => 40.7,
+      'w' => 86.0,
+      'h' => 4.2,
+      'font_size' => 11.0,
+      'font_family' => 'calibri',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'results.customer',
+    ),
+    1 => 
+    array (
+      'name' => 'results.address',
+      'label' => 'Address',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 35.675,
+      'y' => 45.2,
+      'w' => 86.0,
+      'h' => 4.2,
+      'font_size' => 11.0,
+      'font_family' => 'calibri',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'results.address',
+    ),
+    2 => 
+    array (
+      'name' => 'results.ref_no',
+      'label' => 'LSO No.',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 36.175,
+      'y' => 50.2,
+      'w' => 70.0,
+      'h' => 4.2,
+      'font_size' => 11.0,
+      'font_family' => 'calibri',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'results.ref_no',
+    ),
+    3 => 
+    array (
+      'name' => 'results.sample_description',
+      'label' => 'Sample Description',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 55.217,
+      'y' => 54.9,
+      'w' => 64.0,
+      'h' => 4.2,
+      'font_size' => 11.0,
+      'font_family' => 'calibri',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'results.sample_description',
+    ),
+    4 => 
+    array (
+      'name' => 'results.test_requested',
+      'label' => 'Test Requested',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 47.717,
+      'y' => 59.6,
+      'w' => 47.58,
+      'h' => 4.2,
+      'font_size' => 11.0,
+      'font_family' => 'calibri',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'results.test_requested',
+    ),
+    5 => 
+    array (
+      'name' => 'results.sample_received_at',
+      'label' => 'Date Submitted',
+      'type' => 'date',
+      'page' => 1,
+      'x' => 149.5,
+      'y' => 40.7,
+      'w' => 45.0,
+      'h' => 4.2,
+      'font_size' => 11.0,
+      'font_family' => 'calibri',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'results.sample_received_at',
+    ),
+    6 => 
+    array (
+      'name' => 'results.analysis_datetime',
+      'label' => 'Date Analyzed',
+      'type' => 'date',
+      'page' => 1,
+      'x' => 149.5,
+      'y' => 45.7,
+      'w' => 45.0,
+      'h' => 4.2,
+      'font_size' => 11.0,
+      'font_family' => 'calibri',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'results.analysis_datetime',
+    ),
+    7 => 
+    array (
+      'name' => 'results.report_date',
+      'label' => 'Date Reported',
+      'type' => 'date',
+      'page' => 1,
+      'x' => 149.5,
+      'y' => 50.7,
+      'w' => 45.0,
+      'h' => 4.2,
+      'font_size' => 11.0,
+      'font_family' => 'calibri',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'results.report_date',
+    ),
+    8 => 
+    array (
+      'name' => 'food_micro_fo26_matrix',
+      'label' => 'Dynamic test matrix',
+      'type' => 'dynamic_test_matrix',
+      'page' => 1,
+      'x' => 20.0,
+      'y' => 75.072,
+      'w' => 174.5,
+      'h' => 105.289,
+      'font_size' => 8.0,
+      'font_family' => 'calibri',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'table_config' => 
+      array (
+        'columns' => 
+        array (
+          0 => 
+          array (
+            'key' => 'test',
+            'label' => 'TEST',
+            'width_pct' => 55,
+            'align' => 'L',
+            'header_align' => 'C',
+            'header_font_size' => 11,
+            'font_size' => 11,
+          ),
+          1 => 
+          array (
+            'key' => 'result',
+            'label' => 'Control Number',
+            'label_data_source' => 'results.control_no',
+            'sublabel' => 'Sample Description',
+            'sublabel_data_source' => 'results.sample_description',
+            'sublabel_align' => 'C',
+            'width_pct' => 45,
+            'align' => 'C',
+            'header_align' => 'C',
+            'header_font_size' => 9,
+            'sublabels' => NULL,
+            'font_size' => 9,
+          ),
+        ),
+        'row_height_mm' => 8.5,
+        'header_row_height_mm' => 8,
+        'header_row' => true,
+        'border' => true,
+        'preview_rows' => 10,
+        'test_name_bold' => true,
+        'header_bold' => true,
+        'method_font_size' => 9,
+        'header_font_size' => 8,
+      ),
+    ),
+    9 => 
+    array (
+      'name' => 'results.test_methods_references',
+      'label' => 'Test Methods and References',
+      'type' => 'multiline',
+      'page' => 1,
+      'x' => 20.0,
+      'y' => 185.0,
+      'w' => 174.5,
+      'h' => 52.0,
+      'font_size' => 8.0,
+      'font_family' => 'calibri',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'results.test_methods_references',
+      'options' => 
+      array (
+        'cover' => true,
+      ),
+    ),
+    10 => 
+    array (
+      'name' => 'results.analyst_name',
+      'label' => 'Analyzed by',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 18.53,
+      'y' => 245.985,
+      'w' => 80.0,
+      'h' => 5.0,
+      'font_size' => 9.0,
+      'font_family' => 'calibri',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'results.analyst_name',
+    ),
+  ),
+);

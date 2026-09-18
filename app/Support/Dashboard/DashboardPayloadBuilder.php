@@ -251,7 +251,9 @@ class DashboardPayloadBuilder
     {
         $intakeQuery = JobOrder::query()->whereIn('status', [
             JobOrderStatus::DraftSubmitted,
+            JobOrderStatus::PendingJoApproval,
             JobOrderStatus::Priced,
+            JobOrderStatus::JoApproved,
         ]);
         $reviewedQuery = JobOrder::query()
             ->whereNotNull('reviewed_at')
@@ -260,32 +262,50 @@ class DashboardPayloadBuilder
         $draftCount = (clone $intakeQuery)
             ->where('status', JobOrderStatus::DraftSubmitted)
             ->count();
-        $pricedCount = (clone $intakeQuery)
-            ->where('status', JobOrderStatus::Priced)
+        $awaitingHeadCount = (clone $intakeQuery)
+            ->whereIn('status', [
+                JobOrderStatus::PendingJoApproval,
+                JobOrderStatus::Priced,
+            ])
+            ->count();
+        $readyCount = (clone $intakeQuery)
+            ->where('status', JobOrderStatus::JoApproved)
             ->count();
         $reviewedCount = (clone $reviewedQuery)->count();
-        $receivedToday = JobOrder::query()
-            ->whereNotNull('received_at')
-            ->whereDate('received_at', today())
-            ->count();
 
         $queueRows = (clone $intakeQuery)
             ->withCount(['analyses', 'samples'])
-            ->latest()
+            ->oldest()
             ->limit(self::PREVIEW_LIMIT)
             ->get()
-            ->map(fn (JobOrder $order) => [
-                'id' => $order->id,
-                'reference_no' => $order->reference_no,
-                'customer_name' => $order->customer_name,
-                'classification' => $order->classification,
-                'samples_count' => $order->samples_count,
-                'status' => $order->status->value,
-                'status_label' => $order->status->label(),
-                'updated_at' => $order->updated_at?->diffForHumans(),
-                'href' => '/receiving/'.$order->id,
-                'action_label' => $order->status === JobOrderStatus::DraftSubmitted ? 'Review' : 'Receive',
-            ])
+            ->map(function (JobOrder $order) {
+                $actionLabel = match ($order->status) {
+                    JobOrderStatus::DraftSubmitted => 'Price',
+                    JobOrderStatus::PendingJoApproval, JobOrderStatus::Priced => 'Await Head',
+                    JobOrderStatus::JoApproved => 'Print & send',
+                    default => 'Open',
+                };
+
+                $statusLabel = match ($order->status) {
+                    JobOrderStatus::DraftSubmitted => 'Needs pricing',
+                    JobOrderStatus::PendingJoApproval, JobOrderStatus::Priced => 'Awaiting Head approval',
+                    JobOrderStatus::JoApproved => 'Ready for analysts',
+                    default => $order->status->label(),
+                };
+
+                return [
+                    'id' => $order->id,
+                    'reference_no' => $order->reference_no,
+                    'customer_name' => $order->customer_name,
+                    'classification' => $order->classification,
+                    'samples_count' => $order->samples_count,
+                    'status' => $order->status->value,
+                    'status_label' => $statusLabel,
+                    'updated_at' => $order->updated_at?->diffForHumans(),
+                    'href' => '/receiving/'.$order->id,
+                    'action_label' => $actionLabel,
+                ];
+            })
             ->values()
             ->all();
 
@@ -293,10 +313,12 @@ class DashboardPayloadBuilder
             ->where(function ($query) {
                 $query->whereIn('status', [
                     JobOrderStatus::DraftSubmitted,
+                    JobOrderStatus::PendingJoApproval,
                     JobOrderStatus::Priced,
+                    JobOrderStatus::JoApproved,
                 ])->orWhere(function ($inner) {
-                    $inner->whereNotNull('received_at')
-                        ->where('received_at', '>=', now()->subDays(3));
+                    $inner->whereNotNull('reviewed_at')
+                        ->where('reviewed_at', '>=', now()->subDays(3));
                 });
             })
             ->latest('updated_at')
@@ -311,72 +333,89 @@ class DashboardPayloadBuilder
             ->values()
             ->all();
 
-        $items = [];
-        if ($draftCount > 0) {
-            $items[] = [
-                'text' => $draftCount.' request'.($draftCount === 1 ? '' : 's').' awaiting pricing / review',
-                'href' => '/receiving?status=draft_submitted',
-            ];
-        }
-        if ($pricedCount > 0) {
-            $items[] = [
-                'text' => $pricedCount.' job order'.($pricedCount === 1 ? '' : 's').' ready to receive',
-                'href' => '/receiving?status=priced',
-            ];
-        }
+        $attentionJobs = (clone $intakeQuery)
+            ->whereIn('status', [
+                JobOrderStatus::DraftSubmitted,
+                JobOrderStatus::PendingJoApproval,
+                JobOrderStatus::Priced,
+                JobOrderStatus::JoApproved,
+            ])
+            ->oldest()
+            ->limit(5)
+            ->get();
 
-        $attentionTotal = $draftCount + $pricedCount;
+        $items = $attentionJobs->map(function (JobOrder $order) {
+            $reason = match ($order->status) {
+                JobOrderStatus::DraftSubmitted => 'Needs pricing',
+                JobOrderStatus::PendingJoApproval, JobOrderStatus::Priced => 'Awaiting Head approval',
+                JobOrderStatus::JoApproved => 'Ready to print & send',
+                default => $order->status->label(),
+            };
+
+            return [
+                'text' => $order->reference_no.' — '.$reason,
+                'href' => '/receiving/'.$order->id,
+            ];
+        })->values()->all();
+
+        $attentionTotal = $draftCount + $awaitingHeadCount + $readyCount;
 
         return [
             'role' => 'receiving',
             'header' => [
                 'title' => 'Receiving Workspace',
-                'subtitle' => 'Review requests, receive samples, and prepare Job Orders for analysis.',
+                'subtitle' => 'Price → Head JO approval → print 3 JO copies → send to analysts.',
             ],
             'kpis' => [
                 [
-                    'key' => 'new_requests',
-                    'label' => 'New requests',
+                    'key' => 'needs_pricing',
+                    'label' => 'Needs pricing',
                     'value' => $draftCount,
                     'href' => '/receiving?status=draft_submitted',
                     'tone' => $draftCount > 0 ? 'warning' : 'default',
+                    'hint' => 'Enter line prices',
                 ],
                 [
-                    'key' => 'for_receiving',
-                    'label' => 'For receiving',
-                    'value' => $pricedCount,
-                    'href' => '/receiving?status=priced',
-                    'tone' => $pricedCount > 0 ? 'info' : 'default',
+                    'key' => 'awaiting_head',
+                    'label' => 'Awaiting Head approval',
+                    'value' => $awaitingHeadCount,
+                    'href' => '/receiving?status=pending_jo_approval',
+                    'tone' => $awaitingHeadCount > 0 ? 'warning' : 'default',
+                    'hint' => 'JO with Head',
                 ],
                 [
-                    'key' => 'received_today',
-                    'label' => 'Received today',
-                    'value' => $receivedToday,
-                    'href' => '/receiving',
-                    'tone' => 'success',
+                    'key' => 'ready_for_analysts',
+                    'label' => 'Ready for analysts',
+                    'value' => $readyCount,
+                    'href' => '/receiving?status=jo_approved',
+                    'tone' => $readyCount > 0 ? 'success' : 'default',
+                    'hint' => 'Print ×3 then send',
                 ],
                 [
                     'key' => 'reviewed',
-                    'label' => 'Reviewed / released',
+                    'label' => 'Results released',
                     'value' => $reviewedCount,
                     'href' => '/receiving?status=reviewed',
-                    'tone' => 'default',
+                    'tone' => 'info',
+                    'hint' => 'Reprint JO if needed',
                 ],
             ],
             'needsAttention' => [
-                'title' => 'Needs attention',
+                'title' => $attentionTotal > 0
+                    ? $attentionTotal.' Job Order'.($attentionTotal === 1 ? '' : 's').' need attention'
+                    : 'Needs attention',
                 'summary' => $attentionTotal > 0
-                    ? $attentionTotal.' request'.($attentionTotal === 1 ? '' : 's').' need attention'
-                    : 'Intake queue is clear',
+                    ? 'Pricing, Head approval, or print & send still open.'
+                    : 'No Receiving actions require attention.',
                 'items' => $items,
                 'action' => [
-                    'label' => 'Open Receiving Workspace',
+                    'label' => 'View queue',
                     'href' => '/receiving',
                 ],
             ],
             'queue' => [
-                'title' => 'Incoming requests',
-                'empty' => 'No requests waiting in receiving.',
+                'title' => 'Receiving work queue',
+                'empty' => 'No Job Orders waiting in Receiving.',
                 'columns' => ['reference_no', 'customer_name', 'classification', 'samples_count', 'status', 'updated_at'],
                 'rows' => $queueRows,
             ],
@@ -419,8 +458,20 @@ class DashboardPayloadBuilder
         $completedQuery = JobOrderAnalysis::query()
             ->where('status', JobOrderAnalysisStatus::Completed);
 
+        $qualifiedTypeIds = $isAdmin
+            ? []
+            : $user->analysisTypes()
+                ->pluck('analysis_types.id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
         if (! $isAdmin) {
-            $openQuery->where('assigned_to', $user->id);
+            $openQuery->where(function ($query) use ($user, $qualifiedTypeIds) {
+                $query->where('assigned_to', $user->id);
+                if ($qualifiedTypeIds !== []) {
+                    $query->orWhereIn('analysis_type_id', $qualifiedTypeIds);
+                }
+            });
             $completedQuery->where('assigned_to', $user->id);
         }
 
@@ -480,8 +531,14 @@ class DashboardPayloadBuilder
                         'matrix' => $sample->matrix,
                     ])->values()->all(),
                 ],
-                'tasks' => $jobTasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin) {
+                'tasks' => $jobTasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin, $qualifiedTypeIds) {
                     $isMine = $isAdmin || (int) $task->assigned_to === (int) $user->id;
+                    $canWork = $isAdmin
+                        || $isMine
+                        || (
+                            $task->analysis_type_id
+                            && in_array((int) $task->analysis_type_id, $qualifiedTypeIds, true)
+                        );
 
                     return [
                         'id' => $task->id,
@@ -491,6 +548,7 @@ class DashboardPayloadBuilder
                         'assigned_to' => $task->assigned_to,
                         'assignee_name' => $task->assignee?->name,
                         'is_mine' => $isMine,
+                        'can_work' => $canWork,
                         'category_label' => $task->resolvedCategoryLabel(),
                         'job_order' => [
                             'id' => $task->job_order_id,
@@ -676,13 +734,13 @@ class DashboardPayloadBuilder
         if ($unsignedCount > 0) {
             $items[] = [
                 'text' => $unsignedCount.' Job Order'.($unsignedCount === 1 ? '' : 's').' waiting for review',
-                'href' => '/head?tab=unsigned',
+                'href' => '/head/results?tab=unsigned',
             ];
         }
         if ($returnedInLab > 0) {
             $items[] = [
                 'text' => $returnedInLab.' analysis line'.($returnedInLab === 1 ? '' : 's').' returned to analysts',
-                'href' => '/head',
+                'href' => '/head/results',
             ];
         }
 
@@ -690,35 +748,35 @@ class DashboardPayloadBuilder
             'role' => 'head',
             'header' => [
                 'title' => 'Head Analysis',
-                'subtitle' => 'Review, approve, and sign completed laboratory results.',
+                'subtitle' => 'Approve Job Orders and release finished results.',
             ],
             'kpis' => [
                 [
                     'key' => 'waiting_review',
                     'label' => 'Waiting for review',
                     'value' => $unsignedCount,
-                    'href' => '/head?tab=unsigned',
+                    'href' => '/head/results?tab=unsigned',
                     'tone' => $unsignedCount > 0 ? 'warning' : 'default',
                 ],
                 [
                     'key' => 'ready_to_sign',
-                    'label' => 'Ready to sign',
+                    'label' => 'Ready to release',
                     'value' => $unsignedCount,
-                    'href' => '/head?tab=unsigned',
+                    'href' => '/head/results?tab=unsigned',
                     'tone' => $unsignedCount > 0 ? 'info' : 'default',
                 ],
                 [
                     'key' => 'returned_in_lab',
                     'label' => 'Returned in lab',
                     'value' => $returnedInLab,
-                    'href' => '/head',
+                    'href' => '/head/results',
                     'tone' => $returnedInLab > 0 ? 'warning' : 'default',
                 ],
                 [
                     'key' => 'signed_today',
-                    'label' => 'Signed today',
+                    'label' => 'Released today',
                     'value' => $signedToday,
-                    'href' => '/head?tab=signed',
+                    'href' => '/head/results?tab=signed',
                     'tone' => 'success',
                 ],
             ],
@@ -726,11 +784,11 @@ class DashboardPayloadBuilder
                 'title' => 'Needs attention',
                 'summary' => $unsignedCount > 0
                     ? $unsignedCount.' Job Order'.($unsignedCount === 1 ? '' : 's').' need review'
-                    : 'Signing queue is clear',
+                    : 'Results queue is clear',
                 'items' => $items,
                 'action' => [
-                    'label' => 'Open Signing Queue',
-                    'href' => '/head',
+                    'label' => 'Open Results',
+                    'href' => '/head/results',
                 ],
             ],
             'queue' => [
@@ -740,16 +798,17 @@ class DashboardPayloadBuilder
                 'rows' => $queueRows,
             ],
             'activity' => [
-                'title' => 'Signed today',
-                'empty' => 'No signatures yet today.',
+                'title' => 'Released today',
+                'empty' => 'No releases yet today.',
                 'items' => $activity,
                 'action' => [
-                    'label' => 'Open Signing Queue',
-                    'href' => '/head?tab=signed',
+                    'label' => 'Open Results',
+                    'href' => '/head/results?tab=signed',
                 ],
             ],
             'links' => [
-                ['label' => 'Open Signing Queue', 'href' => '/head'],
+                ['label' => 'JO approval', 'href' => '/head/jo'],
+                ['label' => 'Results', 'href' => '/head/results'],
                 ['label' => 'History Archive', 'href' => '/history'],
             ],
             'extras' => [],

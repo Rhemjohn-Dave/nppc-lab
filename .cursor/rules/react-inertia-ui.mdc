@@ -1,0 +1,44 @@
+---
+description: React, Inertia, and LIMS UI layout patterns
+globs: resources/js/**/*.tsx,resources/js/**/*.ts
+alwaysApply: false
+---
+
+# React / Inertia UI
+
+## Imports and components
+
+- Path alias: `@/` → `resources/js/`
+- UI primitives: `@/components/ui/button`, `input`, `checkbox`, `dialog`, etc.
+- Use **functional components**; colocate small presentational pieces under `@/components/<module>/`.
+
+## Inertia pages
+
+- Pages live in `resources/js/pages/<area>/`.
+- Kiosk/public intake sets **`Page.layout = null`** (no app sidebar).
+- Authenticated LIMS pages use the dashboard shell pattern; share width tokens from `@/lib/lims-page-shell`.
+
+## LIMS layout tokens
+
+```tsx
+import { limsPageBackground, limsPageShellWide } from '@/lib/lims-page-shell';
+```
+
+- Background: `#f4f7fb` via `limsPageBackground`
+- Wide column: `max-w-[1680px]` via `limsPageShellWide`
+- Intake: prefer **one white workspace card** (stepper + body + sticky footer), **`FormSection`** dividers — avoid nested card stacks per step
+
+## Visual language
+
+- Primary navy: `#1A3694`, accent `#365BB0`, `#5282D3` borders on hover
+- Dense tables and sidebars: `rounded-xl border border-slate-200/80 bg-white shadow-sm`
+
+## State and forms
+
+- Wizard/multi-step: keep **handlers and API payload in the page**; extract **presentational** blocks (e.g. package row, request summary) as components with props/callbacks.
+- Use `cn()` from `@/lib/utils` for conditional classes.
+- Show field errors with `@/components/input-error` and `role="alert"` for step-level validation messages.
+
+## Build
+
+- Run `npm run build` after substantive TS changes; fix type errors before finishing.

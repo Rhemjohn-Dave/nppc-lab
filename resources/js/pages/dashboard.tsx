@@ -2,7 +2,9 @@ import { Head } from '@inertiajs/react';
 import DashboardShell from '@/components/dashboard/dashboard-shell';
 import DashboardHeader from '@/components/dashboard/dashboard-header';
 import NeedsAttentionPanel from '@/components/dashboard/needs-attention-panel';
+import NavigationLoadingShell from '@/components/loading/navigation-loading-shell';
 import type { DashboardProps } from '@/components/dashboard/types';
+import { limsPageBackground, limsPageShellWide } from '@/lib/lims-page-shell';
 import AdminDashboard from '@/pages/dashboard/admin-dashboard';
 import AnalystDashboard from '@/pages/dashboard/analyst-dashboard';
 import HeadDashboard from '@/pages/dashboard/head-dashboard';
@@ -15,10 +17,11 @@ export default function Dashboard(props: DashboardProps) {
         <>
             <Head title="Dashboard" />
             {role === 'generic' ? (
-                <div className="bg-[#f4f7fb] p-4 md:p-6">
-                    <div className="mx-auto flex max-w-6xl flex-col gap-6">
+                <div className={limsPageBackground}>
+                    <div className={limsPageShellWide}>
                         <DashboardHeader
                             variant="hero"
+                            density="compact"
                             title={header.title}
                             subtitle={header.subtitle}
                             greetingName={header.greeting_name}
@@ -31,12 +34,30 @@ export default function Dashboard(props: DashboardProps) {
                     role={role}
                     header={header}
                     links={links}
-                    layout={role === 'admin' ? 'wide' : 'default'}
+                    layout={
+                        role === 'receiving' ||
+                        role === 'analyst' ||
+                        role === 'head'
+                            ? 'fluid'
+                            : role === 'admin'
+                              ? 'wide'
+                              : 'default'
+                    }
+                    density={
+                        role === 'receiving' ||
+                        role === 'analyst' ||
+                        role === 'head' ||
+                        role === 'admin'
+                            ? 'compact'
+                            : 'default'
+                    }
                 >
-                    {role === 'admin' && <AdminDashboard {...props} />}
-                    {role === 'receiving' && <ReceivingDashboard {...props} />}
-                    {role === 'analyst' && <AnalystDashboard {...props} />}
-                    {role === 'head' && <HeadDashboard {...props} />}
+                    <NavigationLoadingShell variant="dashboard">
+                        {role === 'admin' && <AdminDashboard {...props} />}
+                        {role === 'receiving' && <ReceivingDashboard {...props} />}
+                        {role === 'analyst' && <AnalystDashboard {...props} />}
+                        {role === 'head' && <HeadDashboard {...props} />}
+                    </NavigationLoadingShell>
                 </DashboardShell>
             )}
         </>

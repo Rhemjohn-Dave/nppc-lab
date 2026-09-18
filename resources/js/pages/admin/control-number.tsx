@@ -1,4 +1,5 @@
-import { Head, useForm, usePage } from '@inertiajs/react';
+import { Head, useForm } from '@inertiajs/react';
+import LimsWorkspace from '@/components/lims/lims-workspace';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,7 +23,6 @@ function formatControl(year: string, number: number) {
 }
 
 export default function ControlNumberAdmin({ counter }: Props) {
-    const { flash } = usePage().props as { flash?: { success?: string } };
     const form = useForm({
         next_number: counter.next_number,
     });
@@ -35,7 +35,7 @@ export default function ControlNumberAdmin({ counter }: Props) {
     return (
         <>
             <Head title="Control number" />
-            <div className="flex flex-col gap-5 p-4">
+            <LimsWorkspace>
                 <div>
                     <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
                         Control number
@@ -45,11 +45,6 @@ export default function ControlNumberAdmin({ counter }: Props) {
                         starts. Numbers use year + sequence (e.g.{' '}
                         {formatControl(counter.year, 1)}).
                     </p>
-                    {flash?.success && (
-                        <p className="mt-2 text-sm text-emerald-700">
-                            {flash.success}
-                        </p>
-                    )}
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-3">
@@ -152,7 +147,7 @@ export default function ControlNumberAdmin({ counter }: Props) {
                             : 'Save control number start'}
                     </Button>
                 </form>
-            </div>
+            </LimsWorkspace>
         </>
     );
 }

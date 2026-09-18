@@ -27,7 +27,7 @@ class AnalysisResultPdfTest extends TestCase
 
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
-        $type = AnalysisType::query()->where('code', 'PC-07')->firstOrFail();
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
 
         $this->post('/intake/job-orders', [
             'customer_name' => 'Result PDF Customer',
@@ -50,6 +50,8 @@ class AnalysisResultPdfTest extends TestCase
             ])
             ->assertRedirect();
 
+        $this->approveJobOrder($job);
+
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
@@ -57,6 +59,8 @@ class AnalysisResultPdfTest extends TestCase
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
                 'result_value' => '7.2',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method',
                 'result_unit' => 'pH',
                 'result_remarks' => 'Within range',
             ])
@@ -81,7 +85,7 @@ class AnalysisResultPdfTest extends TestCase
 
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
-        $type = AnalysisType::query()->where('code', 'PC-07')->firstOrFail();
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
 
         $this->post('/intake/job-orders', [
             'customer_name' => 'Other Analyst Customer',
@@ -104,6 +108,8 @@ class AnalysisResultPdfTest extends TestCase
             ])
             ->assertRedirect();
 
+        $this->approveJobOrder($job);
+
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
@@ -111,6 +117,8 @@ class AnalysisResultPdfTest extends TestCase
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
                 'result_value' => '1.0',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method',
             ])
             ->assertRedirect();
 
@@ -132,7 +140,7 @@ class AnalysisResultPdfTest extends TestCase
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
         $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
-        $type = AnalysisType::query()->where('code', 'PC-07')->firstOrFail();
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
 
         $this->post('/intake/job-orders', [
             'customer_name' => 'Admin PDF Customer',
@@ -155,6 +163,8 @@ class AnalysisResultPdfTest extends TestCase
             ])
             ->assertRedirect();
 
+        $this->approveJobOrder($job);
+
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
@@ -162,6 +172,8 @@ class AnalysisResultPdfTest extends TestCase
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
                 'result_value' => '12.5',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method',
                 'result_unit' => '%',
             ])
             ->assertRedirect();
@@ -213,12 +225,16 @@ class AnalysisResultPdfTest extends TestCase
         $this->actingAs($firstLine->fresh()->assignee ?? $analyst)
             ->post("/analyst/tasks/{$firstLine->id}/complete", [
                 'result_value' => '7',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method',
                 'result_unit' => 'unit',
             ])
             ->assertRedirect();
         $this->actingAs($secondLine->fresh()->assignee ?? $analyst)
             ->post("/analyst/tasks/{$secondLine->id}/complete", [
                 'result_value' => '8',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method',
                 'result_unit' => 'unit',
             ])
             ->assertRedirect();
@@ -229,8 +245,7 @@ class AnalysisResultPdfTest extends TestCase
             ->assertJsonPath('kind', 'combined')
             ->assertJsonPath('can_preview', true)
             ->assertJsonPath('can_print', false)
-            ->assertJsonPath('values.test_1_result', '7')
-            ->assertJsonPath('values.test_2_result', '8')
+            ->assertJsonPath('values', [])
             ->assertJsonPath('pdf_url', "/analyst/tasks/{$firstLine->id}/combined-pdf")
             ->assertJsonPath('template_url', '');
 
@@ -263,6 +278,8 @@ class AnalysisResultPdfTest extends TestCase
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$firstLine->id}/complete", [
                 'result_value' => '6.8',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method',
             ])
             ->assertRedirect();
 
@@ -299,10 +316,18 @@ class AnalysisResultPdfTest extends TestCase
         $secondLine->update(['assigned_to' => $other->id]);
 
         $this->actingAs($analyst)
-            ->post("/analyst/tasks/{$firstLine->id}/complete", ['result_value' => '1'])
+            ->post("/analyst/tasks/{$firstLine->id}/complete", [
+                'result_value' => '1',
+                'result_pass_fail' => 'Passed',
+                'result_method' => 'Standard Method',
+            ])
             ->assertRedirect();
         $this->actingAs($other)
-            ->post("/analyst/tasks/{$secondLine->id}/complete", ['result_value' => '2'])
+            ->post("/analyst/tasks/{$secondLine->id}/complete", [
+                'result_value' => '2',
+                'result_pass_fail' => 'Passed',
+                'result_method' => 'Standard Method',
+            ])
             ->assertRedirect();
 
         $this->actingAs($analyst)
@@ -354,6 +379,8 @@ class AnalysisResultPdfTest extends TestCase
             ])
             ->assertRedirect();
 
+        $this->approveJobOrder($job);
+
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
@@ -362,7 +389,9 @@ class AnalysisResultPdfTest extends TestCase
         foreach ($job->analyses()->with('assignee')->get() as $line) {
             $this->actingAs($line->assignee ?? $signatory)
                 ->post("/analyst/tasks/{$line->id}/complete", [
-                    'result_value' => 'Passed',
+                    'result_value' => 'ND',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method'
                 ])
                 ->assertRedirect();
         }
@@ -436,7 +465,7 @@ class AnalysisResultPdfTest extends TestCase
 
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
-        $type = AnalysisType::query()->where('code', 'PC-07')->firstOrFail();
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
 
         $this->post('/intake/job-orders', [
             'customer_name' => 'Single Result Customer',
@@ -459,6 +488,8 @@ class AnalysisResultPdfTest extends TestCase
             ])
             ->assertRedirect();
 
+        $this->approveJobOrder($job);
+
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
@@ -466,6 +497,8 @@ class AnalysisResultPdfTest extends TestCase
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
                 'result_value' => '7.2',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method',
                 'result_unit' => 'pH',
             ])
             ->assertRedirect();
@@ -505,6 +538,8 @@ class AnalysisResultPdfTest extends TestCase
                 ])->all(),
             ])
             ->assertRedirect();
+
+        $this->approveJobOrder($job);
 
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")

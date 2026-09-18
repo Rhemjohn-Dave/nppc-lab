@@ -23,7 +23,7 @@ export function sanitizeFieldName(key: string, index: number): string {
 
 export function defaultTableColumns(sourceKey: string): string[] {
     if (sourceKey === 'samples[]') {
-        return ['sample_code', 'description', 'matrix', 'quantity', 'unit'];
+        return ['sample_code', 'description', 'control_number', 'matrix', 'quantity', 'unit'];
     }
 
     if (sourceKey === 'analyses[]') {

@@ -2,6 +2,7 @@ import { Link, usePage } from '@inertiajs/react';
 import {
     Beaker,
     ClipboardCheck,
+    FileStack,
     FileText,
     Hash,
     History,
@@ -63,9 +64,21 @@ export function AppSidebar() {
         ...(can('head_analysis')
             ? [
                   {
-                      title: 'Signing queue',
+                      title: 'Head Analysis',
                       href: '/head',
                       icon: ClipboardCheck,
+                      children: [
+                          {
+                              title: 'JO approval',
+                              href: '/head/jo',
+                              icon: FileText,
+                          },
+                          {
+                              title: 'Results',
+                              href: '/head/results',
+                              icon: ClipboardCheck,
+                          },
+                      ],
                   } satisfies NavItem,
               ]
             : []),
@@ -91,11 +104,6 @@ export function AppSidebar() {
                       icon: Settings2,
                   } satisfies NavItem,
                   {
-                      title: 'Packages',
-                      href: '/admin/packages',
-                      icon: PackageOpen,
-                  } satisfies NavItem,
-                  {
                       title: 'Assignments',
                       href: '/admin/assignments',
                       icon: Beaker,
@@ -113,6 +121,21 @@ export function AppSidebar() {
               ]
             : []),
     ];
+
+    const labCatalogNavItems: NavItem[] = isAdmin
+        ? [
+              {
+                  title: 'Packages',
+                  href: '/admin/packages',
+                  icon: PackageOpen,
+              },
+              {
+                  title: 'Result panels',
+                  href: '/admin/result-panels',
+                  icon: FileStack,
+              },
+          ]
+        : [];
 
     const documentNavItems: NavItem[] = isAdmin
         ? [
@@ -150,6 +173,7 @@ export function AppSidebar() {
 
             <SidebarContent>
                 <NavMain items={mainNavItems} />
+                <NavMain items={labCatalogNavItems} label="Lab catalog" />
                 <NavMain items={documentNavItems} label="Document Control" />
             </SidebarContent>
 

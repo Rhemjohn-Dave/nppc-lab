@@ -1,5 +1,5 @@
-import { Head, Link, usePage } from '@inertiajs/react';
-import RequestForAnalysisForm from '@/components/request-for-analysis-form';
+import { Head, Link } from '@inertiajs/react';
+import LimsWorkspace from '@/components/lims/lims-workspace';
 import type { RequestForAnalysisData } from '@/components/request-for-analysis-form';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,13 +14,12 @@ type Props = {
 };
 
 export default function HistoryShow({ jobOrder, canSign }: Props) {
-    const { flash } = usePage().props as { flash?: { success?: string } };
     const isSigned = Boolean(jobOrder.is_signed || jobOrder.reviewed_at);
 
     return (
         <>
             <Head title={`History ${jobOrder.reference_no}`} />
-            <div className="flex flex-col gap-5 p-4">
+            <LimsWorkspace>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <Button
@@ -54,11 +53,6 @@ export default function HistoryShow({ jobOrder, canSign }: Props) {
                                 ? ` · ${jobOrder.company_name}`
                                 : ''}
                         </p>
-                        {flash?.success && (
-                            <p className="mt-2 text-sm text-emerald-700">
-                                {flash.success}
-                            </p>
-                        )}
                     </div>
                     <div className="flex flex-wrap gap-2">
                         <Button asChild variant="outline">
@@ -131,19 +125,17 @@ export default function HistoryShow({ jobOrder, canSign }: Props) {
                             Official Request for Analysis
                         </h2>
                         <p className="text-xs text-muted-foreground">
-                            Read-only archive view with analyst results and
+                            Controlled-form PDF with analyst results and
                             preserved provenance.
                         </p>
                     </div>
-                    <div className="p-4">
-                        <RequestForAnalysisForm
-                            jobOrder={jobOrder}
-                            showResults
-                            showPrintButton={false}
-                        />
-                    </div>
+                    <iframe
+                        title={`RFA ${jobOrder.reference_no}`}
+                        src={`/history/${jobOrder.id}/pdf?inline=1`}
+                        className="h-[min(80vh,1100px)] w-full bg-white"
+                    />
                 </div>
-            </div>
+            </LimsWorkspace>
         </>
     );
 }

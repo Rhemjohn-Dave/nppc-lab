@@ -1,4 +1,5 @@
 import AppLayoutTemplate from '@/layouts/app/app-sidebar-layout';
+import { InertiaNavigationProvider } from '@/hooks/use-inertia-navigation';
 import type { BreadcrumbItem } from '@/types';
 
 export default function AppLayout({
@@ -9,8 +10,10 @@ export default function AppLayout({
     children: React.ReactNode;
 }) {
     return (
-        <AppLayoutTemplate breadcrumbs={breadcrumbs}>
-            {children}
-        </AppLayoutTemplate>
+        <InertiaNavigationProvider>
+            <AppLayoutTemplate breadcrumbs={breadcrumbs}>
+                {children}
+            </AppLayoutTemplate>
+        </InertiaNavigationProvider>
     );
 }

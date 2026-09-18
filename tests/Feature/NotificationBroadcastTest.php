@@ -47,7 +47,9 @@ class NotificationBroadcastTest extends TestCase
 
         $this->assertSame('/receiving/'.$job->id, $submitted->toArray($user)['href']);
         $this->assertSame('/analyst?job='.$job->id, $assigned->toArray($user)['href']);
+        $this->assertStringContainsString('suggested for you', $assigned->toArray($user)['message']);
         $this->assertSame('/head/'.$job->id, $pending->toArray($user)['href']);
+        $this->assertSame('job_order_pending_review', $pending->toArray($user)['type']);
     }
 
     public function test_private_user_channel_callback_allows_only_the_owner(): void

@@ -20,14 +20,19 @@ export type AnalystTask = {
     status: string;
     status_label: string;
     result_value?: string | null;
+    result_pass_fail?: string | null;
     result_measurement?: string | null;
     result_unit?: string | null;
     result_remarks?: string | null;
+    result_method?: string | null;
+    procedure_method?: string | null;
     result_mode?: 'value' | 'pass_fail';
+    requires_pass_fail?: boolean;
     updated_at?: string | null;
     assigned_to?: number | null;
     assignee_name?: string | null;
     is_mine?: boolean;
+    can_work?: boolean;
     report: ReportSummary;
     job_order: {
         id: number;
@@ -45,6 +50,15 @@ export type AnalystTask = {
     };
 };
 
+export type ResultSignatoryConfig = {
+    slots: number;
+    require_prc: boolean;
+    confirmed: boolean;
+    can_edit?: boolean;
+    signatories: Array<{ name: string; prc_id: string | null }>;
+    save_url?: string | null;
+};
+
 export type Consolidation = {
     id: number;
     reference_no: string;
@@ -55,6 +69,7 @@ export type Consolidation = {
     preview_message?: string | null;
     missing: string[];
     review_notes?: string | null;
+    signatory?: ResultSignatoryConfig | null;
     lines: Array<{
         id: number;
         name: string;
@@ -70,8 +85,12 @@ export type ReleasedPrint = {
     id: number;
     reference_no: string;
     customer_name: string;
+    job_status?: string;
     can_print: boolean;
+    can_preview?: boolean;
     print_url: string | null;
+    preview_url?: string | null;
+    signatory?: ResultSignatoryConfig | null;
 };
 
 export type JobGroup = {
@@ -121,13 +140,17 @@ export function statusDisplay(status: string): { icon: string; label: string } {
 
 export function encodedResultLabel(task: {
     result_value?: string | null;
+    result_pass_fail?: string | null;
     result_measurement?: string | null;
     result_unit?: string | null;
 }): string {
-    return [task.result_value, task.result_measurement, task.result_unit]
+    const measured = [task.result_value, task.result_unit]
         .map((part) => (part ?? '').trim())
         .filter(Boolean)
         .join(' ');
+    const passFail = (task.result_pass_fail ?? '').trim();
+
+    return [measured, passFail].filter(Boolean).join(' · ');
 }
 
 export function taskActionLabel(task: AnalystTask): string {
@@ -136,7 +159,7 @@ export function taskActionLabel(task: AnalystTask): string {
     }
 
     if (task.status === 'completed') {
-        return 'View result';
+        return canWorkTask(task) ? 'Edit result' : 'View result';
     }
 
     if (task.status === 'in_progress' || task.result_value) {
@@ -146,8 +169,20 @@ export function taskActionLabel(task: AnalystTask): string {
     return 'Enter result';
 }
 
+export function canWorkTask(task: AnalystTask): boolean {
+    if (task.can_work !== undefined) {
+        return task.can_work;
+    }
+
+    return task.is_mine !== false;
+}
+
 export function mineTasks(tasks: AnalystTask[]): AnalystTask[] {
     return tasks.filter((t) => t.is_mine !== false);
+}
+
+export function workableTasks(tasks: AnalystTask[]): AnalystTask[] {
+    return tasks.filter((t) => canWorkTask(t));
 }
 
 export function jobProgress(tasks: AnalystTask[]): {
@@ -155,7 +190,7 @@ export function jobProgress(tasks: AnalystTask[]): {
     total: number;
     percent: number;
 } {
-    const scope = mineTasks(tasks);
+    const scope = workableTasks(tasks);
     const total = scope.length;
     const done = scope.filter((t) => t.status === 'completed').length;
 
@@ -170,7 +205,7 @@ export function jobAggregateStatus(tasks: AnalystTask[]): {
     key: string;
     label: string;
 } {
-    const scope = mineTasks(tasks);
+    const scope = workableTasks(tasks);
 
     if (scope.some((t) => t.status === 'returned')) {
         return { key: 'returned', label: 'Returned' };
@@ -206,7 +241,7 @@ export function jobMetaLine(job: AnalystTask['job_order']): string {
 
 export function actionableTasks(tasks: AnalystTask[]): AnalystTask[] {
     return tasks.filter(
-        (t) => t.is_mine !== false && t.status !== 'completed',
+        (t) => canWorkTask(t) && t.status !== 'completed',
     );
 }
 

@@ -1,5 +1,5 @@
 import AnalystStatusBadge from '@/components/analyst/analyst-status-badge';
-import type { AnalystTask } from '@/components/analyst/types';
+import type { AnalystTask, Consolidation } from '@/components/analyst/types';
 import {
     actionableTasks,
     jobAggregateStatus,
@@ -8,14 +8,19 @@ import {
     taskActionLabel,
 } from '@/components/analyst/types';
 import { Button } from '@/components/ui/button';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronRight, MoreHorizontal } from 'lucide-react';
+import {
+    ChevronDown,
+    ChevronRight,
+    ClipboardPen,
+    Eye,
+    FileText,
+    Play,
+    RotateCcw,
+    ScanSearch,
+    Send,
+    type LucideIcon,
+} from 'lucide-react';
 import { Fragment } from 'react';
 
 type EmptyCopy = {
@@ -32,10 +37,12 @@ type Props = {
     groups: JobGroup[];
     expandedIds: Set<number>;
     empty: EmptyCopy;
+    consolidationsById: Map<number, Consolidation>;
     onToggleExpand: (jobId: number) => void;
     onOpenJobDetails: (jobId: number) => void;
     onOpenTask: (task: AnalystTask) => void;
     onPreview: (url: string) => void;
+    onSendToHead: (jobId: number) => void;
 };
 
 function assigneeLabel(task: AnalystTask): string {
@@ -44,20 +51,49 @@ function assigneeLabel(task: AnalystTask): string {
     }
 
     if (task.assignee_name) {
-        return `Assigned to ${task.assignee_name}`;
+        return `Suggested: ${task.assignee_name}`;
     }
 
     return 'Unassigned';
+}
+
+function taskActionIcon(task: AnalystTask): LucideIcon {
+    const label = taskActionLabel(task);
+
+    switch (label) {
+        case 'Correct result':
+            return RotateCcw;
+        case 'View result':
+            return Eye;
+        case 'Continue':
+            return Play;
+        default:
+            return ClipboardPen;
+    }
+}
+
+function TaskActionContent({ task }: { task: AnalystTask }) {
+    const Icon = taskActionIcon(task);
+    const label = taskActionLabel(task);
+
+    return (
+        <>
+            <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+            {label}
+        </>
+    );
 }
 
 export default function AnalystWorkQueueTable({
     groups,
     expandedIds,
     empty,
+    consolidationsById,
     onToggleExpand,
     onOpenJobDetails,
     onOpenTask,
     onPreview,
+    onSendToHead,
 }: Props) {
     if (groups.length === 0) {
         return (
@@ -74,19 +110,19 @@ export default function AnalystWorkQueueTable({
                 <table className="w-full min-w-[640px] border-collapse text-sm">
                     <thead className="sticky top-0 z-10 bg-[#f8fafc] shadow-[0_1px_0_0_rgb(226_232_240)]">
                         <tr className="text-left text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                            <th className="px-3 py-2.5 font-semibold">
+                            <th className="px-2.5 py-2 font-semibold">
                                 Job Order
                             </th>
-                            <th className="px-3 py-2.5 font-semibold">
+                            <th className="px-2.5 py-2 font-semibold">
                                 Customer
                             </th>
-                            <th className="px-3 py-2.5 font-semibold">
+                            <th className="px-2.5 py-2 font-semibold">
                                 Progress
                             </th>
-                            <th className="px-3 py-2.5 font-semibold">
+                            <th className="px-2.5 py-2 font-semibold">
                                 Status
                             </th>
-                            <th className="px-3 py-2.5 text-right font-semibold">
+                            <th className="px-2.5 py-2 text-right font-semibold">
                                 Action
                             </th>
                         </tr>
@@ -104,6 +140,21 @@ export default function AnalystWorkQueueTable({
                             const hasReturnedMine = openMine.some(
                                 (t) => t.status === 'returned',
                             );
+                            const consolidation = consolidationsById.get(
+                                job.id,
+                            );
+                            const canSendToHead = Boolean(
+                                consolidation?.can_submit,
+                            );
+                            const previewUrl = consolidation?.preview_url
+                                ? consolidation.preview_url
+                                : tasks[0]?.report?.can_preview
+                                  ? `/analyst/tasks/${tasks[0].id}/report`
+                                  : null;
+                            const canPreview = Boolean(
+                                consolidation?.can_preview ||
+                                    tasks[0]?.report?.can_preview,
+                            );
 
                             return (
                                 <Fragment key={job.id}>
@@ -116,7 +167,7 @@ export default function AnalystWorkQueueTable({
                                         )}
                                         onClick={() => onToggleExpand(job.id)}
                                     >
-                                        <td className="h-12 px-3 py-1.5 align-middle">
+                                        <td className="px-2.5 py-1 align-middle">
                                             <div className="flex items-center gap-1.5">
                                                 {expanded ? (
                                                     <ChevronDown className="size-4 shrink-0 text-slate-500" />
@@ -134,7 +185,7 @@ export default function AnalystWorkQueueTable({
                                                 </span>
                                             </div>
                                         </td>
-                                        <td className="h-12 max-w-[14rem] px-3 py-1.5 align-middle">
+                                        <td className="max-w-[14rem] px-2.5 py-1 align-middle">
                                             <p className="truncate text-slate-800">
                                                 {job.customer_name}
                                             </p>
@@ -142,12 +193,12 @@ export default function AnalystWorkQueueTable({
                                                 {jobMetaLine(job)}
                                             </p>
                                         </td>
-                                        <td className="h-12 min-w-[8rem] px-3 py-1.5 align-middle">
+                                        <td className="min-w-[8rem] px-2.5 py-1 align-middle">
                                             <p className="text-xs text-slate-600">
                                                 {progress.done} /{' '}
                                                 {progress.total} yours
                                             </p>
-                                            <div className="mt-1 h-1.5 max-w-[7rem] overflow-hidden rounded-full bg-slate-100">
+                                            <div className="mt-0.5 h-1.5 max-w-[7rem] overflow-hidden rounded-full bg-slate-100">
                                                 <div
                                                     className={cn(
                                                         'h-full rounded-full',
@@ -161,73 +212,85 @@ export default function AnalystWorkQueueTable({
                                                 />
                                             </div>
                                         </td>
-                                        <td className="h-12 px-3 py-1.5 align-middle">
+                                        <td className="px-2.5 py-1 align-middle">
                                             <AnalystStatusBadge
                                                 status={aggregate.key}
                                                 label={aggregate.label}
                                             />
                                         </td>
-                                        <td className="h-12 px-3 py-1.5 align-middle">
+                                        <td className="px-2.5 py-1 align-middle">
                                             <div
                                                 className="flex items-center justify-end gap-1"
                                                 onClick={(event) =>
                                                     event.stopPropagation()
                                                 }
                                             >
-                                                {primaryTask && (
+                                                {canSendToHead ? (
                                                     <Button
                                                         size="sm"
-                                                        className="h-8 bg-[#1A3694] hover:bg-[#365BB0]"
+                                                        className="h-7 gap-1.5 bg-[#1A3694] hover:bg-[#365BB0]"
                                                         onClick={() =>
-                                                            onOpenTask(
-                                                                primaryTask,
-                                                            )
+                                                            onSendToHead(job.id)
                                                         }
                                                     >
-                                                        {taskActionLabel(
-                                                            primaryTask,
-                                                        )}
+                                                        <Send
+                                                            className="size-3.5 shrink-0"
+                                                            aria-hidden="true"
+                                                        />
+                                                        Send to Head
                                                     </Button>
-                                                )}
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger
-                                                        asChild
-                                                    >
+                                                ) : (
+                                                    primaryTask && (
                                                         <Button
-                                                            type="button"
-                                                            size="icon"
-                                                            variant="ghost"
-                                                            className="h-8 w-8"
-                                                            aria-label="More actions"
-                                                        >
-                                                            <MoreHorizontal className="size-4" />
-                                                        </Button>
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end">
-                                                        <DropdownMenuItem
+                                                            size="sm"
+                                                            className="h-7 gap-1.5 bg-[#1A3694] hover:bg-[#365BB0]"
                                                             onClick={() =>
-                                                                onOpenJobDetails(
-                                                                    job.id,
+                                                                onOpenTask(
+                                                                    primaryTask,
                                                                 )
                                                             }
                                                         >
-                                                            View Job Order
-                                                            details
-                                                        </DropdownMenuItem>
-                                                        {tasks[0]?.report
-                                                            ?.can_preview && (
-                                                            <DropdownMenuItem
-                                                                onClick={() =>
-                                                                    onPreview(
-                                                                        `/analyst/tasks/${tasks[0].id}/report`,
-                                                                    )
+                                                            <TaskActionContent
+                                                                task={
+                                                                    primaryTask
                                                                 }
-                                                            >
-                                                                Preview report
-                                                            </DropdownMenuItem>
-                                                        )}
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
+                                                            />
+                                                        </Button>
+                                                    )
+                                                )}
+                                                {canPreview && previewUrl && (
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="h-7 gap-1.5"
+                                                        onClick={() =>
+                                                            onPreview(
+                                                                previewUrl,
+                                                            )
+                                                        }
+                                                    >
+                                                        <ScanSearch
+                                                            className="size-3.5 shrink-0"
+                                                            aria-hidden="true"
+                                                        />
+                                                        Preview report
+                                                    </Button>
+                                                )}
+                                                <Button
+                                                    type="button"
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    className="h-7 w-7"
+                                                    aria-label="View Job Order details"
+                                                    onClick={() =>
+                                                        onOpenJobDetails(
+                                                            job.id,
+                                                        )
+                                                    }
+                                                >
+                                                    <FileText className="size-4" />
+                                                </Button>
                                             </div>
                                         </td>
                                     </tr>
@@ -243,6 +306,11 @@ export default function AnalystWorkQueueTable({
                                                         const mine =
                                                             task.is_mine !==
                                                             false;
+                                                        const canWork =
+                                                            task.can_work !==
+                                                            undefined
+                                                                ? task.can_work
+                                                                : mine;
                                                         const done =
                                                             task.status ===
                                                             'completed';
@@ -254,9 +322,9 @@ export default function AnalystWorkQueueTable({
                                                                     'flex flex-wrap items-center justify-between gap-2 px-3 py-2.5',
                                                                     task.status ===
                                                                         'returned' &&
-                                                                        mine &&
+                                                                        canWork &&
                                                                         'bg-amber-50/70',
-                                                                    !mine &&
+                                                                    !canWork &&
                                                                         'opacity-90',
                                                                 )}
                                                             >
@@ -280,7 +348,7 @@ export default function AnalystWorkQueueTable({
                                                                                 task,
                                                                             )}
                                                                         </span>
-                                                                        {mine &&
+                                                                        {canWork &&
                                                                             task.status ===
                                                                                 'returned' &&
                                                                             job.review_notes && (
@@ -291,11 +359,11 @@ export default function AnalystWorkQueueTable({
                                                                             )}
                                                                     </div>
                                                                 </div>
-                                                                {mine ? (
+                                                                {canWork ? (
                                                                     <Button
                                                                         size="sm"
                                                                         className={cn(
-                                                                            'h-8 shrink-0',
+                                                                            'h-8 shrink-0 gap-1.5',
                                                                             !done &&
                                                                                 'bg-[#1A3694] hover:bg-[#365BB0]',
                                                                         )}
@@ -310,9 +378,11 @@ export default function AnalystWorkQueueTable({
                                                                             )
                                                                         }
                                                                     >
-                                                                        {taskActionLabel(
-                                                                            task,
-                                                                        )}
+                                                                        <TaskActionContent
+                                                                            task={
+                                                                                task
+                                                                            }
+                                                                        />
                                                                     </Button>
                                                                 ) : (
                                                                     <span className="shrink-0 text-xs text-muted-foreground">

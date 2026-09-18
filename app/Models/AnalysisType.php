@@ -11,11 +11,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $id
  * @property string $code
  * @property string $name
+ * @property string|null $method
+ * @property string|null $acceptable_values
  * @property int $category_id
  * @property string $default_price
  * @property bool $is_active
  * @property bool $show_on_kiosk
  * @property string $result_mode
+ * @property string $catalog_scope
  * @property int $sort_order
  * @property-read AnalysisCategory $category
  */
@@ -24,11 +27,14 @@ class AnalysisType extends Model
     protected $fillable = [
         'code',
         'name',
+        'method',
+        'acceptable_values',
         'category_id',
         'default_price',
         'is_active',
         'show_on_kiosk',
         'result_mode',
+        'catalog_scope',
         'sort_order',
     ];
 

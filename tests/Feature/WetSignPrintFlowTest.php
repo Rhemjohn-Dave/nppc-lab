@@ -6,6 +6,7 @@ use App\Enums\ControlledFormCategory;
 use App\Enums\JobOrderStatus;
 use App\Models\AnalysisPackage;
 use App\Models\AnalysisType;
+use App\Models\ControlledForm;
 use App\Models\JobOrder;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -19,7 +20,7 @@ class WetSignPrintFlowTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_official_result_print_waits_for_head_release_and_rfa_reprint_waits_for_review(): void
+    public function test_jo_print_unlocks_after_head_jo_approval_and_result_print_waits_for_release(): void
     {
         Mail::fake();
         Storage::fake('local');
@@ -43,6 +44,19 @@ class WetSignPrintFlowTest extends TestCase
                 'activate' => 1,
                 'fill_mode' => 'overlay',
                 'analysis_type_ids' => [$total->id, $thermo->id],
+            ])
+            ->assertRedirect();
+
+        $rfaForm = ControlledForm::query()
+            ->where('form_code', ControlledForm::RFA_FORM_CODE)
+            ->firstOrFail();
+
+        $this->actingAs($admin)
+            ->post("/admin/controlled-forms/{$rfaForm->id}/revisions", [
+                'revision' => '11',
+                'file' => $this->makeBlankResultPdf(),
+                'activate' => 1,
+                'fill_mode' => 'overlay',
             ])
             ->assertRedirect();
 
@@ -72,9 +86,29 @@ class WetSignPrintFlowTest extends TestCase
             ])
             ->assertRedirect();
 
+        $this->assertSame(JobOrderStatus::PendingJoApproval, $job->fresh()->status);
+
         $this->actingAs($receiving)
             ->get("/receiving/{$job->id}/print")
             ->assertForbidden();
+
+        $this->actingAs($receiving)
+            ->post("/receiving/{$job->id}/receive")
+            ->assertSessionHasErrors('job_order');
+
+        $this->approveJobOrder($job);
+
+        $this->assertSame(JobOrderStatus::JoApproved, $job->fresh()->status);
+
+        $this->actingAs($receiving)
+            ->get("/receiving/{$job->id}/print?copies=3")
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('rfa/print')
+                ->where('copies', 3)
+                ->where('copyLabels.0', 'Customer copy')
+                ->where('copyLabels.1', 'Accounting copy')
+                ->where('copyLabels.2', 'Head file copy'));
 
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
@@ -82,16 +116,23 @@ class WetSignPrintFlowTest extends TestCase
 
         $this->actingAs($receiving)
             ->get("/receiving/{$job->id}/print")
-            ->assertForbidden();
+            ->assertOk();
 
         $this->actingAs($head)
             ->get("/head/{$job->id}/print")
             ->assertForbidden();
 
+        $this->actingAs($head)
+            ->get("/head/{$job->id}/pdf?inline=1&results=1")
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
+
         foreach ($job->fresh()->analyses()->with('assignee')->get() as $line) {
             $this->actingAs($line->assignee ?? $signatory)
                 ->post("/analyst/tasks/{$line->id}/complete", [
-                    'result_value' => 'Passed',
+                    'result_value' => 'ND',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method'
                 ])
                 ->assertRedirect();
         }
@@ -113,16 +154,47 @@ class WetSignPrintFlowTest extends TestCase
             ->assertForbidden();
 
         $this->actingAs($signatory)
-            ->post("/analyst/job-orders/{$job->id}/submit-for-review")
+            ->post("/analyst/job-orders/{$job->id}/submit-for-review", [
+                'signatories' => [
+                    ['name' => $signatory->name, 'prc_id' => null],
+                ],
+            ])
             ->assertRedirect();
 
         $this->actingAs($head)
+            ->getJson("/head/{$job->id}/result-report")
+            ->assertOk()
+            ->assertJsonPath('can_preview', true)
+            ->assertJsonPath('can_print', false)
+            ->assertJsonPath('pdf_url', "/head/{$job->id}/combined-pdf");
+
+        $this->actingAs($head)
+            ->get("/head/{$job->id}/combined-pdf")
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
+
+        $this->actingAs($head)
+            ->get("/head/{$job->id}/combined-pdf?print=1")
+            ->assertForbidden();
+
+        $this->actingAs($head)
             ->post("/head/{$job->id}/sign")
-            ->assertRedirect('/head');
+            ->assertRedirect('/head/results?tab=unsigned');
 
         $job->refresh();
         $this->assertSame(JobOrderStatus::ReadyForPickup, $job->status);
         $this->assertNotNull($job->reviewed_at);
+
+        $this->actingAs($head)
+            ->getJson("/head/{$job->id}/result-report")
+            ->assertOk()
+            ->assertJsonPath('can_preview', true)
+            ->assertJsonPath('can_print', true);
+
+        $this->actingAs($head)
+            ->get("/head/{$job->id}/combined-pdf?print=1")
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
 
         $this->actingAs($signatory)
             ->getJson("/analyst/tasks/{$previewLine->id}/report")
@@ -156,7 +228,9 @@ class WetSignPrintFlowTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('rfa/print')
-                ->where('copies', 3));
+                ->where('copies', 3)
+                ->where('pdfUrl', "/receiving/{$job->id}/pdf?inline=1")
+                ->where('showResults', false));
 
         $this->actingAs($head)
             ->get("/head/{$job->id}/print")
@@ -171,7 +245,7 @@ class WetSignPrintFlowTest extends TestCase
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
         $head = User::where('email', 'head@nppc.local')->firstOrFail();
-        $type = AnalysisType::query()->where('code', 'PC-07')->firstOrFail();
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
 
         $this->post('/intake/job-orders', [
             'customer_name' => 'Pickup Status Customer',
@@ -194,19 +268,23 @@ class WetSignPrintFlowTest extends TestCase
             ])
             ->assertRedirect();
 
+        $this->approveJobOrder($job);
+
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
 
         $this->actingAs($receiving)
             ->get("/receiving/{$job->id}/print")
-            ->assertForbidden();
+            ->assertOk();
 
         $this->assertNotSame(JobOrderStatus::ReadyForPickup, $job->fresh()->status);
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
                 'result_value' => '1.0',
+                    'result_pass_fail' => 'Passed',
+                    'result_method' => 'Standard Method',
             ])
             ->assertRedirect();
 
@@ -216,7 +294,7 @@ class WetSignPrintFlowTest extends TestCase
 
         $this->actingAs($head)
             ->post("/head/{$job->id}/sign")
-            ->assertRedirect('/head');
+            ->assertRedirect('/head/results?tab=unsigned');
 
         $this->assertSame(JobOrderStatus::ReadyForPickup, $job->fresh()->status);
     }
