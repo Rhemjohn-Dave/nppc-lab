@@ -34,7 +34,11 @@ class AppServiceProvider extends ServiceProvider
     {
         Date::use(CarbonImmutable::class);
 
-        if ($this->app->isProduction()) {
+        // Only force HTTPS when the configured public URL is HTTPS.
+        // LAN installs (http://192.168.x.x) must not force https or cookies/CSRF break (419).
+        if ($this->app->isProduction()
+            && str_starts_with((string) config('app.url'), 'https://')
+        ) {
             URL::forceScheme('https');
         }
 
