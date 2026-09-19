@@ -1,8 +1,17 @@
 import { Head, Link, useForm } from '@inertiajs/react';
-import LimsWorkspace from '@/components/lims/lims-workspace';
-import { Plus, Search } from 'lucide-react';
-import { useState } from 'react';
+import {
+    Check,
+    Copy,
+    LayoutGrid,
+    List,
+    MoreHorizontal,
+    Plus,
+    Search,
+    X,
+} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import AnalysisTypePicker from '@/components/analysis-type-picker';
+import LimsWorkspace from '@/components/lims/lims-workspace';
 import PackageSelect, {
     type AnalysisPackageOption,
 } from '@/components/package-select';
@@ -16,6 +25,12 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -24,6 +39,7 @@ import {
     type AnalysisGroup,
     type ControlledFormSummary,
 } from '@/lib/controlled-forms';
+import { cn } from '@/lib/utils';
 
 type Props = {
     forms: ControlledFormSummary[];
@@ -31,6 +47,147 @@ type Props = {
     analysisGroups: AnalysisGroup[];
     packages?: AnalysisPackageOption[];
 };
+
+type ViewMode = 'table' | 'grid';
+
+const WORKFLOW_DISMISS_KEY = 'nppc.cf.workflowBanner.dismissed';
+
+const STATUS_FILTERS = [
+    { value: 'all', label: 'All statuses' },
+    { value: 'active', label: 'Active only' },
+    { value: 'draft', label: 'Draft' },
+    { value: 'for_review', label: 'For review' },
+    { value: 'for_approval', label: 'For approval' },
+    { value: 'approved', label: 'Approved' },
+    { value: 'superseded', label: 'Superseded' },
+    { value: 'archived', label: 'Archived' },
+] as const;
+
+const WORKFLOW_STEPS = [
+    {
+        step: '01',
+        title: 'Upload Master PDF',
+        description: 'Import the official QA/QC signed PDF or DOCX file.',
+        highlight: false,
+    },
+    {
+        step: '02',
+        title: 'Map Canvas Fields',
+        description: 'Place dynamic database coordinate bindings in Form Designer.',
+        highlight: false,
+    },
+    {
+        step: '03',
+        title: 'Preview Mock Data',
+        description: 'Verify alignment with sample analytical runs before go-live.',
+        highlight: false,
+    },
+    {
+        step: '04',
+        title: 'Activate & Release',
+        description: 'Promote the revision into operations and bind to receiving tests.',
+        highlight: true,
+    },
+] as const;
+
+async function copyFormCode(code: string): Promise<void> {
+    try {
+        await navigator.clipboard.writeText(code);
+    } catch {
+        // Clipboard may be unavailable in some browsers; ignore quietly.
+    }
+}
+
+function FormRowActions({ item }: { item: ControlledFormSummary }) {
+    return (
+        <div className="flex items-center justify-end gap-1.5">
+            <Button variant="outline" size="sm" asChild>
+                <Link href={`/admin/controlled-forms/${item.id}`}>Open</Link>
+            </Button>
+            {item.current_revision ? (
+                <Button
+                    size="sm"
+                    className="bg-[#1A3694] hover:bg-[#365BB0]"
+                    asChild
+                >
+                    <Link
+                        href={`/admin/controlled-forms/${item.id}/revisions/${item.current_revision.id}/designer`}
+                    >
+                        Designer
+                    </Link>
+                </Button>
+            ) : null}
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="size-8 px-0"
+                        aria-label={`More actions for ${item.form_code}`}
+                    >
+                        <MoreHorizontal className="size-4" />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                        onSelect={() => {
+                            void copyFormCode(item.form_code);
+                        }}
+                    >
+                        <Copy className="size-3.5" />
+                        Copy form code
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+        </div>
+    );
+}
+
+function FormCodeChip({ code }: { code: string }) {
+    return (
+        <div className="group/code flex items-center gap-1.5">
+            <span className="rounded border bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-800">
+                {code}
+            </span>
+            <button
+                type="button"
+                title="Copy form code"
+                className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity group-hover/code:opacity-100 hover:text-slate-700"
+                onClick={() => {
+                    void copyFormCode(code);
+                }}
+            >
+                <Copy className="size-3.5" />
+            </button>
+        </div>
+    );
+}
+
+function FormTitleCell({ item }: { item: ControlledFormSummary }) {
+    const fieldCount = item.current_revision?.field_count ?? 0;
+
+    return (
+        <div>
+            <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-medium text-slate-900">{item.name}</span>
+                {fieldCount > 0 ? (
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+                        {fieldCount} field{fieldCount === 1 ? '' : 's'} mapped
+                    </span>
+                ) : null}
+            </div>
+            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span
+                    aria-hidden="true"
+                    className="size-1.5 rounded-full bg-[#365BB0]"
+                />
+                {item.category_label}
+                {item.department ? ` · ${item.department}` : ''}
+            </p>
+        </div>
+    );
+}
 
 export default function ControlledFormsIndex({
     forms,
@@ -40,6 +197,12 @@ export default function ControlledFormsIndex({
 }: Props) {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<string>('all');
+    const [categoryFilter, setCategoryFilter] = useState<string>('all');
+    const [viewMode, setViewMode] = useState<ViewMode>('table');
+    const [pageSize, setPageSize] = useState(10);
+    const [page, setPage] = useState(1);
+    const [workflowDismissed, setWorkflowDismissed] = useState(false);
 
     const form = useForm({
         form_code: 'NPPC-LAB-FRM-001',
@@ -57,25 +220,90 @@ export default function ControlledFormsIndex({
         analysis_package_id: '' as number | '',
     });
 
-    const filtered = forms.filter((item) => {
-        const haystack = `${item.form_code} ${item.name} ${item.status_label}`.toLowerCase();
+    useEffect(() => {
+        try {
+            setWorkflowDismissed(
+                window.localStorage.getItem(WORKFLOW_DISMISS_KEY) === '1',
+            );
+        } catch {
+            setWorkflowDismissed(false);
+        }
+    }, []);
 
-        return haystack.includes(query.toLowerCase());
-    });
+    const statusCounts = useMemo(() => {
+        let active = 0;
+        let pendingQa = 0;
+        for (const item of forms) {
+            if (item.status === 'active') {
+                active += 1;
+            }
+            if (item.status === 'for_review' || item.status === 'for_approval') {
+                pendingQa += 1;
+            }
+        }
+        return { active, pendingQa, total: forms.length };
+    }, [forms]);
+
+    const filtered = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        return forms.filter((item) => {
+            if (statusFilter !== 'all' && item.status !== statusFilter) {
+                return false;
+            }
+            if (categoryFilter !== 'all' && item.category !== categoryFilter) {
+                return false;
+            }
+            if (!q) {
+                return true;
+            }
+            const haystack = [
+                item.form_code,
+                item.name,
+                item.status_label,
+                item.category_label,
+                item.department ?? '',
+            ]
+                .join(' ')
+                .toLowerCase();
+            return haystack.includes(q);
+        });
+    }, [forms, query, statusFilter, categoryFilter]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [query, statusFilter, categoryFilter, pageSize]);
+
+    const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+    const currentPage = Math.min(page, pageCount);
+    const pageStart = filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+    const pageEnd = Math.min(currentPage * pageSize, filtered.length);
+    const paged = filtered.slice(
+        (currentPage - 1) * pageSize,
+        currentPage * pageSize,
+    );
+
+    function dismissWorkflow() {
+        setWorkflowDismissed(true);
+        try {
+            window.localStorage.setItem(WORKFLOW_DISMISS_KEY, '1');
+        } catch {
+            // Ignore storage failures.
+        }
+    }
 
     return (
         <>
             <Head title="Controlled Forms" />
-            <LimsWorkspace>
+            <LimsWorkspace className="gap-2.5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
+                    <div className="min-w-0 max-w-2xl">
                         <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                            Document Control
+                            Controlled Forms &amp; Blueprints
                         </h1>
-                        <p className="text-sm text-muted-foreground">
-                            Upload approved PDFs, map database fields, and
-                            generate official laboratory documents without
-                            redrawing the form.
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            Manage approved ISO/IEC 17025 laboratory templates,
+                            configure PDF field coordinate bindings, and track
+                            document lifecycles without redrawing forms.
                         </p>
                     </div>
                     <Button
@@ -87,122 +315,393 @@ export default function ControlledFormsIndex({
                     </Button>
                 </div>
 
-                <div className="grid gap-3 lg:grid-cols-4">
-                    {[
-                        ['1', 'Upload', 'Add the approved PDF or Word file.'],
-                        ['2', 'Map', 'Place fields in the designer on top of the PDF.'],
-                        ['3', 'Preview', 'Check sample data before going live.'],
-                        ['4', 'Activate', 'Use the approved revision in operations.'],
-                    ].map(([step, title, description]) => (
-                        <div
-                            key={step}
-                            className="rounded-xl border bg-white p-4"
-                        >
-                            <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
-                                Step {step}
-                            </p>
-                            <p className="mt-2 font-medium text-slate-900">
-                                {title}
-                            </p>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                                {description}
-                            </p>
+                {!workflowDismissed ? (
+                    <section className="rounded-lg border bg-white px-3 py-2.5">
+                        <div className="mb-2 flex items-start justify-between gap-2 border-b pb-2">
+                            <div className="min-w-0">
+                                <p className="text-xs font-semibold text-slate-900">
+                                    Standard controlled form deployment workflow
+                                </p>
+                                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                    Compliant with ISO 17025 Section 8.3 — control
+                                    of management system documents
+                                </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                                <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                                    Production ready
+                                </span>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="size-7 px-0"
+                                    aria-label="Dismiss workflow banner"
+                                    onClick={dismissWorkflow}
+                                >
+                                    <X className="size-3.5" />
+                                </Button>
+                            </div>
                         </div>
-                    ))}
+                        <div className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-4">
+                            {WORKFLOW_STEPS.map((step) => (
+                                <div
+                                    key={step.step}
+                                    className={cn(
+                                        'rounded-md border px-2.5 py-2',
+                                        step.highlight
+                                            ? 'border-emerald-200 bg-emerald-50/40'
+                                            : 'border-slate-100 bg-slate-50/60',
+                                    )}
+                                >
+                                    <div className="mb-1 flex items-center justify-between gap-2">
+                                        <span
+                                            className={cn(
+                                                'font-mono text-[10px] font-semibold tracking-wider uppercase',
+                                                step.highlight
+                                                    ? 'text-emerald-700'
+                                                    : 'text-muted-foreground',
+                                            )}
+                                        >
+                                            Step {step.step}
+                                        </span>
+                                        <span
+                                            className={cn(
+                                                'flex size-5 items-center justify-center rounded-full text-[10px] font-bold',
+                                                step.highlight
+                                                    ? 'bg-emerald-600 text-white'
+                                                    : 'bg-slate-200 text-slate-700',
+                                            )}
+                                        >
+                                            {step.highlight ? (
+                                                <Check
+                                                    className="size-3"
+                                                    aria-hidden="true"
+                                                />
+                                            ) : (
+                                                step.step.replace(/^0/, '')
+                                            )}
+                                        </span>
+                                    </div>
+                                    <p
+                                        className={cn(
+                                            'text-xs font-semibold',
+                                            step.highlight
+                                                ? 'text-emerald-950'
+                                                : 'text-slate-900',
+                                        )}
+                                    >
+                                        {step.title}
+                                    </p>
+                                    <p
+                                        className={cn(
+                                            'mt-0.5 text-[11px] leading-relaxed',
+                                            step.highlight
+                                                ? 'text-emerald-800/80'
+                                                : 'text-muted-foreground',
+                                        )}
+                                    >
+                                        {step.description}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                ) : null}
+
+                <div className="space-y-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="relative max-w-md flex-1">
+                            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                className="h-8 pl-8 text-xs"
+                                placeholder="Search form code, title, test category…"
+                                value={query}
+                                onChange={(event) => setQuery(event.target.value)}
+                            />
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <select
+                                className="h-8 rounded-md border bg-white px-2 text-xs text-slate-700"
+                                value={statusFilter}
+                                onChange={(event) =>
+                                    setStatusFilter(event.target.value)
+                                }
+                                aria-label="Filter by status"
+                            >
+                                {STATUS_FILTERS.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                        {option.label}
+                                    </option>
+                                ))}
+                            </select>
+                            <select
+                                className="h-8 rounded-md border bg-white px-2 text-xs text-slate-700"
+                                value={categoryFilter}
+                                onChange={(event) =>
+                                    setCategoryFilter(event.target.value)
+                                }
+                                aria-label="Filter by category"
+                            >
+                                <option value="all">All divisions</option>
+                                {categories.map((category) => (
+                                    <option
+                                        key={category.value}
+                                        value={category.value}
+                                    >
+                                        {category.label}
+                                    </option>
+                                ))}
+                            </select>
+                            <div className="flex items-center rounded-md border bg-slate-50 p-0.5">
+                                <button
+                                    type="button"
+                                    title="Table view"
+                                    className={cn(
+                                        'rounded p-1.5',
+                                        viewMode === 'table'
+                                            ? 'bg-white text-[#1A3694] shadow-sm'
+                                            : 'text-muted-foreground hover:text-slate-800',
+                                    )}
+                                    aria-pressed={viewMode === 'table'}
+                                    onClick={() => setViewMode('table')}
+                                >
+                                    <List className="size-3.5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    title="Grid view"
+                                    className={cn(
+                                        'rounded p-1.5',
+                                        viewMode === 'grid'
+                                            ? 'bg-white text-[#1A3694] shadow-sm'
+                                            : 'text-muted-foreground hover:text-slate-800',
+                                    )}
+                                    aria-pressed={viewMode === 'grid'}
+                                    onClick={() => setViewMode('grid')}
+                                >
+                                    <LayoutGrid className="size-3.5" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-0.5 text-xs text-muted-foreground">
+                        <p>
+                            Showing{' '}
+                            <span className="font-medium text-slate-900">
+                                {filtered.length}
+                            </span>{' '}
+                            of {statusCounts.total} controlled form
+                            {statusCounts.total === 1 ? '' : 's'}
+                        </p>
+                        <div className="flex items-center gap-3">
+                            <span className="inline-flex items-center gap-1.5">
+                                <span
+                                    aria-hidden="true"
+                                    className="size-1.5 rounded-full bg-emerald-500"
+                                />
+                                {statusCounts.active} Active
+                            </span>
+                            <span className="inline-flex items-center gap-1.5">
+                                <span
+                                    aria-hidden="true"
+                                    className="size-1.5 rounded-full bg-amber-500"
+                                />
+                                {statusCounts.pendingQa} Pending QA
+                            </span>
+                        </div>
+                    </div>
                 </div>
 
-                <div className="relative max-w-md">
-                    <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                    <Input
-                        className="pl-8"
-                        placeholder="Search form code, name, or status"
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
-                    />
-                </div>
-
-                <div className="overflow-x-auto rounded-xl border">
-                    <table className="w-full min-w-[720px] text-sm">
-                        <thead className="bg-[#e8eef8] text-left text-[#1A3694]">
-                            <tr>
-                                <th className="px-3 py-2 font-medium">Form Code</th>
-                                <th className="px-3 py-2 font-medium">Form Name</th>
-                                <th className="px-3 py-2 font-medium">Revision</th>
-                                <th className="px-3 py-2 font-medium">Effective</th>
-                                <th className="px-3 py-2 font-medium">Status</th>
-                                <th className="px-3 py-2 font-medium">Updated</th>
-                                <th className="px-3 py-2 font-medium">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.map((item) => (
-                                <tr key={item.id} className="border-t">
-                                    <td className="px-3 py-2 font-mono text-xs">
-                                        {item.form_code}
-                                    </td>
-                                    <td className="px-3 py-2">
-                                        <div className="font-medium">{item.name}</div>
-                                        <div className="text-xs text-muted-foreground">
-                                            {item.category_label}
-                                            {item.department ? ` · ${item.department}` : ''}
-                                        </div>
-                                    </td>
-                                    <td className="px-3 py-2">
-                                        {item.current_revision?.revision ?? '—'}
-                                    </td>
-                                    <td className="px-3 py-2">
-                                        {item.current_revision?.effective_date ?? '—'}
-                                    </td>
-                                    <td className="px-3 py-2">
+                {viewMode === 'table' ? (
+                    <div className="overflow-hidden rounded-lg border bg-white">
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[720px] text-left text-xs">
+                                <thead className="border-b bg-slate-50/80 text-muted-foreground">
+                                    <tr>
+                                        <th className="px-3 py-2 font-medium">
+                                            Form code
+                                        </th>
+                                        <th className="px-3 py-2 font-medium">
+                                            Form title &amp; department
+                                        </th>
+                                        <th className="px-3 py-2 text-center font-medium">
+                                            Rev
+                                        </th>
+                                        <th className="px-3 py-2 font-medium">
+                                            Effective date
+                                        </th>
+                                        <th className="px-3 py-2 font-medium">
+                                            Status
+                                        </th>
+                                        <th className="px-3 py-2 font-medium">
+                                            Last updated
+                                        </th>
+                                        <th className="px-3 py-2 text-right font-medium">
+                                            Actions
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                    {paged.map((item) => (
+                                        <tr
+                                            key={item.id}
+                                            className="hover:bg-slate-50/70"
+                                        >
+                                            <td className="px-3 py-2.5 align-top whitespace-nowrap">
+                                                <FormCodeChip code={item.form_code} />
+                                            </td>
+                                            <td className="px-3 py-2.5 align-top">
+                                                <FormTitleCell item={item} />
+                                            </td>
+                                            <td className="px-3 py-2.5 text-center align-top">
+                                                <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                                                    {item.current_revision
+                                                        ?.revision ?? '—'}
+                                                </span>
+                                            </td>
+                                            <td className="px-3 py-2.5 align-top whitespace-nowrap text-slate-600">
+                                                {item.current_revision
+                                                    ?.effective_date ?? '—'}
+                                            </td>
+                                            <td className="px-3 py-2.5 align-top">
+                                                <Badge
+                                                    variant="outline"
+                                                    className={statusBadgeClass(
+                                                        item.status,
+                                                    )}
+                                                >
+                                                    <span
+                                                        aria-hidden="true"
+                                                        className="mr-1"
+                                                    >
+                                                        ●
+                                                    </span>
+                                                    {item.status_label}
+                                                </Badge>
+                                            </td>
+                                            <td className="px-3 py-2.5 align-top whitespace-nowrap text-muted-foreground">
+                                                <div>
+                                                    {item.updated_at
+                                                        ? new Date(
+                                                              item.updated_at,
+                                                          ).toLocaleString()
+                                                        : '—'}
+                                                </div>
+                                                {item.current_revision
+                                                    ?.created_by ? (
+                                                    <div className="text-[11px]">
+                                                        by{' '}
+                                                        {
+                                                            item.current_revision
+                                                                .created_by
+                                                        }
+                                                    </div>
+                                                ) : null}
+                                            </td>
+                                            <td className="px-3 py-2.5 align-top">
+                                                <FormRowActions item={item} />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {paged.length === 0 ? (
+                                        <tr>
+                                            <td
+                                                className="px-3 py-8 text-center text-muted-foreground"
+                                                colSpan={7}
+                                            >
+                                                No controlled forms match these
+                                                filters. Upload an official PDF to
+                                                start, or clear the search.
+                                            </td>
+                                        </tr>
+                                    ) : null}
+                                </tbody>
+                            </table>
+                        </div>
+                        <CatalogPagination
+                            pageStart={pageStart}
+                            pageEnd={pageEnd}
+                            total={filtered.length}
+                            pageSize={pageSize}
+                            currentPage={currentPage}
+                            pageCount={pageCount}
+                            onPageSizeChange={setPageSize}
+                            onPageChange={setPage}
+                        />
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                            {paged.map((item) => (
+                                <article
+                                    key={item.id}
+                                    className="rounded-lg border bg-white px-3 py-2.5"
+                                >
+                                    <div className="mb-2 flex items-start justify-between gap-2">
+                                        <FormCodeChip code={item.form_code} />
                                         <Badge
                                             variant="outline"
-                                            className={statusBadgeClass(item.status)}
+                                            className={statusBadgeClass(
+                                                item.status,
+                                            )}
                                         >
+                                            <span
+                                                aria-hidden="true"
+                                                className="mr-1"
+                                            >
+                                                ●
+                                            </span>
                                             {item.status_label}
                                         </Badge>
-                                    </td>
-                                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                                        {item.updated_at
-                                            ? new Date(item.updated_at).toLocaleString()
-                                            : '—'}
-                                    </td>
-                                    <td className="px-3 py-2">
-                                        <div className="flex flex-wrap gap-2">
-                                            <Button variant="outline" size="sm" asChild>
-                                                <Link
-                                                    href={`/admin/controlled-forms/${item.id}`}
-                                                >
-                                                    Open
-                                                </Link>
-                                            </Button>
-                                            {item.current_revision && (
-                                                <Button variant="outline" size="sm" asChild>
-                                                    <Link
-                                                        href={`/admin/controlled-forms/${item.id}/revisions/${item.current_revision.id}/designer`}
-                                                    >
-                                                        Designer
-                                                    </Link>
-                                                </Button>
-                                            )}
+                                    </div>
+                                    <FormTitleCell item={item} />
+                                    <dl className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+                                        <div>
+                                            <dt className="uppercase tracking-wide">
+                                                Rev
+                                            </dt>
+                                            <dd className="font-mono text-slate-800">
+                                                {item.current_revision?.revision ??
+                                                    '—'}
+                                            </dd>
                                         </div>
-                                    </td>
-                                </tr>
+                                        <div>
+                                            <dt className="uppercase tracking-wide">
+                                                Effective
+                                            </dt>
+                                            <dd className="text-slate-800">
+                                                {item.current_revision
+                                                    ?.effective_date ?? '—'}
+                                            </dd>
+                                        </div>
+                                    </dl>
+                                    <div className="mt-2 border-t pt-2">
+                                        <FormRowActions item={item} />
+                                    </div>
+                                </article>
                             ))}
-                            {filtered.length === 0 && (
-                                <tr>
-                                    <td
-                                        className="px-3 py-8 text-center text-muted-foreground"
-                                        colSpan={7}
-                                    >
-                                        No controlled forms yet. Upload the official
-                                        Request for Analysis PDF to start.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
+                        </div>
+                        {paged.length === 0 ? (
+                            <p className="rounded-lg border bg-white px-3 py-8 text-center text-sm text-muted-foreground">
+                                No controlled forms match these filters.
+                            </p>
+                        ) : null}
+                        <div className="overflow-hidden rounded-lg border bg-white">
+                            <CatalogPagination
+                                pageStart={pageStart}
+                                pageEnd={pageEnd}
+                                total={filtered.length}
+                                pageSize={pageSize}
+                                currentPage={currentPage}
+                                pageCount={pageCount}
+                                onPageSizeChange={setPageSize}
+                                onPageChange={setPage}
+                            />
+                        </div>
+                    </div>
+                )}
             </LimsWorkspace>
 
             <Dialog open={open} onOpenChange={setOpen}>
@@ -467,6 +966,76 @@ export default function ControlledFormsIndex({
                 </DialogContent>
             </Dialog>
         </>
+    );
+}
+
+function CatalogPagination({
+    pageStart,
+    pageEnd,
+    total,
+    pageSize,
+    currentPage,
+    pageCount,
+    onPageSizeChange,
+    onPageChange,
+}: {
+    pageStart: number;
+    pageEnd: number;
+    total: number;
+    pageSize: number;
+    currentPage: number;
+    pageCount: number;
+    onPageSizeChange: (size: number) => void;
+    onPageChange: (page: number) => void;
+}) {
+    return (
+        <div className="flex flex-col gap-2 border-t bg-slate-50/50 px-3 py-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+                <span>
+                    Showing{' '}
+                    <span className="font-medium text-slate-800">{pageStart}</span> to{' '}
+                    <span className="font-medium text-slate-800">{pageEnd}</span> of{' '}
+                    <span className="font-medium text-slate-800">{total}</span> forms
+                </span>
+                <label className="inline-flex items-center gap-1.5">
+                    Rows per page:
+                    <select
+                        className="h-7 rounded border bg-white px-1.5 text-xs text-slate-700"
+                        value={pageSize}
+                        onChange={(event) =>
+                            onPageSizeChange(Number(event.target.value))
+                        }
+                    >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                    </select>
+                </label>
+            </div>
+            <div className="flex items-center gap-1">
+                <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={currentPage <= 1}
+                    onClick={() => onPageChange(currentPage - 1)}
+                >
+                    Previous
+                </Button>
+                <span className="min-w-8 rounded bg-[#1A3694] px-2 py-1 text-center font-medium text-white">
+                    {currentPage}
+                </span>
+                <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={currentPage >= pageCount}
+                    onClick={() => onPageChange(currentPage + 1)}
+                >
+                    Next
+                </Button>
+            </div>
+        </div>
     );
 }
 

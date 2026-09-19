@@ -4,13 +4,14 @@ import ConfirmDialog from '@/components/confirm-dialog';
 import AnalystBindingSheet from '@/components/controlled-forms/analyst-binding-sheet';
 import ControlledFormHeader from '@/components/controlled-forms/controlled-form-header';
 import CurrentRevisionCard from '@/components/controlled-forms/current-revision-card';
+import DocumentControlCallout from '@/components/controlled-forms/document-control-callout';
 import FormInformationCard from '@/components/controlled-forms/form-information-card';
 import FormUsageCard from '@/components/controlled-forms/form-usage-card';
+import LabIntegrationCard from '@/components/controlled-forms/lab-integration-card';
 import RevisionHistoryList, {
     type RevisionTransitionAction,
 } from '@/components/controlled-forms/revision-history-list';
-import RevisionStatusSummary from '@/components/controlled-forms/revision-status-summary';
-import RevisionWorkflow from '@/components/controlled-forms/revision-workflow';
+import SignatorySlotsCard from '@/components/controlled-forms/signatory-slots-card';
 import SourceFileLayoutCard from '@/components/controlled-forms/source-file-layout-card';
 import LimsWorkspace from '@/components/lims/lims-workspace';
 import type { AnalysisPackageOption } from '@/components/package-select';
@@ -30,12 +31,15 @@ import type {
     ControlledFormSummary,
     ControlledRevisionSummary,
 } from '@/lib/controlled-forms';
+import { cn } from '@/lib/utils';
 
 type Props = {
     form: ControlledFormSummary;
     analysisGroups: AnalysisGroup[];
     packages?: AnalysisPackageOption[];
 };
+
+type DetailTab = 'overview' | 'bound' | 'revisions';
 
 const transitions: Record<string, RevisionTransitionAction[]> = {
     draft: [
@@ -64,6 +68,7 @@ export default function ControlledFormShow({
     const [revisionOpen, setRevisionOpen] = useState(false);
     const [editingInfo, setEditingInfo] = useState(false);
     const [bindingOpen, setBindingOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState<DetailTab>('overview');
     const [pendingTransition, setPendingTransition] = useState<{
         revisionId: number;
         revisionLabel: string;
@@ -91,6 +96,9 @@ export default function ControlledFormShow({
     });
 
     const current = form.current_revision;
+    const isResultForm = form.category === 'analysis_result';
+    const analysisTypes = form.analysis_types ?? [];
+    const revisions = form.revisions ?? [];
 
     const boundPackage =
         form.analysis_package_id != null
@@ -142,6 +150,24 @@ export default function ControlledFormShow({
         );
     }
 
+    const tabs: Array<{ id: DetailTab; label: string; badge?: string }> = [
+        {
+            id: 'overview',
+            label: 'Overview & blueprint',
+            badge: current?.revision ? `v${current.revision}` : undefined,
+        },
+        {
+            id: 'bound',
+            label: 'Bound parameters',
+            badge: String(analysisTypes.length),
+        },
+        {
+            id: 'revisions',
+            label: 'Revision history',
+            badge: String(revisions.length),
+        },
+    ];
+
     return (
         <>
             <Head title={form.form_code} />
@@ -153,71 +179,175 @@ export default function ControlledFormShow({
                     categoryLabel={form.category_label}
                     status={form.status}
                     statusLabel={form.status_label}
+                    revision={current?.revision ?? null}
+                    effectiveDate={current?.effective_date ?? null}
+                    workflowStatus={current?.status ?? form.status}
                     onNewRevision={() => setRevisionOpen(true)}
                 />
 
-                <RevisionStatusSummary
-                    revision={current?.revision ?? null}
-                    status={current?.status ?? form.status}
-                    statusLabel={current?.status_label ?? form.status_label}
-                    effectiveDate={current?.effective_date ?? null}
-                />
-
-                <RevisionWorkflow currentStatus={current?.status ?? form.status} />
-
-                <div className="grid min-w-0 gap-2.5 lg:grid-cols-2">
-                    <FormInformationCard
-                        editing={editingInfo}
-                        data={{
-                            name: bindForm.data.name,
-                            department: bindForm.data.department,
-                            description: bindForm.data.description,
-                        }}
-                        errors={{
-                            name: bindForm.errors.name,
-                        }}
-                        processing={bindForm.processing}
-                        onEdit={() => setEditingInfo(true)}
-                        onCancel={() => {
-                            bindForm.setData({
-                                ...bindForm.data,
-                                name: form.name,
-                                department: form.department ?? '',
-                                description: form.description ?? '',
-                            });
-                            setEditingInfo(false);
-                        }}
-                        onChange={(field, value) => bindForm.setData(field, value)}
-                        onSave={() => {
-                            bindForm.put(`/admin/controlled-forms/${form.id}`, {
-                                onSuccess: () => setEditingInfo(false),
-                            });
-                        }}
-                    />
-                    <CurrentRevisionCard
-                        formCode={form.form_code}
-                        updatedAt={form.updated_at}
-                        revision={current}
-                    />
+                <div className="border-b">
+                    <nav
+                        aria-label="Controlled form sections"
+                        className="flex flex-wrap gap-x-4 gap-y-0"
+                    >
+                        {tabs.map((tab) => {
+                            const selected = activeTab === tab.id;
+                            return (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={cn(
+                                        'inline-flex items-center gap-1.5 border-b-2 py-2 text-xs font-semibold transition-colors',
+                                        selected
+                                            ? 'border-[#1A3694] text-[#1A3694]'
+                                            : 'border-transparent text-muted-foreground hover:border-slate-300 hover:text-slate-700',
+                                    )}
+                                    aria-current={selected ? 'page' : undefined}
+                                >
+                                    {tab.label}
+                                    {tab.badge != null ? (
+                                        <span
+                                            className={cn(
+                                                'rounded-full px-1.5 py-0.5 font-mono text-[10px]',
+                                                selected
+                                                    ? 'bg-[#eef3fb] text-[#1A3694]'
+                                                    : 'bg-slate-100 text-slate-600',
+                                            )}
+                                        >
+                                            {tab.badge}
+                                        </span>
+                                    ) : null}
+                                </button>
+                            );
+                        })}
+                    </nav>
                 </div>
 
-                <div className="grid min-w-0 gap-2.5 lg:grid-cols-2">
-                    <SourceFileLayoutCard
+                {activeTab === 'overview' ? (
+                    <div className="grid min-w-0 gap-2.5 lg:grid-cols-3">
+                        <div className="min-w-0 space-y-2.5 lg:col-span-2">
+                            <SourceFileLayoutCard
+                                formId={form.id}
+                                hasBlueprint={Boolean(form.has_blueprint)}
+                                revision={current}
+                            />
+                            <FormUsageCard
+                                packages={packages}
+                                analysisPackageId={form.analysis_package_id}
+                                analysisTypes={analysisTypes}
+                                showEdit={isResultForm}
+                                onEdit={() => setBindingOpen(true)}
+                            />
+                            {isResultForm ? (
+                                <SignatorySlotsCard
+                                    slots={form.analyst_signatory_slots ?? 1}
+                                    requirePrc={Boolean(form.analyst_require_prc)}
+                                    onEdit={() => setBindingOpen(true)}
+                                />
+                            ) : null}
+                        </div>
+                        <div className="min-w-0 space-y-2.5">
+                            {editingInfo ? (
+                                <FormInformationCard
+                                    editing={editingInfo}
+                                    data={{
+                                        name: bindForm.data.name,
+                                        department: bindForm.data.department,
+                                        description: bindForm.data.description,
+                                    }}
+                                    errors={{
+                                        name: bindForm.errors.name,
+                                    }}
+                                    processing={bindForm.processing}
+                                    onEdit={() => setEditingInfo(true)}
+                                    onCancel={() => {
+                                        bindForm.setData({
+                                            ...bindForm.data,
+                                            name: form.name,
+                                            department: form.department ?? '',
+                                            description: form.description ?? '',
+                                        });
+                                        setEditingInfo(false);
+                                    }}
+                                    onChange={(field, value) =>
+                                        bindForm.setData(field, value)
+                                    }
+                                    onSave={() => {
+                                        bindForm.put(
+                                            `/admin/controlled-forms/${form.id}`,
+                                            {
+                                                onSuccess: () =>
+                                                    setEditingInfo(false),
+                                            },
+                                        );
+                                    }}
+                                />
+                            ) : null}
+                            <CurrentRevisionCard
+                                formCode={form.form_code}
+                                updatedAt={form.updated_at}
+                                revision={current}
+                                onEditFormInfo={() => setEditingInfo(true)}
+                            />
+                            <LabIntegrationCard
+                                packages={packages}
+                                analysisPackageId={form.analysis_package_id}
+                                analysisTypeCount={analysisTypes.length}
+                            />
+                            <DocumentControlCallout
+                                formCode={form.form_code}
+                                revision={current?.revision ?? null}
+                                effectiveDate={current?.effective_date ?? null}
+                            />
+                        </div>
+                    </div>
+                ) : null}
+
+                {activeTab === 'bound' ? (
+                    <div className="space-y-2.5">
+                        <FormUsageCard
+                            packages={packages}
+                            analysisPackageId={form.analysis_package_id}
+                            analysisTypes={analysisTypes}
+                            showEdit={isResultForm}
+                            onEdit={() => setBindingOpen(true)}
+                        />
+                        <LabIntegrationCard
+                            packages={packages}
+                            analysisPackageId={form.analysis_package_id}
+                            analysisTypeCount={analysisTypes.length}
+                        />
+                        {isResultForm ? (
+                            <SignatorySlotsCard
+                                slots={form.analyst_signatory_slots ?? 1}
+                                requirePrc={Boolean(form.analyst_require_prc)}
+                                onEdit={() => setBindingOpen(true)}
+                            />
+                        ) : (
+                            <p className="rounded-lg border bg-white px-3 py-2 text-sm text-muted-foreground">
+                                This form category does not use analyst result
+                                binding. Package and type links above are
+                                informational.
+                            </p>
+                        )}
+                    </div>
+                ) : null}
+
+                {activeTab === 'revisions' ? (
+                    <RevisionHistoryList
                         formId={form.id}
-                        hasBlueprint={Boolean(form.has_blueprint)}
-                        revision={current}
+                        revisions={revisions}
+                        transitions={transitions}
+                        onTransition={handleTransition}
                     />
-                    <FormUsageCard
-                        packages={packages}
-                        analysisPackageId={form.analysis_package_id}
-                        analysisTypes={form.analysis_types ?? []}
-                    />
-                </div>
+                ) : null}
 
-                {form.category === 'analysis_result' && (
+                {isResultForm ? (
                     <AnalystBindingSheet
                         open={bindingOpen}
                         onOpenChange={handleBindingOpenChange}
+                        hideTrigger
                         packages={packages}
                         analysisGroups={analysisGroups}
                         data={{
@@ -244,14 +374,7 @@ export default function ControlledFormShow({
                             });
                         }}
                     />
-                )}
-
-                <RevisionHistoryList
-                    formId={form.id}
-                    revisions={form.revisions ?? []}
-                    transitions={transitions}
-                    onTransition={handleTransition}
-                />
+                ) : null}
             </LimsWorkspace>
 
             <Dialog open={revisionOpen} onOpenChange={setRevisionOpen}>

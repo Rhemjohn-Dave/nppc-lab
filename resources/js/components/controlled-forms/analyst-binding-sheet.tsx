@@ -32,6 +32,7 @@ type Props = {
     };
     processing: boolean;
     summaryLabel: string;
+    hideTrigger?: boolean;
     onChange: (patch: Partial<AnalystBindingData>) => void;
     onSave: () => void;
 };
@@ -45,31 +46,34 @@ export default function AnalystBindingSheet({
     errors,
     processing,
     summaryLabel,
+    hideTrigger = false,
     onChange,
     onSave,
 }: Props) {
     return (
         <>
-            <button
-                type="button"
-                onClick={() => onOpenChange(true)}
-                className="flex w-full items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2 text-left transition-colors hover:bg-slate-50/80 focus-visible:ring-2 focus-visible:ring-[#1A3694]/40 focus-visible:outline-none"
-                aria-haspopup="dialog"
-                aria-expanded={open}
-            >
-                <div className="min-w-0">
-                    <p className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
-                        Analyst result binding
-                    </p>
-                    <p className="mt-0.5 truncate text-sm text-slate-700">
-                        {summaryLabel}
-                    </p>
-                </div>
-                <ChevronRight
-                    className="size-4 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                />
-            </button>
+            {!hideTrigger ? (
+                <button
+                    type="button"
+                    onClick={() => onOpenChange(true)}
+                    className="flex w-full items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2 text-left transition-colors hover:bg-slate-50/80 focus-visible:ring-2 focus-visible:ring-[#1A3694]/40 focus-visible:outline-none"
+                    aria-haspopup="dialog"
+                    aria-expanded={open}
+                >
+                    <div className="min-w-0">
+                        <p className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
+                            Analyst result binding
+                        </p>
+                        <p className="mt-0.5 truncate text-sm text-slate-700">
+                            {summaryLabel}
+                        </p>
+                    </div>
+                    <ChevronRight
+                        className="size-4 shrink-0 text-muted-foreground"
+                        aria-hidden="true"
+                    />
+                </button>
+            ) : null}
 
             <Sheet open={open} onOpenChange={onOpenChange}>
                 <SheetContent

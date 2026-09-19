@@ -98,11 +98,11 @@ export default function KpiCard({ kpi, compact = false }: Props) {
                 >
                     {kpi.value}
                 </p>
-                {!compact && hint && (
-                    <p className="mt-0.5 text-xs text-muted-foreground">
+                {hint ? (
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
                         {hint}
                     </p>
-                )}
+                ) : null}
                 {kpi.href && kpi.value > 0 && (
                     <Link
                         href={kpi.href}
