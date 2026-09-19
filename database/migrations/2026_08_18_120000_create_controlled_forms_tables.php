@@ -83,8 +83,9 @@ return new class extends Migration
             $table->unsignedTinyInteger('slot');
             $table->timestamps();
 
-            $table->unique(['controlled_form_id', 'slot']);
-            $table->unique(['controlled_form_id', 'analysis_type_id']);
+            // Short index names — MySQL limits identifiers to 64 characters.
+            $table->unique(['controlled_form_id', 'slot'], 'cfbt_form_slot_unique');
+            $table->unique(['controlled_form_id', 'analysis_type_id'], 'cfbt_form_type_unique');
         });
 
         Schema::create('generated_documents', function (Blueprint $table) {
