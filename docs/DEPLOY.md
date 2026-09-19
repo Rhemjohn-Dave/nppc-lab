@@ -88,6 +88,8 @@ cp .env.example .env
 php artisan key:generate
 ```
 
+The repo pins Composer’s `platform.php` to **8.3.6** so `composer.lock` stays installable on Ubuntu’s PHP 8.3 (Symfony 7.x). Do not regenerate the lock on PHP 8.4 without that platform pin, or Symfony 8 packages will appear and break PHP 8.3 deploys.
+
 ### 4. Production `.env` (minimum)
 
 Edit `/var/www/nppc-lab/.env` — at least:
