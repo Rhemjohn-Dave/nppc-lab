@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasColumn('job_order_analyses', 'performed_at')) {
+            return;
+        }
+
         Schema::table('job_order_analyses', function (Blueprint $table) {
             $table->timestamp('performed_at')->nullable()->after('result_method');
         });

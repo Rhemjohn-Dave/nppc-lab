@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasColumn('analysis_types', 'requires_pass_fail')) {
+            return;
+        }
+
         Schema::table('analysis_types', function (Blueprint $table) {
             $table->boolean('requires_pass_fail')->default(false)->after('result_mode');
         });
