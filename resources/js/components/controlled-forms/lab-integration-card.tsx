@@ -18,7 +18,7 @@ export default function LabIntegrationCard({
 
     return (
         <section className="rounded-lg border bg-white px-3 py-2">
-            <h2 className="mb-1.5 border-b pb-1.5 text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
+            <h2 className="mb-1.5 border-b pb-1.5 text-[11px] font-semibold tracking-wider text-nppc-900 uppercase">
                 Lab integration
             </h2>
             <div className="grid grid-cols-2 gap-2">

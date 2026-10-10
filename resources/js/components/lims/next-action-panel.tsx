@@ -13,7 +13,7 @@ type Props = {
 };
 
 const toneClass: Record<Tone, string> = {
-    neutral: 'border-slate-200 bg-[#f8fafc]',
+    neutral: 'border-slate-200 bg-nppc-page',
     emphasis: 'border-emerald-200 bg-emerald-50/70',
     warning: 'border-amber-200 bg-amber-50',
 };
@@ -38,7 +38,7 @@ export default function NextActionPanel({
             )}
         >
             <div className="min-w-0">
-                <p className="text-[10px] font-semibold tracking-wide text-[#365BB0] uppercase">
+                <p className="text-[10px] font-semibold tracking-wide text-nppc-700 uppercase">
                     {label}
                 </p>
                 <p className="text-sm font-semibold text-slate-900">{title}</p>

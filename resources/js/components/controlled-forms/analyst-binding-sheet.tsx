@@ -56,12 +56,12 @@ export default function AnalystBindingSheet({
                 <button
                     type="button"
                     onClick={() => onOpenChange(true)}
-                    className="flex w-full items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2 text-left transition-colors hover:bg-slate-50/80 focus-visible:ring-2 focus-visible:ring-[#1A3694]/40 focus-visible:outline-none"
+                    className="flex w-full items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2 text-left transition-colors hover:bg-slate-50/80 focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none"
                     aria-haspopup="dialog"
                     aria-expanded={open}
                 >
                     <div className="min-w-0">
-                        <p className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
+                        <p className="text-[11px] font-semibold tracking-wider text-nppc-900 uppercase">
                             Analyst result binding
                         </p>
                         <p className="mt-0.5 truncate text-sm text-slate-700">
@@ -81,7 +81,7 @@ export default function AnalystBindingSheet({
                     className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-lg md:max-w-xl"
                 >
                     <SheetHeader className="space-y-1 border-b px-4 pt-4 pb-3 pr-12 text-left">
-                        <SheetTitle className="text-base text-[#1A3694]">
+                        <SheetTitle className="text-base text-nppc-900">
                             Analyst result binding
                         </SheetTitle>
                         <SheetDescription className="text-xs leading-relaxed">
@@ -194,7 +194,7 @@ export default function AnalystBindingSheet({
                             <Button
                                 type="submit"
                                 disabled={processing}
-                                className="bg-[#1A3694] hover:bg-[#365BB0]"
+                                className="bg-nppc-900 hover:bg-nppc-700"
                             >
                                 {processing ? 'Saving…' : 'Save bound tests'}
                             </Button>

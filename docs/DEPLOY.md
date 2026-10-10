@@ -227,6 +227,8 @@ Then commit the updated `config/*_form_fields.php` files and any new official PD
 
 ## Subsequent deploys
 
+Git fetch / pull / push basics: [`GIT_UPDATE.md`](GIT_UPDATE.md).
+
 ```bash
 cd /var/www/nppc-lab
 git pull
@@ -287,7 +289,13 @@ MAIL_FROM_ADDRESS=nppclab@gmail.com
 LOG_LEVEL=error
 ```
 
-Use Microsoft 365 / Google Workspace SMTP for customer “results ready” mail. After HTTPS is live, run:
+Use Microsoft 365 / Google Workspace SMTP for customer mail (“request received” at intake, “results ready” at release).
+
+**Preferred:** configure SMTP in **Admin → Email Settings** (`/admin/email-settings`) — host, port, encryption, username, password, from address/name. Settings live in the database (password encrypted with `APP_KEY`), override the `.env` mailer at runtime, and need no redeploy. Use **Send test email** there to verify. When the admin settings are disabled, the `MAIL_*` values above apply. Keep `APP_KEY` stable — rotating it makes the stored SMTP password unreadable (re-enter it).
+
+Public self-registration (`/register`) is disabled; create staff accounts in **Admin → Users**.
+
+After HTTPS is live, run:
 
 ```bash
 php artisan nppc:production-check
@@ -359,7 +367,7 @@ memory_limit = 256M
 
 ## Queue worker (Supervisor)
 
-In-app LMS notifications write to the database and broadcast immediately (`BroadcastMessage` on the `sync` connection) so Reverb can push to the header bell without a queue worker. Customer `ResultsReadyMail` is also sent synchronously when a job becomes ready for pickup. Queue workers remain useful for other jobs.
+In-app LMS notifications write to the database and broadcast immediately (`BroadcastMessage` on the `sync` connection) so Reverb can push to the header bell without a queue worker. Customer emails (`RequestReceivedMail` at intake, `ResultsReadyMail` at release) are **queued** via `SendCustomerEmail` (3 tries, backoff) so an SMTP outage never blocks intake or release — **the queue worker must be running** for customer mail to go out. Every attempt is recorded in `email_logs` (queued / sent / failed / skipped) and shown on Receiving and History job pages with a **Resend** button, and under Admin → Email Settings → Recent email activity.
 
 Save as `/etc/supervisor/conf.d/nppc-lab-worker.conf`:
 

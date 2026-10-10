@@ -53,22 +53,22 @@ export default function AuthSplitLayout({
                 </div>
             </aside>
 
-            <main className="flex items-center justify-center bg-[linear-gradient(180deg,#f7f9fd_0%,#eef3fb_100%)] px-6 py-10">
+            <main className="flex items-center justify-center bg-gradient-to-b from-nppc-page to-nppc-50 px-6 py-10">
                 <div className="w-full max-w-sm">
                     <Link
                         href="/login"
                         className="mb-8 flex items-center justify-center gap-3 lg:justify-start"
                     >
-                        <div className="flex size-12 items-center justify-center overflow-hidden rounded-full bg-white shadow-sm ring-1 ring-[#1A3694]/15 lg:hidden">
+                        <div className="flex size-12 items-center justify-center overflow-hidden rounded-full bg-white shadow-sm ring-1 ring-nppc-900/15 lg:hidden">
                             <NppcLogo className="h-[88%] w-[88%]" />
                         </div>
-                        <span className="font-heading text-xl font-semibold text-[#1A3694] lg:hidden">
+                        <span className="font-heading text-xl font-semibold text-nppc-900 lg:hidden">
                             NPPC Lab
                         </span>
                     </Link>
 
                     <div className="mb-8 space-y-2 text-center lg:text-left">
-                        <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
+                        <h1 className="font-heading text-2xl font-semibold text-nppc-900">
                             {title}
                         </h1>
                         {description ? (

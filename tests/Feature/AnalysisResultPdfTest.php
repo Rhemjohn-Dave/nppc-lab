@@ -58,6 +58,7 @@ class AnalysisResultPdfTest extends TestCase
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '7.2',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',
@@ -116,6 +117,7 @@ class AnalysisResultPdfTest extends TestCase
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '1.0',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',
@@ -171,6 +173,7 @@ class AnalysisResultPdfTest extends TestCase
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '12.5',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',
@@ -224,6 +227,7 @@ class AnalysisResultPdfTest extends TestCase
 
         $this->actingAs($firstLine->fresh()->assignee ?? $analyst)
             ->post("/analyst/tasks/{$firstLine->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '7',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',
@@ -232,6 +236,7 @@ class AnalysisResultPdfTest extends TestCase
             ->assertRedirect();
         $this->actingAs($secondLine->fresh()->assignee ?? $analyst)
             ->post("/analyst/tasks/{$secondLine->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '8',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',
@@ -277,6 +282,7 @@ class AnalysisResultPdfTest extends TestCase
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$firstLine->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '6.8',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',
@@ -317,6 +323,7 @@ class AnalysisResultPdfTest extends TestCase
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$firstLine->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '1',
                 'result_pass_fail' => 'Passed',
                 'result_method' => 'Standard Method',
@@ -324,6 +331,7 @@ class AnalysisResultPdfTest extends TestCase
             ->assertRedirect();
         $this->actingAs($other)
             ->post("/analyst/tasks/{$secondLine->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '2',
                 'result_pass_fail' => 'Passed',
                 'result_method' => 'Standard Method',
@@ -389,6 +397,7 @@ class AnalysisResultPdfTest extends TestCase
         foreach ($job->analyses()->with('assignee')->get() as $line) {
             $this->actingAs($line->assignee ?? $signatory)
                 ->post("/analyst/tasks/{$line->id}/complete", [
+                    'performed_at' => '2026-07-29T15:00',
                     'result_value' => 'ND',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method'
@@ -496,6 +505,7 @@ class AnalysisResultPdfTest extends TestCase
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '7.2',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',

@@ -1,7 +1,10 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import LimsWorkspace from '@/components/lims/lims-workspace';
-import { Pencil, Plus, Search } from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import QueueSummaryCards from '@/components/lims/queue-summary-cards';
+import QueueFilterBar from '@/components/queue-filter-bar';
+import WorkspaceHeader from '@/components/workspace-header';
+import { ArrowRight, Pencil, Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import TablePagination from '@/components/table-pagination';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -45,6 +48,7 @@ const ROLE_LABELS: Record<string, string> = {
     receiving: 'Receiving',
     analyst: 'Analyst',
     head_analysis: 'Head of Analysis',
+    accounting: 'Accounting',
 };
 
 function roleLabel(role: string) {
@@ -64,6 +68,10 @@ function roleBadgeClass(role: string) {
         return 'border-sky-200 bg-sky-50 text-sky-800';
     }
 
+    if (role === 'accounting') {
+        return 'border-teal-200 bg-teal-50 text-teal-800';
+    }
+
     return 'border-emerald-200 bg-emerald-50 text-emerald-800';
 }
 
@@ -81,6 +89,20 @@ export default function AdminUsers({
         setQuery(filters.q ?? '');
     }, [filters.q]);
 
+    useEffect(() => {
+        const trimmed = query.trim();
+        const active = filters.q ?? '';
+        const id = window.setTimeout(() => {
+            if (trimmed === active) {
+                return;
+            }
+
+            applyFilters({ q: trimmed });
+        }, 350);
+
+        return () => window.clearTimeout(id);
+    }, [query, filters.q, filters.role]);
+
     function applyFilters(next: { q?: string; role?: string }) {
         router.get(
             '/admin/users',
@@ -95,160 +117,126 @@ export default function AdminUsers({
         );
     }
 
-    function submitSearch(event: FormEvent) {
-        event.preventDefault();
-        applyFilters({ q: query });
-    }
+    const totalUsers = counts.all ?? 0;
+    const kpiTotal = Math.max(totalUsers, 1);
+    const summaryCards = [
+        {
+            id: 'all',
+            label: 'Total Users',
+            value: totalUsers,
+            unit: 'Staff accounts',
+            tone: 'info' as const,
+            share: 100,
+        },
+        ...roles.map((role) => {
+            const value = counts[role] ?? 0;
+            return {
+                id: role,
+                label: roleLabel(role),
+                value,
+                unit: 'Assigned role',
+                tone:
+                    role === 'head_analysis'
+                        ? ('warning' as const)
+                        : role === 'admin'
+                          ? ('info' as const)
+                          : role === 'analyst'
+                            ? ('success' as const)
+                            : ('default' as const),
+                share: Math.round((value / kpiTotal) * 100),
+            };
+        }),
+    ];
+
+    const roleChips = [
+        { id: 'all', label: 'All roles', count: totalUsers },
+        ...roles.map((role) => ({
+            id: role,
+            label: roleLabel(role),
+            count: counts[role] ?? 0,
+        })),
+    ];
 
     return (
         <>
             <Head title="Users" />
-            <LimsWorkspace>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                            Users
-                        </h1>
-                        <p className="text-sm text-muted-foreground">
-                            Manage staff accounts and Spatie roles. Create and
-                            edit users in modals.
-                        </p>
-                    </div>
-                    <Button
-                        className="bg-[#1A3694] hover:bg-[#365BB0]"
-                        onClick={() => setCreateOpen(true)}
-                    >
-                        <Plus className="size-4" />
-                        Add user
-                    </Button>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
-                        <p className="text-sm text-muted-foreground">
-                            Total users
-                        </p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
-                            {counts.all ?? 0}
-                        </p>
-                    </div>
-                    {roles.map((role) => (
-                        <div
-                            key={role}
-                            className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4"
+            <LimsWorkspace className="gap-4">
+                <WorkspaceHeader
+                    title="Users"
+                    description="Manage staff accounts and Spatie roles. Create and edit users in modals."
+                    actions={
+                        <Button
+                            className="h-8 gap-1.5 bg-nppc-900 text-xs hover:bg-nppc-700"
+                            onClick={() => setCreateOpen(true)}
                         >
-                            <p className="text-sm text-muted-foreground">
-                                {roleLabel(role)}
-                            </p>
-                            <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
-                                {counts[role] ?? 0}
-                            </p>
-                        </div>
-                    ))}
-                </div>
+                            <Plus className="size-3.5" />
+                            Add user
+                        </Button>
+                    }
+                />
 
-                <div className="flex flex-col gap-3 rounded-xl border bg-white p-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex flex-wrap gap-2">
-                        <button
-                            type="button"
-                            onClick={() => applyFilters({ role: 'all' })}
-                            className={cn(
-                                'inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-sm font-medium transition',
-                                filters.role === 'all'
-                                    ? 'border-[#1A3694] bg-[#1A3694] text-white'
-                                    : 'border-slate-200 bg-white text-slate-700 hover:border-[#5282D3]',
-                            )}
-                        >
-                            All roles
-                            <span
-                                className={cn(
-                                    'rounded-full px-1.5 py-0.5 text-xs tabular-nums',
-                                    filters.role === 'all'
-                                        ? 'bg-white/20'
-                                        : 'bg-slate-100 text-slate-600',
-                                )}
-                            >
-                                {counts.all ?? 0}
-                            </span>
-                        </button>
-                        {roles.map((role) => (
-                            <button
-                                key={role}
-                                type="button"
-                                onClick={() => applyFilters({ role })}
-                                className={cn(
-                                    'inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-sm font-medium transition',
-                                    filters.role === role
-                                        ? 'border-[#1A3694] bg-[#1A3694] text-white'
-                                        : 'border-slate-200 bg-white text-slate-700 hover:border-[#5282D3]',
-                                )}
-                            >
-                                {roleLabel(role)}
-                                <span
-                                    className={cn(
-                                        'rounded-full px-1.5 py-0.5 text-xs tabular-nums',
-                                        filters.role === role
-                                            ? 'bg-white/20'
-                                            : 'bg-slate-100 text-slate-600',
-                                    )}
-                                >
-                                    {counts[role] ?? 0}
-                                </span>
-                            </button>
-                        ))}
-                    </div>
+                <QueueSummaryCards
+                    cards={summaryCards}
+                    activeId={filters.role || 'all'}
+                    onSelect={(id) =>
+                        applyFilters({ role: id, q: query.trim() })
+                    }
+                    className="sm:grid-cols-2 lg:grid-cols-6"
+                />
 
-                    <form
-                        onSubmit={submitSearch}
-                        className="relative min-w-64 flex-1 lg:max-w-sm"
-                    >
-                        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
-                        <Input
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            placeholder="Search name or email…"
-                            className="h-10 pl-9"
-                        />
-                    </form>
-                </div>
+                <QueueFilterBar
+                    chips={roleChips}
+                    activeId={filters.role || 'all'}
+                    onChip={(id) =>
+                        applyFilters({ role: id, q: query.trim() })
+                    }
+                    query={query}
+                    onQueryChange={setQuery}
+                    onSearch={() => applyFilters({ q: query.trim() })}
+                    onClear={() => {
+                        setQuery('');
+                        applyFilters({ q: '' });
+                    }}
+                    placeholder="Search name or email…"
+                />
 
-                <div className="overflow-x-auto rounded-xl border bg-white">
-                    <table className="w-full text-sm">
-                        <thead className="bg-[#f8fafc] text-left">
-                            <tr>
-                                <th className="px-4 py-3 font-medium text-slate-600">
-                                    Name
-                                </th>
-                                <th className="px-4 py-3 font-medium text-slate-600">
-                                    Email
-                                </th>
-                                <th className="px-4 py-3 font-medium text-slate-600">
-                                    Role
-                                </th>
-                                <th className="px-4 py-3" />
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {users.data.map((user) => (
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+                    <div className="overflow-x-auto">
+                        <table className="w-full border-collapse text-left text-xs">
+                            <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/90">
+                                <tr className="select-none text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                                    <th className="px-4 py-3">Name</th>
+                                    <th className="px-4 py-3">Email</th>
+                                    <th className="px-4 py-3">Role</th>
+                                    <th className="min-w-[8rem] px-4 py-3 text-right">
+                                        Actions
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200/80">
+                                {users.data.map((user) => (
                                     <tr
                                         key={user.id}
-                                        className="border-t transition hover:bg-[#f8fafc]"
+                                        className="transition-colors hover:bg-slate-50"
                                     >
-                                        <td className="px-4 py-3 font-medium">
+                                        <td className="px-4 py-4 align-top font-semibold text-slate-900">
                                             {user.name}
                                         </td>
-                                        <td className="px-4 py-3 text-slate-600">
+                                        <td className="px-4 py-4 align-top text-[11px] text-slate-500">
                                             {user.email}
                                         </td>
-                                        <td className="px-4 py-3">
+                                        <td className="px-4 py-4 align-top">
                                             <div className="flex flex-wrap gap-1.5">
                                                 {user.roles.length > 0 ? (
                                                     user.roles.map((role) => (
                                                         <Badge
                                                             key={role}
                                                             variant="outline"
-                                                            className={roleBadgeClass(
-                                                                role,
+                                                            className={cn(
+                                                                'text-[10px]',
+                                                                roleBadgeClass(
+                                                                    role,
+                                                                ),
                                                             )}
                                                         >
                                                             {roleLabel(role)}
@@ -261,43 +249,56 @@ export default function AdminUsers({
                                                 )}
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-right">
+                                        <td className="px-4 py-4 text-right align-top">
                                             <Button
                                                 size="sm"
-                                                variant="outline"
+                                                className="h-8 gap-1.5 bg-nppc-900 text-xs shadow-xs hover:bg-nppc-700"
                                                 onClick={() =>
                                                     setEditing(user)
                                                 }
                                             >
                                                 <Pencil className="size-3.5" />
                                                 Edit
+                                                <ArrowRight className="size-3" />
                                             </Button>
                                         </td>
                                     </tr>
-                            ))}
-                            {users.data.length === 0 && (
-                                <tr>
-                                    <td
-                                        colSpan={4}
-                                        className="px-4 py-12 text-center text-muted-foreground"
-                                    >
-                                        {filters.q || filters.role !== 'all'
-                                            ? 'No users match your filters.'
-                                            : 'No users yet. Add a staff account to get started.'}
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
+                                ))}
+                                {users.data.length === 0 && (
+                                    <tr>
+                                        <td
+                                            colSpan={4}
+                                            className="px-4 py-12 text-center"
+                                        >
+                                            <p className="text-sm font-medium text-nppc-900">
+                                                {filters.q ||
+                                                filters.role !== 'all'
+                                                    ? 'No matching users'
+                                                    : 'No users yet'}
+                                            </p>
+                                            <p className="mt-1 text-xs text-muted-foreground">
+                                                {filters.q ||
+                                                filters.role !== 'all'
+                                                    ? 'No users match your filters.'
+                                                    : 'Add a staff account to get started.'}
+                                            </p>
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
 
-                <TablePagination
-                    links={users.links}
-                    from={users.from}
-                    to={users.to}
-                    total={users.total}
-                    label="users"
-                />
+                    <div className="border-t border-slate-200 bg-slate-50/50 px-4 py-3">
+                        <TablePagination
+                            links={users.links}
+                            from={users.from}
+                            to={users.to}
+                            total={users.total}
+                            label="users"
+                        />
+                    </div>
+                </div>
             </LimsWorkspace>
 
             <UserModal
@@ -484,7 +485,7 @@ function UserModal({
                         <Button
                             type="submit"
                             disabled={form.processing}
-                            className="bg-[#1A3694] hover:bg-[#365BB0]"
+                            className="bg-nppc-900 hover:bg-nppc-700"
                         >
                             {form.processing
                                 ? mode === 'create'

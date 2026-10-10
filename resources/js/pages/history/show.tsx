@@ -1,8 +1,14 @@
 import { Head, Link } from '@inertiajs/react';
+import CustomerEmailLog from '@/components/email/customer-email-log';
+import type { EmailLogSummary } from '@/components/email/customer-email-log';
+import LimsSection from '@/components/lims/lims-section';
 import LimsWorkspace from '@/components/lims/lims-workspace';
+import QueueKpi from '@/components/lims/queue-kpi';
 import type { RequestForAnalysisData } from '@/components/request-for-analysis-form';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { limsPanel } from '@/lib/lims-page-shell';
+import { cn } from '@/lib/utils';
 
 type Props = {
     jobOrder: RequestForAnalysisData & {
@@ -11,9 +17,16 @@ type Props = {
         is_signed?: boolean;
     };
     canSign: boolean;
+    emailLogs?: EmailLogSummary[];
+    canResendEmail?: boolean;
 };
 
-export default function HistoryShow({ jobOrder, canSign }: Props) {
+export default function HistoryShow({
+    jobOrder,
+    canSign,
+    emailLogs = [],
+    canResendEmail = false,
+}: Props) {
     const isSigned = Boolean(jobOrder.is_signed || jobOrder.reviewed_at);
 
     return (
@@ -21,17 +34,17 @@ export default function HistoryShow({ jobOrder, canSign }: Props) {
             <Head title={`History ${jobOrder.reference_no}`} />
             <LimsWorkspace>
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
+                    <div className="min-w-0">
                         <Button
                             asChild
                             variant="ghost"
                             size="sm"
-                            className="-ml-2 mb-1 text-slate-600"
+                            className="-ml-2 mb-0.5 h-8 text-slate-600"
                         >
                             <Link href="/history">← Back to history</Link>
                         </Button>
                         <div className="flex flex-wrap items-center gap-2">
-                            <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
+                            <h1 className="font-heading text-xl font-semibold text-nppc-900 sm:text-2xl">
                                 {jobOrder.reference_no}
                             </h1>
                             <Badge
@@ -39,28 +52,26 @@ export default function HistoryShow({ jobOrder, canSign }: Props) {
                                 className={
                                     isSigned
                                         ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                                        : 'border-[#c5d4f0] bg-[#eef3fb] text-[#1A3694]'
+                                        : 'border-nppc-200 bg-nppc-50 text-nppc-900'
                                 }
                             >
-                                {isSigned
-                                    ? 'Signed'
-                                    : 'Ready for pickup'}
+                                {isSigned ? 'Signed' : 'Ready for pickup'}
                             </Badge>
                         </div>
-                        <p className="mt-1 text-sm text-muted-foreground">
+                        <p className="mt-0.5 text-sm text-muted-foreground">
                             {jobOrder.customer_name}
                             {jobOrder.company_name
                                 ? ` · ${jobOrder.company_name}`
                                 : ''}
                         </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                        <Button asChild variant="outline">
+                    <div className="flex flex-wrap gap-2 pt-1">
+                        <Button asChild variant="outline" className="border-slate-200">
                             <Link href={`/history/${jobOrder.id}/print`}>
                                 Print form
                             </Link>
                         </Button>
-                        <Button asChild variant="outline">
+                        <Button asChild variant="outline" className="border-slate-200">
                             <a href={`/history/${jobOrder.id}/pdf`}>
                                 Download PDF
                             </a>
@@ -68,7 +79,7 @@ export default function HistoryShow({ jobOrder, canSign }: Props) {
                         {canSign && !isSigned && (
                             <Button
                                 asChild
-                                className="bg-[#1A3694] hover:bg-[#365BB0]"
+                                className="bg-nppc-900 hover:bg-nppc-700"
                             >
                                 <Link href={`/head/${jobOrder.id}`}>
                                     Sign in Head Analysis
@@ -78,50 +89,100 @@ export default function HistoryShow({ jobOrder, canSign }: Props) {
                     </div>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-4">
-                    <div className="rounded-xl border bg-white p-4">
-                        <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
-                            Customer
-                        </p>
-                        <p className="mt-2 font-medium">{jobOrder.customer_name}</p>
-                        <p className="text-sm text-muted-foreground">
-                            {jobOrder.company_name || 'No company provided'}
-                        </p>
-                    </div>
-                    <div className="rounded-xl border bg-white p-4">
-                        <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
-                            Status
-                        </p>
-                        <p className="mt-2 font-medium">
-                            {isSigned ? 'Signed archive record' : 'Unsigned archive record'}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                            {isSigned
-                                ? `Reviewed ${jobOrder.reviewed_at || 'date unavailable'}`
-                                : `Completed ${jobOrder.completed_at || 'date unavailable'}`}
-                        </p>
-                    </div>
-                    <div className="rounded-xl border bg-white p-4">
-                        <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
-                            Samples
-                        </p>
-                        <p className="mt-2 font-heading text-3xl font-semibold text-[#1A3694]">
-                            {jobOrder.samples?.length ?? 0}
-                        </p>
-                    </div>
-                    <div className="rounded-xl border bg-white p-4">
-                        <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
-                            Analyses
-                        </p>
-                        <p className="mt-2 font-heading text-3xl font-semibold text-[#1A3694]">
-                            {jobOrder.analyses.length}
-                        </p>
-                    </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                    <QueueKpi
+                        label="Samples"
+                        value={jobOrder.samples?.length ?? 0}
+                        hint="on file"
+                    />
+                    <QueueKpi
+                        label="Analyses"
+                        value={jobOrder.analyses.length}
+                        hint="test lines"
+                    />
+                    <QueueKpi
+                        label="Status"
+                        value={isSigned ? 'Signed' : 'Open'}
+                        hint={
+                            isSigned
+                                ? `Reviewed ${jobOrder.reviewed_at || '—'}`
+                                : `Completed ${jobOrder.completed_at || '—'}`
+                        }
+                        tone={isSigned ? 'success' : 'info'}
+                    />
                 </div>
 
-                <div className="overflow-hidden rounded-xl border bg-white">
-                    <div className="border-b bg-[#f8fafc] px-4 py-3">
-                        <h2 className="font-semibold text-[#1A3694]">
+                <div className="grid gap-4 lg:grid-cols-2">
+                    <LimsSection title="Customer" className="min-w-0">
+                        <dl className="space-y-1.5 text-sm">
+                            <div className="flex justify-between gap-3">
+                                <dt className="text-muted-foreground">Name</dt>
+                                <dd className="text-right font-medium">
+                                    {jobOrder.customer_name}
+                                </dd>
+                            </div>
+                            <div className="flex justify-between gap-3">
+                                <dt className="text-muted-foreground">
+                                    Company
+                                </dt>
+                                <dd className="text-right">
+                                    {jobOrder.company_name || '—'}
+                                </dd>
+                            </div>
+                            <div className="flex justify-between gap-3">
+                                <dt className="text-muted-foreground">
+                                    Contact
+                                </dt>
+                                <dd className="max-w-[60%] text-right text-xs">
+                                    {[
+                                        jobOrder.customer_contact,
+                                        jobOrder.customer_email,
+                                    ]
+                                        .filter(Boolean)
+                                        .join(' · ') || '—'}
+                                </dd>
+                            </div>
+                        </dl>
+                        <CustomerEmailLog
+                            logs={emailLogs}
+                            canResend={canResendEmail}
+                            className="mt-3 border-t border-slate-100 pt-3"
+                        />
+                    </LimsSection>
+
+                    <LimsSection title="Archive" className="min-w-0">
+                        <dl className="space-y-1.5 text-sm">
+                            <div className="flex justify-between gap-3">
+                                <dt className="text-muted-foreground">Record</dt>
+                                <dd className="text-right font-medium">
+                                    {isSigned
+                                        ? 'Signed archive record'
+                                        : 'Unsigned archive record'}
+                                </dd>
+                            </div>
+                            <div className="flex justify-between gap-3">
+                                <dt className="text-muted-foreground">
+                                    Completed
+                                </dt>
+                                <dd className="text-right text-xs">
+                                    {jobOrder.completed_at || '—'}
+                                </dd>
+                            </div>
+                            <div className="flex justify-between gap-3">
+                                <dt className="text-muted-foreground">
+                                    Reviewed
+                                </dt>
+                                <dd className="text-right text-xs">
+                                    {jobOrder.reviewed_at || '—'}
+                                </dd>
+                            </div>
+                        </dl>
+                    </LimsSection>
+                </div>
+
+                <div className={cn('overflow-hidden', limsPanel)}>
+                    <div className="border-b border-slate-200 bg-nppc-page px-4 py-3">
+                        <h2 className="text-sm font-semibold text-nppc-900">
                             Official Request for Analysis
                         </h2>
                         <p className="text-xs text-muted-foreground">
@@ -140,9 +201,12 @@ export default function HistoryShow({ jobOrder, canSign }: Props) {
     );
 }
 
-HistoryShow.layout = {
+HistoryShow.layout = (props: Props) => ({
     breadcrumbs: [
         { title: 'History', href: '/history' },
-        { title: 'Form', href: '#' },
+        {
+            title: props.jobOrder?.reference_no ?? 'Record',
+            href: '#',
+        },
     ],
-};
+});

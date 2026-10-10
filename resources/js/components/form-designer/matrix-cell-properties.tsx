@@ -60,17 +60,17 @@ export default function MatrixCellProperties({
           : (column?.align ?? (selection.columnKey === 'test' ? 'L' : 'C'));
 
     return (
-        <section className="space-y-3 rounded-md border border-[#1A3694]/25 bg-[#1A3694]/5 p-3">
+        <section className="space-y-3 rounded-md border border-nppc-900/25 bg-nppc-900/5 p-3">
             <div className="flex items-start justify-between gap-2">
                 <div>
-                    <p className="text-[10px] font-semibold tracking-wider text-[#1A3694] uppercase">
+                    <p className="text-[10px] font-semibold tracking-wider text-nppc-900 uppercase">
                         Selected cell
                     </p>
                     <p className="text-xs font-medium text-slate-800">{selectionLabel(selection)}</p>
                 </div>
                 <button
                     type="button"
-                    className="text-[10px] text-[#1A3694] underline"
+                    className="text-[10px] text-nppc-900 underline"
                     onClick={onClearSelection}
                 >
                     Clear

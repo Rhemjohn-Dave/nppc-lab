@@ -1,7 +1,8 @@
 import { Link } from '@inertiajs/react';
-import { FileText, Search } from 'lucide-react';
+import { ArrowRight, FileText, PenLine, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import AnalystStatusBadge from '@/components/analyst/analyst-status-badge';
+import JoReferenceChip from '@/components/lims/jo-reference-chip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -9,11 +10,11 @@ import DashboardEmptyState from './dashboard-empty-state';
 import type { DashboardQueue } from './types';
 
 const COLUMN_LABELS: Record<string, string> = {
-    form: 'Code & form title',
+    form: 'Code & Form Title',
     revision: 'Revision',
     status: 'Status',
     effective_date: 'Effective',
-    updated_at: 'Last updated',
+    updated_at: 'Last Updated',
     reference_no: 'Job Order',
     customer_name: 'Customer',
     classification: 'Classification',
@@ -21,6 +22,8 @@ const COLUMN_LABELS: Record<string, string> = {
     tests: 'Tests',
     completion: 'Completion',
 };
+
+type StatusTab = 'all' | 'active' | 'superseded' | 'draft';
 
 type Props = {
     data: DashboardQueue;
@@ -55,8 +58,21 @@ function cellValue(row: Record<string, unknown>, column: string) {
 
     if (column === 'revision' && value) {
         return (
-            <span className="font-mono text-xs font-medium text-slate-700">
+            <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-700">
                 Rev {String(value)}
+            </span>
+        );
+    }
+
+    if (column === 'effective_date' || column === 'updated_at') {
+        if (value === null || value === undefined || value === '') {
+            return (
+                <span className="font-mono text-[11px] text-slate-500">—</span>
+            );
+        }
+        return (
+            <span className="text-slate-600">
+                {String(value)}
             </span>
         );
     }
@@ -84,32 +100,48 @@ function FormTitleCell({
     const title = href ? (
         <Link
             href={href}
-            className="font-medium text-slate-900 hover:text-[#1A3694] hover:underline"
+            className="font-semibold text-slate-900 transition-colors group-hover:text-nppc-900"
         >
             {name}
         </Link>
     ) : (
-        <span className="font-medium text-slate-900">{name}</span>
+        <span className="font-semibold text-slate-900">{name}</span>
     );
 
     return (
-        <div className="flex items-start gap-2">
-            <FileText
-                className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-            />
+        <div className="flex items-start gap-2.5">
+            <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded border border-nppc-100 bg-nppc-50 text-nppc-900">
+                <FileText className="size-4" aria-hidden="true" />
+            </div>
             <div className="min-w-0">
                 {title}
                 {code ? (
-                    <div className="mt-0.5">
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600">
-                            {code}
-                        </span>
-                    </div>
+                    <p className="mt-0.5 font-mono text-[11px] text-slate-400">
+                        {code}
+                    </p>
                 ) : null}
             </div>
         </div>
     );
+}
+
+function statusMatchesTab(status: string, tab: StatusTab): boolean {
+    const s = status.toLowerCase();
+    switch (tab) {
+        case 'active':
+            return s === 'active' || s === 'approved';
+        case 'superseded':
+            return s === 'superseded' || s === 'archived';
+        case 'draft':
+            return (
+                s === 'draft' ||
+                s === 'for_review' ||
+                s === 'for_approval' ||
+                s.includes('draft')
+            );
+        default:
+            return true;
+    }
 }
 
 export default function DashboardQueueTable({
@@ -121,16 +153,42 @@ export default function DashboardQueueTable({
     registeredTotal,
 }: Props) {
     const [query, setQuery] = useState('');
+    const [statusTab, setStatusTab] = useState<StatusTab>('all');
+
+    const statusCounts = useMemo(() => {
+        const counts = { all: data.rows.length, active: 0, superseded: 0, draft: 0 };
+        for (const row of data.rows) {
+            const status = String(row.status ?? '');
+            if (statusMatchesTab(status, 'active')) {
+                counts.active += 1;
+            } else if (statusMatchesTab(status, 'superseded')) {
+                counts.superseded += 1;
+            } else if (statusMatchesTab(status, 'draft')) {
+                counts.draft += 1;
+            }
+        }
+        return counts;
+    }, [data.rows]);
 
     const filteredRows = useMemo(() => {
-        if (!registry) {
-            return data.rows;
+        let rows = data.rows;
+
+        if (registry && statusTab !== 'all') {
+            rows = rows.filter((row) =>
+                statusMatchesTab(String(row.status ?? ''), statusTab),
+            );
         }
+
+        if (!registry) {
+            return rows;
+        }
+
         const q = query.trim().toLowerCase();
         if (!q) {
-            return data.rows;
+            return rows;
         }
-        return data.rows.filter((row) => {
+
+        return rows.filter((row) => {
             const haystack = [
                 String(row.form ?? ''),
                 String(row.form_code ?? ''),
@@ -141,16 +199,27 @@ export default function DashboardQueueTable({
                 .toLowerCase();
             return haystack.includes(q);
         });
-    }, [data.rows, query, registry]);
+    }, [data.rows, query, registry, statusTab]);
 
     const countLabel = registeredTotal ?? data.rows.length;
+
+    const tabs: Array<{ id: StatusTab; label: string; count: number }> = [
+        { id: 'all', label: 'All', count: statusCounts.all },
+        { id: 'active', label: 'Active', count: statusCounts.active },
+        {
+            id: 'superseded',
+            label: 'Superseded',
+            count: statusCounts.superseded,
+        },
+        { id: 'draft', label: 'Drafts', count: statusCounts.draft },
+    ];
 
     if (data.rows.length === 0) {
         return (
             <section
                 className={cn(
                     registry &&
-                        'overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm',
+                        'overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs',
                 )}
             >
                 <SectionHeader
@@ -161,11 +230,11 @@ export default function DashboardQueueTable({
                     countLabel={countLabel}
                     subtitle={
                         registry
-                            ? 'Authoritative repository of ISO 17025 accredited worksheets'
+                            ? 'Authoritative repository of ISO 17025 accredited worksheets and analytical templates'
                             : undefined
                     }
                 />
-                <div className={registry ? 'px-3 pb-3' : undefined}>
+                <div className={registry ? 'px-4 pb-4' : undefined}>
                     <DashboardEmptyState body={data.empty} />
                 </div>
             </section>
@@ -176,9 +245,10 @@ export default function DashboardQueueTable({
         <section
             className={cn(
                 registry
-                    ? 'flex flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm'
+                    ? 'flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs'
                     : 'space-y-2',
             )}
+            id={registry ? 'registry-table' : undefined}
         >
             <SectionHeader
                 title={data.title}
@@ -188,30 +258,43 @@ export default function DashboardQueueTable({
                 countLabel={countLabel}
                 subtitle={
                     registry
-                        ? 'Authoritative repository of ISO 17025 accredited worksheets'
+                        ? 'Authoritative repository of ISO 17025 accredited worksheets and analytical templates'
                         : undefined
                 }
             />
 
             {registry ? (
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/70 px-3 py-2">
-                    <div className="relative max-w-xs flex-1">
-                        <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                            className="h-7 pl-7 text-xs"
-                            placeholder="Filter form title or code…"
-                            value={query}
-                            onChange={(event) => setQuery(event.target.value)}
-                        />
+                <div className="space-y-3 border-b border-slate-200 bg-white px-4 pb-4">
+                    <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+                        <div className="relative w-full sm:flex-1">
+                            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-slate-400" />
+                            <Input
+                                className="h-8 rounded-lg border-slate-200 bg-slate-50 pl-9 text-xs transition-all placeholder:text-slate-400 focus:bg-white"
+                                placeholder="Filter form title, code, or method..."
+                                value={query}
+                                onChange={(event) =>
+                                    setQuery(event.target.value)
+                                }
+                            />
+                        </div>
+                        <div className="flex w-full shrink-0 items-center justify-center rounded-lg bg-slate-100 p-0.5 text-xs font-medium text-slate-600 sm:w-auto">
+                            {tabs.map((tab) => (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => setStatusTab(tab.id)}
+                                    className={cn(
+                                        'rounded-md px-2.5 py-1 transition-colors',
+                                        statusTab === tab.id
+                                            ? 'bg-white font-semibold text-slate-900 shadow-sm'
+                                            : 'hover:text-slate-900',
+                                    )}
+                                >
+                                    {tab.label} {tab.count}
+                                </button>
+                            ))}
+                        </div>
                     </div>
-                    {viewAllHref ? (
-                        <Link
-                            href={viewAllHref}
-                            className="text-xs font-medium text-[#365BB0] hover:underline"
-                        >
-                            View all catalog →
-                        </Link>
-                    ) : null}
                 </div>
             ) : null}
 
@@ -219,76 +302,82 @@ export default function DashboardQueueTable({
                 className={cn(
                     'overflow-x-auto',
                     !registry &&
-                        'rounded-xl border border-slate-200/80 bg-white shadow-sm',
+                        'rounded-xl border border-slate-200 bg-white shadow-xs',
                 )}
             >
                 <table
                     className={cn(
-                        'w-full border-collapse text-sm',
-                        compact ? 'min-w-0 text-xs' : 'min-w-[560px]',
+                        'w-full border-collapse text-left text-xs',
+                        compact ? 'min-w-0' : 'min-w-[560px]',
                     )}
                 >
-                    <thead className="bg-[#f8fafc]">
-                        <tr className="text-left text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                    <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/90">
+                        <tr className="select-none text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
                             {data.columns.map((column) => (
                                 <th
                                     key={column}
                                     className={cn(
-                                        'px-3 font-semibold',
-                                        compact ? 'py-2' : 'py-2.5',
+                                        'px-4 py-3',
                                         column === 'form' && 'min-w-[12rem]',
                                     )}
                                 >
                                     {COLUMN_LABELS[column] ?? column}
                                 </th>
                             ))}
-                            <th
-                                className={cn(
-                                    'px-3 text-right font-semibold',
-                                    compact ? 'py-2' : 'py-2.5',
-                                )}
-                            >
-                                Actions
-                            </th>
+                            <th className="px-4 py-3 text-right">Actions</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-slate-200/80">
                         {filteredRows.map((row, index) => {
                             const href =
                                 typeof row.href === 'string' ? row.href : null;
                             const actionLabel =
                                 typeof row.action_label === 'string'
                                     ? row.action_label
-                                    : 'Open';
+                                    : 'View';
                             const key =
                                 typeof row.id === 'number' ||
                                 typeof row.id === 'string'
                                     ? String(row.id)
                                     : String(index);
+                            const referenceNo =
+                                typeof row.reference_no === 'string'
+                                    ? row.reference_no
+                                    : null;
 
                             return (
                                 <tr
                                     key={key}
-                                    className="hover:bg-slate-50/80"
+                                    className="group transition-colors hover:bg-slate-50"
                                 >
                                     {data.columns.map((column) => (
                                         <td
                                             key={column}
                                             className={cn(
-                                                'px-3 align-middle',
-                                                compact
-                                                    ? 'py-2.5'
-                                                    : 'h-11 py-1.5',
+                                                'px-4 align-top',
+                                                compact ? 'py-4' : 'py-3.5',
                                             )}
                                         >
-                                            {column === 'reference_no' &&
-                                            href ? (
-                                                <Link
-                                                    href={href}
-                                                    className="font-semibold text-[#1A3694] hover:underline"
-                                                >
-                                                    {cellValue(row, column)}
-                                                </Link>
+                                            {column === 'reference_no' ? (
+                                                referenceNo ? (
+                                                    href ? (
+                                                        <Link href={href}>
+                                                            <JoReferenceChip
+                                                                referenceNo={
+                                                                    referenceNo
+                                                                }
+                                                            />
+                                                        </Link>
+                                                    ) : (
+                                                        <JoReferenceChip
+                                                            referenceNo={
+                                                                referenceNo
+                                                            }
+                                                        />
+                                                    )
+                                                ) : (
+                                                    '—'
+                                                )
                                             ) : column === 'form' ? (
                                                 registry ||
                                                 typeof row.form_code ===
@@ -300,7 +389,7 @@ export default function DashboardQueueTable({
                                                 ) : href ? (
                                                     <Link
                                                         href={href}
-                                                        className="line-clamp-2 font-medium text-[#1A3694] hover:underline"
+                                                        className="line-clamp-2 font-medium text-nppc-900 hover:underline"
                                                     >
                                                         {cellValue(row, column)}
                                                     </Link>
@@ -314,21 +403,38 @@ export default function DashboardQueueTable({
                                     ))}
                                     <td
                                         className={cn(
-                                            'px-3 text-right align-middle',
-                                            compact ? 'py-2.5' : 'h-11 py-1.5',
+                                            'px-4 text-right align-top',
+                                            compact ? 'py-4' : 'py-3.5',
                                         )}
                                     >
                                         {href && (
-                                            <Button
-                                                asChild
-                                                size="sm"
-                                                variant="outline"
-                                                className="h-7 px-2.5"
-                                            >
-                                                <Link href={href}>
-                                                    {actionLabel}
-                                                </Link>
-                                            </Button>
+                                            <div className="inline-flex items-center gap-1.5">
+                                                <Button
+                                                    asChild
+                                                    size="sm"
+                                                    className="h-8 gap-1.5 bg-nppc-900 px-2.5 text-xs font-semibold shadow-xs hover:bg-nppc-700"
+                                                >
+                                                    <Link href={href}>
+                                                        {actionLabel}
+                                                        <ArrowRight className="size-3" />
+                                                    </Link>
+                                                </Button>
+                                                {registry ? (
+                                                    <Link
+                                                        href={href}
+                                                        title="Designer template"
+                                                        className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                                                    >
+                                                        <PenLine
+                                                            className="size-3.5"
+                                                            aria-hidden="true"
+                                                        />
+                                                        <span className="sr-only">
+                                                            Open designer
+                                                        </span>
+                                                    </Link>
+                                                ) : null}
+                                            </div>
                                         )}
                                     </td>
                                 </tr>
@@ -338,9 +444,14 @@ export default function DashboardQueueTable({
                             <tr>
                                 <td
                                     colSpan={data.columns.length + 1}
-                                    className="px-3 py-6 text-center text-muted-foreground"
+                                    className="px-4 py-12 text-center"
                                 >
-                                    No forms match this filter.
+                                    <p className="text-sm font-medium text-nppc-900">
+                                        No matching forms
+                                    </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        No forms match this filter.
+                                    </p>
                                 </td>
                             </tr>
                         ) : null}
@@ -349,22 +460,22 @@ export default function DashboardQueueTable({
             </div>
 
             {registry ? (
-                <div className="flex items-center justify-between gap-2 border-t border-slate-200 bg-slate-50/50 px-3 py-2 text-[11px] text-muted-foreground">
+                <div className="flex items-center justify-between gap-2 border-t border-slate-200 bg-slate-50/50 px-4 py-3 text-xs text-slate-500">
                     <span>
                         Showing{' '}
-                        <span className="font-medium text-slate-800">
+                        <strong className="font-semibold text-slate-700">
                             {filteredRows.length}
-                        </span>{' '}
+                        </strong>{' '}
                         of{' '}
-                        <span className="font-medium text-slate-800">
+                        <strong className="font-semibold text-slate-700">
                             {data.rows.length}
-                        </span>{' '}
-                        templates in preview
+                        </strong>{' '}
+                        controlled documents
                     </span>
                     {viewAllHref ? (
                         <Link
                             href={viewAllHref}
-                            className="font-medium text-[#365BB0] hover:underline"
+                            className="font-semibold text-nppc-900 hover:underline"
                         >
                             Open full catalog →
                         </Link>
@@ -392,22 +503,33 @@ function SectionHeader({
 }) {
     if (registry) {
         return (
-            <div className="flex flex-col gap-1 border-b border-slate-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-sm font-semibold text-slate-900">
-                            {title}
-                        </h2>
-                        {countLabel != null ? (
-                            <span className="rounded border bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-700">
-                                {countLabel} registered
-                            </span>
+            <div className="border-b border-slate-200 bg-white p-4">
+                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                    <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="text-sm font-bold tracking-tight text-slate-900">
+                                {title}
+                            </h2>
+                            {countLabel != null ? (
+                                <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                                    {countLabel} registered
+                                </span>
+                            ) : null}
+                        </div>
+                        {subtitle ? (
+                            <p className="mt-0.5 text-xs text-slate-500">
+                                {subtitle}
+                            </p>
                         ) : null}
                     </div>
-                    {subtitle ? (
-                        <p className="mt-0.5 text-[11px] text-muted-foreground">
-                            {subtitle}
-                        </p>
+                    {viewAllHref ? (
+                        <Link
+                            href={viewAllHref}
+                            className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-nppc-900 hover:text-nppc-700"
+                        >
+                            {viewAllLabel}
+                            <span aria-hidden="true">→</span>
+                        </Link>
                     ) : null}
                 </div>
             </div>
@@ -416,13 +538,13 @@ function SectionHeader({
 
     return (
         <div className="flex items-center justify-between gap-2">
-            <h2 className="text-xs font-semibold tracking-wide text-[#1A3694] uppercase">
+            <h2 className="text-xs font-semibold tracking-wide text-slate-900 uppercase">
                 {title}
             </h2>
             {viewAllHref && (
                 <Link
                     href={viewAllHref}
-                    className="text-xs font-medium text-[#365BB0] hover:underline"
+                    className="text-xs font-medium text-nppc-900 hover:underline"
                 >
                     {viewAllLabel} →
                 </Link>

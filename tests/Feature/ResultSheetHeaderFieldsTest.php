@@ -371,7 +371,7 @@ class ResultSheetHeaderFieldsTest extends TestCase
         $this->assertSame('Spring box', $bag['results.water_supply']);
     }
 
-    public function test_analysis_datetime_uses_first_completed_result(): void
+    public function test_analysis_datetime_uses_first_performed_result(): void
     {
         $this->seed();
 
@@ -413,11 +413,10 @@ class ResultSheetHeaderFieldsTest extends TestCase
 
         $first = $job->analyses()->firstOrFail();
         $this->actingAs($analyst)
-            ->post("/analyst/tasks/{$first->id}/complete", [
-                    'result_value' => 'ND',
-                    'result_pass_fail' => 'Passed',
-                    'result_method' => 'Standard Method'
-                ])
+            ->post("/analyst/tasks/{$first->id}/complete", $this->completeResultPayload([
+                'performed_at' => '2026-07-29T15:00',
+                'result_value' => 'ND',
+            ]))
             ->assertRedirect();
 
         $bag = app(FieldValueResolver::class)->jobOrderBag($job->fresh(['analyses']), true);
@@ -473,6 +472,7 @@ class ResultSheetHeaderFieldsTest extends TestCase
         $first = $job->analyses()->firstOrFail();
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$first->id}/complete", [
+                    'performed_at' => '2026-08-20T00:51',
                     'result_value' => 'ND',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method'

@@ -48,7 +48,7 @@ class DashboardTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('dashboard')
                 ->where('role', 'admin')
-                ->where('header.title', 'Laboratory Administration')
+                ->where('header.title', 'Laboratory Administration & Governance')
                 ->has('kpis', 4)
                 ->where('kpis.0.key', 'active_forms')
                 ->where('kpis.1.key', 'pending_revisions')

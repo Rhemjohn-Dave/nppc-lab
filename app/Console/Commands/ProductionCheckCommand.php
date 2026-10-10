@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\DocxToPdfConverter;
+use App\Support\Mail\MailSettings;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -29,8 +30,8 @@ class ProductionCheckCommand extends Command
             (bool) config('session.secure') === true,
         );
         $failures += $this->requireValue(
-            'MAIL_MAILER is not log',
-            config('mail.default') !== 'log',
+            'Mail configured (Admin > Email Settings or MAIL_MAILER is not log)',
+            MailSettings::isConfigured() || config('mail.default') !== 'log',
         );
         $failures += $this->requireValue(
             'QUEUE_CONNECTION is not sync',

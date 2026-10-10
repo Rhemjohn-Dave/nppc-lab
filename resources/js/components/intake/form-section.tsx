@@ -33,7 +33,7 @@ export default function FormSection({
         >
             <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
-                    <h3 className="text-sm font-semibold text-[#1A3694]">
+                    <h3 className="text-sm font-semibold text-nppc-900">
                         {title}
                     </h3>
                     {description ? (

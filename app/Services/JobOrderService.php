@@ -5,13 +5,13 @@ namespace App\Services;
 use App\Enums\JobOrderAnalysisStatus;
 use App\Enums\JobOrderStatus;
 use App\Events\LabQueueUpdated;
-use App\Mail\ResultsReadyMail;
 use App\Models\AnalysisCategory;
 use App\Models\AnalysisPackage;
 use App\Models\AnalysisType;
 use App\Models\Customer;
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
+use App\Models\JobOrderPackage;
 use App\Models\User;
 use App\Notifications\AnalysisReturned;
 use App\Notifications\JobOrderJoApproved;
@@ -19,8 +19,8 @@ use App\Notifications\JobOrderPendingReview;
 use App\Notifications\JobOrderSubmitted;
 use App\Notifications\ResultsReleased;
 use App\Support\ResultSignatories;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 
 class JobOrderService
@@ -29,6 +29,7 @@ class JobOrderService
         private readonly ReferenceNumberService $referenceNumbers,
         private readonly AnalystAssignmentPicker $assignments,
         private readonly AnalysisResultReportResolver $reports,
+        private readonly CustomerEmailService $customerEmails,
     ) {}
 
     /**
@@ -67,10 +68,12 @@ class JobOrderService
             /** @var array<int, array<string, mixed>> $samples */
             $samples = $data['samples'];
 
+            $createdSamples = [];
+
             foreach ($samples as $index => $sample) {
                 $description = trim((string) ($sample['description'] ?? ''));
 
-                $jobOrder->samples()->create([
+                $createdSamples[] = $jobOrder->samples()->create([
                     'sample_code' => $sample['sample_code'] ?? null,
                     'description' => $description,
                     'matrix' => $sample['matrix'] ?? null,
@@ -81,37 +84,114 @@ class JobOrderService
                 ]);
             }
 
+            $usesLegacyJoLevelSelection = array_key_exists('analysis_type_ids', $data)
+                || array_key_exists('package_ids', $data);
+
+            if ($usesLegacyJoLevelSelection) {
+                $shared = [
+                    'package_ids' => $data['package_ids'] ?? [],
+                    'analysis_type_ids' => $data['analysis_type_ids'] ?? [],
+                ];
+                $perSampleSelections = array_fill(0, count($createdSamples), $shared);
+                $typesExplicitlyListed = array_key_exists('analysis_type_ids', $data);
+            } else {
+                $perSampleSelections = [];
+                foreach ($createdSamples as $index => $_) {
+                    $perSampleSelections[] = [
+                        'package_ids' => $samples[$index]['package_ids'] ?? [],
+                        'analysis_type_ids' => $samples[$index]['analysis_type_ids'] ?? [],
+                    ];
+                }
+                $typesExplicitlyListed = true;
+            }
+
+            $this->attachAnalysesForSamples(
+                $jobOrder,
+                $createdSamples,
+                $perSampleSelections,
+                $data['other_tests'] ?? null,
+                $typesExplicitlyListed,
+            );
+
+            $jobOrder->recalculateTotal();
+
+            User::role(['receiving', 'admin'])->get()->each(
+                fn (User $user) => $user->notify(new JobOrderSubmitted($jobOrder))
+            );
+
+            return $jobOrder->fresh(['samples', 'analyses']) ?? $jobOrder;
+        });
+
+        LabQueueUpdated::notify([LabQueueUpdated::SCOPE_RECEIVING], $jobOrder->id);
+
+        $this->customerEmails->queueRequestReceived($jobOrder);
+
+        return $jobOrder;
+    }
+
+    /**
+     * Attach packages and analysis lines for each sample (billed per sample).
+     *
+     * @param  list<\App\Models\Sample>  $createdSamples
+     * @param  list<array{package_ids?: list<int|string>, analysis_type_ids?: list<int|string>}>  $perSampleSelections
+     */
+    private function attachAnalysesForSamples(
+        JobOrder $jobOrder,
+        array $createdSamples,
+        array $perSampleSelections,
+        ?string $otherTests,
+        bool $typesExplicitlyListed,
+    ): void {
+        $allPackageIds = [];
+        foreach ($perSampleSelections as $selection) {
+            foreach (($selection['package_ids'] ?? []) as $id) {
+                $allPackageIds[] = (int) $id;
+            }
+        }
+
+        $packages = AnalysisPackage::query()
+            ->whereIn('id', array_values(array_unique($allPackageIds)))
+            ->where('is_active', true)
+            ->with('analysisTypes')
+            ->get()
+            ->keyBy('id');
+
+        foreach ($createdSamples as $index => $sampleModel) {
+            $selection = $perSampleSelections[$index] ?? [
+                'package_ids' => [],
+                'analysis_type_ids' => [],
+            ];
+
             /** @var list<int> $requestedTypeIds */
             $requestedTypeIds = array_values(array_unique(array_map(
                 'intval',
-                $data['analysis_type_ids'] ?? [],
+                $selection['analysis_type_ids'] ?? [],
             )));
 
             /** @var list<int> $packageIds */
             $packageIds = array_values(array_unique(array_map(
                 'intval',
-                $data['package_ids'] ?? [],
+                $selection['package_ids'] ?? [],
             )));
 
-            $packages = AnalysisPackage::query()
-                ->whereIn('id', $packageIds)
-                ->where('is_active', true)
-                ->with('analysisTypes')
-                ->get();
-
-            $typesExplicitlyListed = array_key_exists('analysis_type_ids', $data);
+            $sampleTypesExplicit = $typesExplicitlyListed && $requestedTypeIds !== [];
             $analysisTypeIds = $requestedTypeIds;
             $waivedAll = [];
 
-            foreach ($packages as $package) {
+            foreach ($packageIds as $packageId) {
+                $package = $packages->get($packageId);
+                if (! $package) {
+                    continue;
+                }
+
                 $memberIds = $package->orderedTypeIds();
-                $selected = $typesExplicitlyListed
+                $selected = $sampleTypesExplicit
                     ? array_values(array_intersect($memberIds, $requestedTypeIds))
                     : $memberIds;
 
                 if ($selected === []) {
                     throw ValidationException::withMessages([
-                        'package_ids' => "Select at least one test in package \"{$package->name}\".",
+                        "samples.{$index}.package_ids" => "Select at least one test in package \"{$package->name}\" for sample ".($index + 1).'.',
                     ]);
                 }
 
@@ -120,11 +200,12 @@ class JobOrderService
                     $waivedAll[] = $waivedId;
                 }
 
-                $jobOrder->packages()->syncWithoutDetaching([
-                    $package->id => [
-                        'selected_type_ids' => $selected,
-                        'waived_type_ids' => $waived,
-                    ],
+                JobOrderPackage::query()->create([
+                    'job_order_id' => $jobOrder->id,
+                    'sample_id' => $sampleModel->id,
+                    'analysis_package_id' => $package->id,
+                    'selected_type_ids' => $selected,
+                    'waived_type_ids' => $waived,
                 ]);
 
                 foreach ($selected as $typeId) {
@@ -137,6 +218,12 @@ class JobOrderService
                 $analysisTypeIds,
                 fn (int $id): bool => ! in_array($id, $waivedAll, true),
             )));
+
+            if ($analysisTypeIds === [] && ($index > 0 || empty($otherTests))) {
+                throw ValidationException::withMessages([
+                    "samples.{$index}.analysis_type_ids" => 'Select at least one analysis or package for sample '.($index + 1).'.',
+                ]);
+            }
 
             $types = AnalysisType::query()
                 ->whereIn('id', $analysisTypeIds)
@@ -153,6 +240,7 @@ class JobOrderService
                 $type->loadMissing('category');
 
                 $jobOrder->analyses()->create([
+                    'sample_id' => $sampleModel->id,
                     'analysis_type_id' => $type->id,
                     'name' => $type->name,
                     'category' => $type->category?->slug,
@@ -163,34 +251,24 @@ class JobOrderService
                     'status' => JobOrderAnalysisStatus::Pending,
                 ]);
             }
+        }
 
-            if (! empty($data['other_tests'])) {
-                $otherCategory = AnalysisCategory::query()->where('slug', 'other')->first();
+        if (! empty($otherTests) && $createdSamples !== []) {
+            $otherCategory = AnalysisCategory::query()->where('slug', 'other')->first();
+            $firstSample = $createdSamples[0];
 
-                $jobOrder->analyses()->create([
-                    'analysis_type_id' => null,
-                    'name' => $data['other_tests'],
-                    'category' => $otherCategory?->slug ?? 'other',
-                    'category_label' => $otherCategory?->name ?? 'Other',
-                    'quantity' => 1,
-                    'unit_price' => 0,
-                    'total_cost' => 0,
-                    'status' => JobOrderAnalysisStatus::Pending,
-                ]);
-            }
-
-            $jobOrder->recalculateTotal();
-
-            User::role(['receiving', 'admin'])->get()->each(
-                fn (User $user) => $user->notify(new JobOrderSubmitted($jobOrder))
-            );
-
-            return $jobOrder->fresh(['samples', 'analyses']) ?? $jobOrder;
-        });
-
-        LabQueueUpdated::notify([LabQueueUpdated::SCOPE_RECEIVING], $jobOrder->id);
-
-        return $jobOrder;
+            $jobOrder->analyses()->create([
+                'sample_id' => $firstSample->id,
+                'analysis_type_id' => null,
+                'name' => $otherTests,
+                'category' => $otherCategory?->slug ?? 'other',
+                'category_label' => $otherCategory?->name ?? 'Other',
+                'quantity' => 1,
+                'unit_price' => 0,
+                'total_cost' => 0,
+                'status' => JobOrderAnalysisStatus::Pending,
+            ]);
+        }
     }
 
     /**
@@ -417,7 +495,7 @@ class JobOrderService
     }
 
     /**
-     * @param  array{result_value?: ?string, result_pass_fail?: ?string, result_measurement?: ?string, result_unit?: ?string, result_remarks?: ?string, result_method?: ?string}  $data
+     * @param  array{result_value?: ?string, result_pass_fail?: ?string, result_measurement?: ?string, result_unit?: ?string, result_remarks?: ?string, result_method?: ?string, performed_at?: mixed}  $data
      */
     public function saveAnalysisDraft(JobOrderAnalysis $analysis, array $data, User $analyst): JobOrderAnalysis
     {
@@ -425,16 +503,34 @@ class JobOrderService
         $analysis->loadMissing('analysisType');
 
         $value = $this->optionalText($data['result_value'] ?? null);
-        $passFail = $this->normalizedPassFail($data['result_pass_fail'] ?? null);
+        $requiresPassFail = (bool) ($analysis->analysisType?->requires_pass_fail);
+        $passFail = $requiresPassFail
+            ? $this->normalizedPassFail($data['result_pass_fail'] ?? null)
+            : null;
         $measurement = $this->optionalText($data['result_measurement'] ?? null);
         $unit = $this->optionalText($data['result_unit'] ?? null);
         $method = $this->optionalText($data['result_method'] ?? null);
+        $performedAt = $this->parsePerformedAt($data['performed_at'] ?? null);
 
-        if (($data['result_pass_fail'] ?? null) !== null
+        if ($requiresPassFail
+            && ($data['result_pass_fail'] ?? null) !== null
             && trim((string) $data['result_pass_fail']) !== ''
             && $passFail === null) {
             throw ValidationException::withMessages([
                 'result_pass_fail' => 'Select Passed or Failed.',
+            ]);
+        }
+
+        $hasResultContent = $value !== null
+            || $passFail !== null
+            || $measurement !== null
+            || $unit !== null
+            || $this->optionalText($data['result_remarks'] ?? null) !== null
+            || $method !== null;
+
+        if ($hasResultContent && $performedAt === null) {
+            throw ValidationException::withMessages([
+                'performed_at' => 'Enter the date and time this test was performed before saving result values.',
             ]);
         }
 
@@ -454,6 +550,7 @@ class JobOrderService
             'result_unit' => $unit,
             'result_remarks' => $data['result_remarks'] ?? null,
             'result_method' => $method,
+            'performed_at' => $performedAt,
             'status' => $analysis->status === JobOrderAnalysisStatus::Returned
                 ? JobOrderAnalysisStatus::Returned
                 : JobOrderAnalysisStatus::InProgress,
@@ -470,7 +567,7 @@ class JobOrderService
     }
 
     /**
-     * @param  array{result_value: string, result_pass_fail?: ?string, result_measurement?: ?string, result_unit?: ?string, result_remarks?: ?string, result_method?: ?string}  $data
+     * @param  array{result_value: string, result_pass_fail?: ?string, result_measurement?: ?string, result_unit?: ?string, result_remarks?: ?string, result_method?: ?string, performed_at?: mixed}  $data
      */
     public function completeAnalysis(JobOrderAnalysis $analysis, array $data, User $analyst): JobOrderAnalysis
     {
@@ -478,13 +575,19 @@ class JobOrderService
         $analysis->loadMissing(['analysisType', 'jobOrder.packages', 'jobOrder.analyses']);
 
         $value = $this->optionalText($data['result_value'] ?? null);
-        $passFail = $this->normalizedPassFail($data['result_pass_fail'] ?? null);
+        $requiresPassFail = (bool) ($analysis->analysisType?->requires_pass_fail);
+        $passFail = $requiresPassFail
+            ? $this->normalizedPassFail($data['result_pass_fail'] ?? null)
+            : null;
         $measurement = $this->optionalText($data['result_measurement'] ?? null);
         $unit = $this->optionalText($data['result_unit'] ?? null);
         $method = $this->optionalText($data['result_method'] ?? null);
-        $requiresPassFail = $this->reports->requiresPassFail($analysis->jobOrder);
+        $performedAt = $this->parsePerformedAt($data['performed_at'] ?? null);
 
         $errors = [];
+        if ($performedAt === null) {
+            $errors['performed_at'] = 'Enter the date and time this test was performed.';
+        }
         if (blank($value)) {
             $errors['result_value'] = 'A result value is required to complete this analysis.';
         }
@@ -497,7 +600,7 @@ class JobOrderService
 
         $wasCompleted = $analysis->status === JobOrderAnalysisStatus::Completed;
 
-        $fresh = DB::transaction(function () use ($analysis, $data, $analyst, $value, $passFail, $measurement, $unit, $method, $wasCompleted) {
+        $fresh = DB::transaction(function () use ($analysis, $data, $analyst, $value, $passFail, $measurement, $unit, $method, $performedAt, $wasCompleted) {
             $payload = [
                 'result_value' => $value,
                 'result_pass_fail' => $passFail,
@@ -505,6 +608,7 @@ class JobOrderService
                 'result_unit' => $unit,
                 'result_remarks' => $data['result_remarks'] ?? null,
                 'result_method' => $method,
+                'performed_at' => $performedAt,
                 'status' => JobOrderAnalysisStatus::Completed,
                 'completed_at' => $wasCompleted
                     ? ($analysis->completed_at ?? now())
@@ -526,6 +630,104 @@ class JobOrderService
         ], $fresh->job_order_id);
 
         return $fresh;
+    }
+
+    /**
+     * Mark all assays for a sample (or the whole JO when sample_id is null) as completed
+     * using already-drafted result values. Does not submit to Head.
+     *
+     * @return list<JobOrderAnalysis>
+     */
+    public function completeSampleAnalyses(JobOrder $jobOrder, User $analyst, ?int $sampleId = null): array
+    {
+        if ($jobOrder->status !== JobOrderStatus::InAnalysis) {
+            throw ValidationException::withMessages([
+                'job_order' => 'Only jobs in analysis can complete sample results.',
+            ]);
+        }
+
+        $jobOrder->loadMissing(['analyses.analysisType', 'analyses.assignee']);
+
+        if ($sampleId !== null) {
+            $lines = $jobOrder->analyses
+                ->filter(fn (JobOrderAnalysis $line) => (int) $line->sample_id === $sampleId)
+                ->values();
+        } else {
+            // Null sample_id: complete unscoped lines if any exist; otherwise the full JO.
+            $unscoped = $jobOrder->analyses
+                ->filter(fn (JobOrderAnalysis $line) => $line->sample_id === null)
+                ->values();
+            $lines = $unscoped->isNotEmpty() ? $unscoped : $jobOrder->analyses->values();
+        }
+
+        if ($lines->isEmpty()) {
+            throw ValidationException::withMessages([
+                'sample_id' => 'No assays found for this sample.',
+            ]);
+        }
+
+        $missing = [];
+        foreach ($lines as $line) {
+            $this->assertAnalystCanWorkOn($line, $analyst);
+
+            if (blank($line->result_value)) {
+                $missing[] = $line->name;
+                continue;
+            }
+
+            if ($line->performed_at === null) {
+                $missing[] = $line->name.' (date/time performed)';
+                continue;
+            }
+
+            $requiresPassFail = (bool) ($line->analysisType?->requires_pass_fail);
+            if ($requiresPassFail && $this->normalizedPassFail($line->result_pass_fail) === null) {
+                $missing[] = $line->name.' (Pass/Fail)';
+            }
+        }
+
+        if ($missing !== []) {
+            throw ValidationException::withMessages([
+                'assays' => ($sampleId === null
+                    ? 'Encode all results before completing this job order: '
+                    : 'Encode all results before completing this sample: ').implode(', ', $missing).'.',
+            ]);
+        }
+
+        $completed = DB::transaction(function () use ($lines, $analyst) {
+            $freshLines = [];
+
+            foreach ($lines as $line) {
+                $requiresPassFail = (bool) ($line->analysisType?->requires_pass_fail);
+                $passFail = $requiresPassFail
+                    ? $this->normalizedPassFail($line->result_pass_fail)
+                    : null;
+                $wasCompleted = $line->status === JobOrderAnalysisStatus::Completed;
+
+                $payload = [
+                    'result_pass_fail' => $passFail,
+                    'status' => JobOrderAnalysisStatus::Completed,
+                    'completed_at' => $wasCompleted
+                        ? ($line->completed_at ?? now())
+                        : now(),
+                ];
+
+                if (! $wasCompleted) {
+                    $payload['assigned_to'] = $analyst->id;
+                }
+
+                $line->update($payload);
+                $freshLines[] = $line->fresh(['jobOrder', 'analysisType', 'assignee']) ?? $line;
+            }
+
+            return $freshLines;
+        });
+
+        LabQueueUpdated::notify([
+            LabQueueUpdated::SCOPE_ANALYST,
+        ], $jobOrder->id);
+
+        return $completed;
     }
 
     /**
@@ -663,7 +865,7 @@ class JobOrderService
                     && filled($line->result_value)
             );
             $summary = $this->reports->forJobOrder($job, $user, withValues: false)->summary();
-            $previewLine = $job->analyses->first();
+            $previewUrl = "/analyst/job-orders/{$job->id}/result-report";
 
             return [
                 'id' => $job->id,
@@ -672,9 +874,7 @@ class JobOrderService
                 'can_submit' => $incomplete->isEmpty(),
                 'can_preview' => $summary['can_preview'],
                 'preview_message' => $summary['message'],
-                'preview_url' => $previewLine
-                    ? "/analyst/tasks/{$previewLine->id}/report"
-                    : null,
+                'preview_url' => $previewUrl,
                 'missing' => $incomplete->pluck('name')->values()->all(),
                 'review_notes' => $job->review_notes,
                 'signatory' => $this->consolidationSignatoryPayload($job),
@@ -748,11 +948,8 @@ class JobOrderService
 
         return $jobs->map(function (JobOrder $job) use ($user) {
             $summary = $this->reports->forJobOrder($job, $user, withValues: false)->summary();
-            $previewLine = $job->analyses->first();
             $form = $this->reports->matchingControlledForm($job);
-            $previewUrl = $previewLine
-                ? "/analyst/tasks/{$previewLine->id}/report"
-                : null;
+            $previewUrl = "/analyst/job-orders/{$job->id}/result-report";
 
             return [
                 'id' => $job->id,
@@ -804,6 +1001,39 @@ class JobOrderService
         $text = trim((string) $value);
 
         return $text === '' ? null : $text;
+    }
+
+    private function parsePerformedAt(mixed $value): ?Carbon
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $text = trim((string) $value);
+        if ($text === '') {
+            return null;
+        }
+
+        // datetime-local sends "Y-m-d\TH:i" without a zone — interpret in lab time.
+        $normalized = str_replace(' ', 'T', $text);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/', $normalized) === 1) {
+            $normalized = substr($normalized, 0, 16);
+        }
+
+        $tz = (string) config('app.lab_timezone', config('app.timezone', 'Asia/Manila'));
+
+        try {
+            // Persist in app timezone (UTC): wall clock from datetime-local is lab-local.
+            return Carbon::createFromFormat('Y-m-d\TH:i', $normalized, $tz)->utc();
+        } catch (\Throwable) {
+            try {
+                return Carbon::parse($text, $tz)->utc();
+            } catch (\Throwable) {
+                throw ValidationException::withMessages([
+                    'performed_at' => 'Enter a valid date and time for when this test was performed.',
+                ]);
+            }
+        }
     }
 
     private function assertAnalystCanWorkOn(JobOrderAnalysis $analysis, User $analyst): void
@@ -862,11 +1092,9 @@ class JobOrderService
             'review_notes' => $notes,
         ]);
 
-        if (filled($jobOrder->customer_email)) {
-            Mail::to($jobOrder->customer_email)->send(new ResultsReadyMail($jobOrder));
-        }
-
         $fresh = $jobOrder->fresh(['samples', 'analyses.assignee', 'packages.signatory', 'reviewer']) ?? $jobOrder;
+
+        $this->customerEmails->queueResultsReady($fresh, $reviewer);
 
         $this->notifyResultsReleased($fresh);
 
@@ -923,6 +1151,7 @@ class JobOrderService
                     'result_unit' => null,
                     'result_remarks' => null,
                     'result_method' => null,
+                    'performed_at' => null,
                     'completed_at' => null,
                     'status' => JobOrderAnalysisStatus::Returned,
                 ]);

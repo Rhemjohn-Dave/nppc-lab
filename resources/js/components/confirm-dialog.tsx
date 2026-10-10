@@ -19,6 +19,7 @@ type ConfirmDialogProps = {
     processingLabel?: string;
     variant?: 'default' | 'destructive';
     processing?: boolean;
+    error?: ReactNode;
     onConfirm: () => void;
     children?: ReactNode;
 };
@@ -38,6 +39,7 @@ export default function ConfirmDialog({
     processingLabel = 'Working…',
     variant = 'default',
     processing = false,
+    error = null,
     onConfirm,
     children,
 }: ConfirmDialogProps) {
@@ -62,6 +64,12 @@ export default function ConfirmDialog({
 
                 {children}
 
+                {error ? (
+                    <p className="text-sm text-rose-700" role="alert">
+                        {error}
+                    </p>
+                ) : null}
+
                 <DialogFooter>
                     <Button
                         type="button"
@@ -73,9 +81,18 @@ export default function ConfirmDialog({
                     </Button>
                     <Button
                         type="button"
-                        variant={variant === 'destructive' ? 'destructive' : 'default'}
+                        variant={
+                            variant === 'destructive' ? 'destructive' : 'default'
+                        }
                         disabled={processing}
-                        onClick={onConfirm}
+                        onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            if (processing) {
+                                return;
+                            }
+                            onConfirm();
+                        }}
                     >
                         {processing ? processingLabel : confirmLabel}
                     </Button>

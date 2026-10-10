@@ -22,7 +22,7 @@ export default function NeedsAttentionPanel({
         if (!hasItems) {
             return (
                 <section
-                    className="flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/70 px-3.5 py-3 shadow-sm"
+                    className="flex flex-col justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 px-4 shadow-sm sm:flex-row sm:items-center"
                     aria-labelledby="needs-attention-heading"
                 >
                     <div className="flex min-w-0 items-start gap-3">
@@ -34,7 +34,7 @@ export default function NeedsAttentionPanel({
                                 id="needs-attention-heading"
                                 className="text-xs font-semibold text-emerald-900"
                             >
-                                All clear — document control is nominal
+                                All clear — document control is nominal.
                             </h2>
                             <p className="mt-0.5 text-[11px] text-emerald-800/90">
                                 {data.summary}
@@ -57,7 +57,7 @@ export default function NeedsAttentionPanel({
 
         return (
             <section
-                className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3.5 py-3 shadow-sm sm:flex-row sm:items-start sm:justify-between"
+                className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 px-4 shadow-sm sm:flex-row sm:items-start sm:justify-between"
                 aria-labelledby="needs-attention-heading"
             >
                 <div className="flex min-w-0 items-start gap-3">
@@ -99,7 +99,7 @@ export default function NeedsAttentionPanel({
                     <Button
                         asChild
                         size="sm"
-                        className="h-7 shrink-0 bg-[#1A3694] text-xs hover:bg-[#365BB0]"
+                        className="h-7 shrink-0 bg-nppc-900 text-xs hover:bg-nppc-700"
                     >
                         <Link href={data.action.href}>{data.action.label}</Link>
                     </Button>
@@ -164,7 +164,7 @@ export default function NeedsAttentionPanel({
                     <Button
                         asChild
                         size="sm"
-                        className="w-full shrink-0 bg-[#1A3694] hover:bg-[#365BB0] sm:w-auto"
+                        className="w-full shrink-0 bg-nppc-900 hover:bg-nppc-700 sm:w-auto"
                     >
                         <Link href={data.action.href}>{data.action.label}</Link>
                     </Button>
@@ -183,7 +183,7 @@ export default function NeedsAttentionPanel({
                         {item.href ? (
                             <Link
                                 href={item.href}
-                                className="hover:text-[#1A3694] hover:underline"
+                                className="hover:text-nppc-900 hover:underline"
                             >
                                 {item.text}
                             </Link>

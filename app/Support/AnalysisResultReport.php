@@ -33,6 +33,8 @@ class AnalysisResultReport
         public readonly ?JobOrderAnalysis $analysis = null,
         public readonly mixed $controlledForm = null,
         public readonly mixed $controlledRevision = null,
+        public readonly ?int $sampleId = null,
+        public readonly ?string $controlNumber = null,
     ) {}
 
     public function isOverlay(): bool
@@ -64,9 +66,7 @@ class AnalysisResultReport
     }
 
     /**
-     * Compact payload for list screens.
-     *
-     * @return array{kind: string, title: string, message: string|null, can_preview: bool, can_print: bool}
+     * @return array{kind: string, title: string, message: string|null, can_preview: bool, can_print: bool, sample_id: int|null, control_number: string|null}
      */
     public function summary(): array
     {
@@ -76,6 +76,8 @@ class AnalysisResultReport
             'message' => $this->message,
             'can_preview' => $this->canPreview(),
             'can_print' => $this->canPrint(),
+            'sample_id' => $this->sampleId,
+            'control_number' => $this->controlNumber,
         ];
     }
 
@@ -92,6 +94,8 @@ class AnalysisResultReport
             'message' => $this->message,
             'can_preview' => $this->canPreview(),
             'can_print' => $this->canPrint(),
+            'sample_id' => $this->sampleId,
+            'control_number' => $this->controlNumber,
             'template_url' => $templateUrl,
             'pdf_url' => $pdfUrl,
             'fill_mode' => $fillMode ?? $this->fillMode(),
@@ -101,16 +105,22 @@ class AnalysisResultReport
         ];
     }
 
-    public static function slugFor(JobOrder $jobOrder, ?string $formName = null, ?JobOrderAnalysis $analysis = null): string
+    public static function slugFor(JobOrder $jobOrder, ?string $formName = null, ?JobOrderAnalysis $analysis = null, ?string $controlNumber = null): string
     {
+        $parts = [];
+
+        if ($controlNumber) {
+            $parts[] = Str::slug($controlNumber) ?: 'sample';
+        }
+
         if ($formName) {
-            return Str::slug($formName) ?: 'combined';
+            $parts[] = Str::slug($formName) ?: 'combined';
+        } elseif ($analysis) {
+            $parts[] = Str::slug($analysis->name) ?: 'result';
+        } else {
+            $parts[] = 'result';
         }
 
-        if ($analysis) {
-            return Str::slug($analysis->name) ?: 'result';
-        }
-
-        return 'result';
+        return implode('-', $parts);
     }
 }

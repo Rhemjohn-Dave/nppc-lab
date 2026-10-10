@@ -115,7 +115,7 @@ export default function TablePagination(props: Props) {
                                             }
                                             className={
                                                 pageNumber === page
-                                                    ? 'bg-[#1A3694] hover:bg-[#365BB0]'
+                                                    ? 'bg-nppc-900 hover:bg-nppc-700'
                                                     : ''
                                             }
                                             onClick={() =>
@@ -179,7 +179,7 @@ export default function TablePagination(props: Props) {
                         disabled={!link.url}
                         className={
                             link.active
-                                ? 'bg-[#1A3694] hover:bg-[#365BB0]'
+                                ? 'bg-nppc-900 hover:bg-nppc-700'
                                 : ''
                         }
                     >

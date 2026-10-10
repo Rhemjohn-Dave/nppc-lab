@@ -19,7 +19,7 @@ function StepGlyph({ state }: { state: WorkflowTimelineStep['state'] }) {
             className={cn(
                 'flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold',
                 state === 'done' && 'bg-emerald-600 text-white',
-                state === 'current' && 'bg-[#1A3694] text-white',
+                state === 'current' && 'bg-nppc-900 text-white',
                 state === 'todo' &&
                     'border border-slate-300 bg-white text-slate-400',
             )}
@@ -45,7 +45,7 @@ export default function WorkflowTimeline({
                 className,
             )}
         >
-            <p className="text-[10px] font-semibold tracking-wide text-[#365BB0] uppercase">
+            <p className="text-[10px] font-semibold tracking-wide text-nppc-700 uppercase">
                 {title}
             </p>
 

@@ -20,7 +20,7 @@ export default function HeadDashboard({
     const viewAllLabel = links.primary?.label ?? 'View all in Signing Queue';
 
     return (
-        <div className="flex flex-col gap-3 md:gap-4">
+        <div className="flex flex-col gap-5">
             <NeedsAttentionPanel data={needsAttention} compact />
             <KpiGrid kpis={kpis} compact />
             <DashboardPreviewList

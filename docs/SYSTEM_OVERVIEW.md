@@ -51,6 +51,7 @@ They are responsible for:
 - assigning analysts to analysis types (who may encode each test)
 - managing who can access history
 - managing control numbers
+- configuring outgoing email (SMTP host, port, sender) in **Email Settings** — no `.env` edits needed
 - managing controlled forms and revisions: **RFA** (Job Order), **package result sheets** (FO4, FO5, and future uploads), and **standalone test** result sheets
 - reviewing controlled forms, print history, and audit logs
 
@@ -103,7 +104,7 @@ They are responsible for:
 Head does **not** print the RFA (Receiving does). After result Release:
 - the job becomes Ready for pickup
 - Report date and Release date on the result sheet fill from that moment (`Asia/Manila`)
-- the customer email still goes out if an email is on file
+- the customer “results ready” email is queued if an email is on file (delivery status is visible on the job; Receiving can resend)
 - Receiving reprints the reviewed RFA
 - the designated analyst prints the dated result form for wet signatures
 
@@ -120,13 +121,17 @@ The intake area captures:
 - customer details (lookup from saved unique customers or a previous job)
 - **sample classification first** (Aqua vs Potability / Wastewater / Agriculture / Academic / Others) — this chooses General vs Aqua Job Order and **strictly filters** packages/tests
 - sample information (**Sample type** = water/soil/food/prawn; not the PDF dynamic test matrix)
-- requested analyses from the **NPPC price-list catalog**, including **analysis packages**
+- requested analyses from the **NPPC price-list catalog**, including **analysis packages** — chosen **per sample** (not once for the whole JO)
 - optional **standalone tests** that are not part of a package
 - for **Wastewater**, a **Physico-chem panel** preset (`LSP-7.8-FO2` Issue 18) that selects the panel’s tests as **individual-pay** lines (not an analysis package; members can be unchecked)
+
+**Multi-sample (same classification):** one JO keeps reference `YY-NNNN`; printed control numbers are `YY-NNNNA`, `YY-NNNNB`, … when there are 2+ samples. Each sample picks its own packages/tests; billing is the **sum of each sample’s lines** (four samples with the same package = 4×). Different classifications (e.g. food + water) stay **separate JOs** for now.
 
 **Aqua scope:** when classification is Aqua, only aquaculture packages/tests (plus shared `both` items such as Metals and Chloramphenicol) appear. Non-Aqua classifications hide Aqua-only Soil/Water/Prawn packages.
 
 Selecting a package adds its members by default. The customer may **uncheck** package tests they do not need. Unchecked members stay on the package’s result form as `-`; only checked tests become work lines for Receiving and analysts. Selecting a package does **not** assign the package signatory to every line. Assignment happens at Receiving.
+
+**Result forms:** each sample’s control number owns its result sheet(s). If a sample’s selected work maps to multiple bound forms, the JO can produce **multiple** result PDFs (same control number on each sheet for that sample).
 
 After submission, the job enters the internal workflow and the customer is remembered for later kiosk lookup.
 
@@ -369,15 +374,17 @@ The system uses the actual uploaded PDF page size (A4, short bond, long/folio). 
 - `receiving`
 - `analyst`
 - `head_analysis`
+- `accounting`
 
 ### Access Behavior
 - `admin` is allowed through role checks across workspaces
 - `receiving` is limited to intake-processing, send to analysts (after JO approval), and JO/RFA print after JO approval
 - `analyst` encodes suggested or qualified open lines (soft assignment; encode takes ownership); package signatory may preview combined overlays and submit for review; official print/download requires `reviewed_at`
 - `head_analysis` approves Job Orders after costing, then reviews Pending review jobs and releases results; RFA print routes on Head return 403 (Receiving prints RFA)
+- `accounting` has a read-only **Sales monitor** (`/accounting`) of Head-approved JO billed totals (by `jo_approved_at`); no workflow mutations; payment collection stays outside LMIS
 
 ### History Access
-Configurable (Admin → History access). Default orientation: `admin` and `head_analysis`; may be granted to `receiving` or `analyst`.
+Configurable (Admin → History access). Default orientation: `admin` and `head_analysis`; may be granted to `receiving`, `analyst`, or `accounting`.
 
 ---
 
@@ -400,7 +407,7 @@ Completing all lines does **not** leave `in_analysis`. Submit-for-review is a se
 ## Technical Module Map
 
 ### 1. Intake Module
-Creates the job order, samples, analysis lines for **selected** tests only, and optional package links. Upserts `customers` for kiosk lookup. Package selection stores `job_order_packages` with `selected_type_ids` / `waived_type_ids`; only checked members become `job_order_analyses` (Pending, no assignee). Waived members are not work lines but still occupy result-form slots as `-`.
+Creates the job order, samples, analysis lines for **selected** tests only (linked to each sample), and optional package links per sample. Upserts `customers` for kiosk lookup. Package selection stores `job_order_packages` with `sample_id`, `selected_type_ids` / `waived_type_ids`; only checked members become `job_order_analyses` (Pending, no assignee; `sample_id` set). Waived members are not work lines but still occupy result-form slots as `-`. Billing is the sum of all sample lines. Result PDF resolution emits one report per sample × matched package/standalone form, with that sample’s control number on the sheet.
 
 ### 2. Dashboard Module
 Operational counts and role-specific next steps.
@@ -417,10 +424,13 @@ Sidebar parent **Head Analysis** with children **JO approval** (`/head/jo`) and 
 ### 6. History Module
 Ready-for-pickup jobs; signed vs unsigned filters on `reviewed_at`.
 
-### 7. Admin Setup Modules
+### 7. Accounting Module
+Read-only sales monitor for Head-approved job orders (`jo_approved_at`). Daily KPIs (net, JO count, average ticket, discounts), payment-mode breakdown, 14-day trend, and paginated JO list. No payment posting or workflow actions.
+
+### 8. Admin Setup Modules
 Users, catalog/prices, packages (`signatory_user_id`; linked result form via `controlled_forms.analysis_package_id`, shown read-only), assignments matrix, history access, control numbers.
 
-### 8. Controlled Forms / Document Control
+### 9. Controlled Forms / Document Control
 Upload-first overlay. Binding modes:
 - Job Order → classification-aware RFA (`ControlledForm::jobOrderFormFor($job)` → General FO1 or Aqua FO4)
 - Analysis Result + `analysis_package_id` → package sheet (unique per package)
@@ -433,7 +443,7 @@ Resolve order in `AnalysisResultReportResolver`: package-bound active form first
 ## Technical Business Flow
 
 ### 1. Intake
-Creates job order, samples, analyses for selected tests only, optional `job_order_packages` rows (with `selected_type_ids` / `waived_type_ids` when package members are unchecked), `Customer::rememberFromIntake()`. Status `draft_submitted`.
+Creates job order, samples, analyses for selected tests only, optional `job_order_packages` rows (with `selected_type_ids` / `waived_type_ids` when package members are unchecked), `Customer::rememberFromIntake()`. Status `draft_submitted`. Queues `RequestReceivedMail` (reference no., sample count, requested tests — no prices) via `CustomerEmailService`.
 
 ### 2. Pricing
 Receiving updates line prices. Status `pending_jo_approval`. First pricing save also stamps `received_at` / `received_by` (JO **Received by** date — samples already on hand).
@@ -451,7 +461,10 @@ Line statuses: pending → assigned → in_progress → completed (or returned).
 `JobOrderService::submitForReview()`. Status `pending_review`. `JobOrderPendingReview` notifications. No customer email.
 
 ### 7. Release results
-`JobOrderService::sign()`. Status `ready_for_pickup`. `reviewed_at` now. Customer email if present.
+`JobOrderService::sign()`. Status `ready_for_pickup`. `reviewed_at` now. Queues `ResultsReadyMail` if an email is present.
+
+### Customer email delivery
+`CustomerEmailService` writes an `email_logs` row (`queued` / `sent` / `failed` / `skipped` when no address) and dispatches `SendCustomerEmail` after commit (3 tries; `failed()` records the error). SMTP failures never roll back intake or release. SMTP comes from **Admin → Email Settings** (`MailSettings`, `settings.mail.smtp`, password encrypted) applied at boot and per job; when disabled, `.env` `MAIL_*` applies. Receiving/History job pages list customer emails; admin/receiving can **Resend** (`POST /email-logs/{id}/resend`). Public `/register` is disabled (Fortify registration feature off).
 
 ### 7. Print gates
 - Result overlay preview: allowed for designated analyst when all results complete (`can_preview`).

@@ -120,7 +120,7 @@ export default function RfaPrint({
             <div className="flex min-h-screen flex-col bg-slate-100">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-white px-4 py-3 print:hidden">
                     <div>
-                        <p className="text-sm font-medium text-[#1A3694]">
+                        <p className="text-sm font-medium text-nppc-900">
                             Print preview — {jobOrder.reference_no}
                         </p>
                         <p className="text-xs text-muted-foreground">
@@ -150,7 +150,7 @@ export default function RfaPrint({
                             Download
                         </Button>
                         <Button
-                            className="bg-[#1A3694] hover:bg-[#365BB0]"
+                            className="bg-nppc-900 hover:bg-nppc-700"
                             disabled={!objectUrl}
                             onClick={print}
                         >

@@ -39,7 +39,7 @@ export default function LoadingState({
 
             <Spinner className={spinnerSize} />
             <div className="space-y-1 text-center">
-                <p className="text-sm font-medium text-[#1A3694]">{title}</p>
+                <p className="text-sm font-medium text-nppc-900">{title}</p>
                 {description && (
                     <p className="text-xs text-muted-foreground">{description}</p>
                 )}

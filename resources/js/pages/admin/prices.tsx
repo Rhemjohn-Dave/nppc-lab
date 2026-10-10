@@ -1,6 +1,9 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import LimsWorkspace from '@/components/lims/lims-workspace';
-import { Pencil, Plus, Search, Tags, Trash2 } from 'lucide-react';
+import QueueSummaryCards from '@/components/lims/queue-summary-cards';
+import QueueFilterBar from '@/components/queue-filter-bar';
+import WorkspaceHeader from '@/components/workspace-header';
+import { ArrowRight, Pencil, Plus, Tags, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import ConfirmDialog from '@/components/confirm-dialog';
 import TablePagination from '@/components/table-pagination';
@@ -17,7 +20,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/utils';
 
 type AnalysisType = {
     id: number;
@@ -30,6 +32,7 @@ type AnalysisType = {
     category_label: string | null;
     default_price: string | number;
     is_active: boolean;
+    requires_pass_fail: boolean;
     sort_order: number;
 };
 
@@ -150,254 +153,273 @@ export default function AdminPrices({
     }, [filtered, page, pageSize]);
 
     const activeCount = procedures.filter((item) => item.is_active).length;
+    const inactiveCount = procedures.length - activeCount;
+    const kpiTotal = Math.max(procedures.length, 1);
+
+    const summaryCards = [
+        {
+            id: 'categories',
+            label: 'Categories',
+            value: categories.length,
+            unit: 'Procedure groups',
+            tone: 'info' as const,
+            share: Math.min(
+                100,
+                Math.round((categories.length / Math.max(kpiTotal, 1)) * 100),
+            ),
+        },
+        {
+            id: 'all',
+            label: 'Procedures',
+            value: procedures.length,
+            unit: 'Catalog SOPs',
+            tone: 'default' as const,
+            share: 100,
+        },
+        {
+            id: 'active',
+            label: 'Active',
+            value: activeCount,
+            unit: 'Available for intake',
+            tone: 'success' as const,
+            share: Math.round((activeCount / kpiTotal) * 100),
+        },
+        {
+            id: 'inactive',
+            label: 'Inactive',
+            value: inactiveCount,
+            unit: 'Hidden from intake',
+            tone: 'warning' as const,
+            share: Math.round((inactiveCount / kpiTotal) * 100),
+        },
+    ];
+
+    const categoryChips = [
+        {
+            id: 'all',
+            label: 'All categories',
+            count: procedures.length,
+        },
+        ...categories.map((category) => ({
+            id: String(category.id),
+            label: categoryChipLabel(category, categories),
+            count: category.procedures_count,
+        })),
+    ];
 
     function goToPage(next: number) {
         setPage(Math.min(totalPages, Math.max(1, next)));
     }
 
+    function onSummarySelect(id: string) {
+        if (id === 'categories') {
+            setCategoryFilter('all');
+            return;
+        }
+
+        setStatusFilter(id as 'all' | 'active' | 'inactive');
+    }
+
     return (
         <>
             <Head title="Procedures & prices" />
-            <LimsWorkspace>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                            Procedures & prices
-                        </h1>
-                        <p className="text-sm text-muted-foreground">
-                            Searchable catalog of analyst procedures. Use
-                            modals to add categories and add/edit procedures.
-                        </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                        <Button
-                            variant="outline"
-                            onClick={() => setManageCategoriesOpen(true)}
-                        >
-                            <Tags className="size-4" />
-                            Categories
-                        </Button>
-                        <Button
-                            variant="outline"
-                            onClick={() => setAddCategoryOpen(true)}
-                        >
-                            <Plus className="size-4" />
-                            Add category
-                        </Button>
-                        <Button
-                            className="bg-[#1A3694] hover:bg-[#365BB0]"
-                            onClick={() => setAddProcedureOpen(true)}
-                            disabled={categories.length === 0}
-                        >
-                            <Plus className="size-4" />
-                            Add procedure
-                        </Button>
-                    </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
-                        <p className="text-sm text-muted-foreground">
-                            Categories
-                        </p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
-                            {categories.length}
-                        </p>
-                    </div>
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
-                        <p className="text-sm text-muted-foreground">
-                            Procedures
-                        </p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
-                            {procedures.length}
-                        </p>
-                    </div>
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-emerald-50/70 p-4">
-                        <p className="text-sm text-muted-foreground">Active</p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-emerald-800">
-                            {activeCount}
-                        </p>
-                    </div>
-                </div>
-
-                <div className="flex flex-col gap-3 rounded-xl border bg-white p-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex flex-wrap gap-2">
-                        <button
-                            type="button"
-                            onClick={() => setCategoryFilter('all')}
-                            className={cn(
-                                'inline-flex min-h-9 items-center rounded-full border px-3 text-sm font-medium transition',
-                                categoryFilter === 'all'
-                                    ? 'border-[#1A3694] bg-[#1A3694] text-white'
-                                    : 'border-slate-200 bg-white text-slate-700 hover:border-[#5282D3]',
-                            )}
-                        >
-                            All categories
-                        </button>
-                        {categories.map((category) => (
-                            <button
-                                key={category.id}
-                                type="button"
-                                onClick={() =>
-                                    setCategoryFilter(String(category.id))
-                                }
-                                className={cn(
-                                    'inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-sm font-medium transition',
-                                    categoryFilter === String(category.id)
-                                        ? 'border-[#1A3694] bg-[#1A3694] text-white'
-                                        : 'border-slate-200 bg-white text-slate-700 hover:border-[#5282D3]',
-                                )}
+            <LimsWorkspace className="gap-4">
+                <WorkspaceHeader
+                    title="Procedures & prices"
+                    description="Searchable catalog of analyst procedures. Use modals to add categories and add/edit procedures."
+                    actions={
+                        <div className="flex flex-wrap gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 border-slate-200 text-xs shadow-xs"
+                                onClick={() => setManageCategoriesOpen(true)}
                             >
-                                {categoryChipLabel(category, categories)}
-                                <span
-                                    className={cn(
-                                        'rounded-full px-1.5 py-0.5 text-xs tabular-nums',
-                                        categoryFilter === String(category.id)
-                                            ? 'bg-white/20'
-                                            : 'bg-slate-100 text-slate-600',
-                                    )}
-                                >
-                                    {category.procedures_count}
-                                </span>
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
-                        <select
-                            className="flex h-10 rounded-md border border-input bg-transparent px-3 text-sm outline-none"
-                            value={statusFilter}
-                            onChange={(e) =>
-                                setStatusFilter(
-                                    e.target.value as
-                                        | 'all'
-                                        | 'active'
-                                        | 'inactive',
-                                )
-                            }
-                        >
-                            <option value="all">All status</option>
-                            <option value="active">Active only</option>
-                            <option value="inactive">Inactive only</option>
-                        </select>
-                        <div className="relative min-w-64 flex-1">
-                            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
-                            <Input
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Search code, name, category…"
-                                className="h-10 pl-9"
-                            />
+                                <Tags className="size-3.5" />
+                                Categories
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 border-slate-200 text-xs shadow-xs"
+                                onClick={() => setAddCategoryOpen(true)}
+                            >
+                                <Plus className="size-3.5" />
+                                Add category
+                            </Button>
+                            <Button
+                                size="sm"
+                                className="h-8 gap-1.5 bg-nppc-900 text-xs shadow-xs hover:bg-nppc-700"
+                                onClick={() => setAddProcedureOpen(true)}
+                                disabled={categories.length === 0}
+                            >
+                                <Plus className="size-3.5" />
+                                Add procedure
+                            </Button>
                         </div>
+                    }
+                />
+
+                <QueueSummaryCards
+                    cards={summaryCards}
+                    activeId={statusFilter}
+                    onSelect={onSummarySelect}
+                    className="sm:grid-cols-2 lg:grid-cols-4"
+                />
+
+                <QueueFilterBar
+                    chips={categoryChips}
+                    activeId={categoryFilter}
+                    onChip={setCategoryFilter}
+                    query={query}
+                    onQueryChange={setQuery}
+                    onSearch={() => undefined}
+                    onClear={() => setQuery('')}
+                    placeholder="Search code, name, category…"
+                    sortValue={statusFilter}
+                    onSortChange={(value) =>
+                        setStatusFilter(
+                            value as 'all' | 'active' | 'inactive',
+                        )
+                    }
+                    sortOptions={[
+                        { value: 'all', label: 'All Status' },
+                        { value: 'active', label: 'Active Only' },
+                        { value: 'inactive', label: 'Inactive Only' },
+                    ]}
+                />
+
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+                    <div className="overflow-x-auto">
+                        <table className="w-full border-collapse text-left text-xs">
+                            <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/90">
+                                <tr className="select-none text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                                    <th className="px-4 py-3">Code</th>
+                                    <th className="px-4 py-3">Procedure</th>
+                                    <th className="px-4 py-3">Category</th>
+                                    <th className="px-4 py-3">Default price</th>
+                                    <th className="px-4 py-3">Pass / Fail</th>
+                                    <th className="px-4 py-3">Status</th>
+                                    <th className="min-w-[12rem] px-4 py-3 text-right">
+                                        Actions
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200/80">
+                                {pageItems.map((item) => (
+                                    <tr
+                                        key={item.id}
+                                        className="transition-colors hover:bg-slate-50"
+                                    >
+                                        <td className="px-4 py-4 align-top font-semibold text-slate-900">
+                                            {item.code}
+                                        </td>
+                                        <td className="px-4 py-4 align-top">
+                                            <p className="font-semibold text-slate-900">
+                                                {item.name}
+                                            </p>
+                                        </td>
+                                        <td className="px-4 py-4 align-top text-[11px] text-slate-500">
+                                            {item.category_label ?? '—'}
+                                        </td>
+                                        <td className="px-4 py-4 align-top text-xs font-bold tabular-nums text-slate-900">
+                                            {money(item.default_price)}
+                                        </td>
+                                        <td className="px-4 py-4 align-top">
+                                            {item.requires_pass_fail ? (
+                                                <Badge
+                                                    variant="outline"
+                                                    className="border-amber-200 bg-amber-50 text-[10px] text-amber-900"
+                                                >
+                                                    Required
+                                                </Badge>
+                                            ) : (
+                                                <span className="text-[11px] text-muted-foreground">
+                                                    Off
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-4 align-top">
+                                            {item.is_active ? (
+                                                <Badge
+                                                    variant="outline"
+                                                    className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-800"
+                                                >
+                                                    Active
+                                                </Badge>
+                                            ) : (
+                                                <Badge
+                                                    variant="outline"
+                                                    className="border-slate-200 bg-slate-50 text-[10px] text-slate-600"
+                                                >
+                                                    Inactive
+                                                </Badge>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-4 text-right align-top">
+                                            <div className="inline-flex flex-wrap justify-end gap-1.5">
+                                                <Button
+                                                    size="sm"
+                                                    className="h-8 gap-1.5 bg-nppc-900 text-xs shadow-xs hover:bg-nppc-700"
+                                                    onClick={() =>
+                                                        setEditing(item)
+                                                    }
+                                                >
+                                                    <Pencil className="size-3.5" />
+                                                    Edit
+                                                    <ArrowRight className="size-3" />
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-8 border-slate-200 text-xs text-red-700 shadow-xs hover:bg-red-50 hover:text-red-800"
+                                                    onClick={() =>
+                                                        setDeleting(item)
+                                                    }
+                                                >
+                                                    <Trash2 className="size-3.5" />
+                                                    Delete
+                                                </Button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {filtered.length === 0 && (
+                                    <tr>
+                                        <td
+                                            colSpan={7}
+                                            className="px-4 py-12 text-center"
+                                        >
+                                            <p className="text-sm font-medium text-nppc-900">
+                                                {procedures.length === 0
+                                                    ? 'No procedures yet'
+                                                    : 'No matching procedures'}
+                                            </p>
+                                            <p className="mt-1 text-xs text-muted-foreground">
+                                                {procedures.length === 0
+                                                    ? 'Add a category, then add a procedure.'
+                                                    : 'No procedures match your filters.'}
+                                            </p>
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className="border-t border-slate-200 bg-slate-50/50 px-4 py-3">
+                        <TablePagination
+                            mode="client"
+                            page={page}
+                            totalPages={totalPages}
+                            totalItems={filtered.length}
+                            pageSize={pageSize}
+                            onPageChange={goToPage}
+                            label="procedures"
+                            filteredTotal={procedures.length}
+                        />
                     </div>
                 </div>
-
-                <div className="overflow-x-auto rounded-xl border bg-white">
-                    <table className="w-full text-sm">
-                        <thead className="bg-[#f8fafc] text-left">
-                            <tr>
-                                <th className="px-4 py-3 font-medium text-slate-600">
-                                    Code
-                                </th>
-                                <th className="px-4 py-3 font-medium text-slate-600">
-                                    Procedure
-                                </th>
-                                <th className="px-4 py-3 font-medium text-slate-600">
-                                    Category
-                                </th>
-                                <th className="px-4 py-3 font-medium text-slate-600">
-                                    Default price
-                                </th>
-                                <th className="px-4 py-3 font-medium text-slate-600">
-                                    Status
-                                </th>
-                                <th className="px-4 py-3" />
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {pageItems.map((item) => (
-                                <tr
-                                    key={item.id}
-                                    className="border-t transition hover:bg-[#f8fafc]"
-                                >
-                                    <td className="px-4 py-3 font-semibold text-[#1A3694]">
-                                        {item.code}
-                                    </td>
-                                    <td className="px-4 py-3 font-medium">
-                                        {item.name}
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-600">
-                                        {item.category_label ?? '—'}
-                                    </td>
-                                    <td className="px-4 py-3 tabular-nums">
-                                        {money(item.default_price)}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                        {item.is_active ? (
-                                            <Badge
-                                                variant="outline"
-                                                className="border-emerald-200 bg-emerald-50 text-emerald-800"
-                                            >
-                                                Active
-                                            </Badge>
-                                        ) : (
-                                            <Badge
-                                                variant="outline"
-                                                className="border-slate-200 bg-slate-50 text-slate-600"
-                                            >
-                                                Inactive
-                                            </Badge>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-right">
-                                        <div className="flex justify-end gap-2">
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                onClick={() => setEditing(item)}
-                                            >
-                                                <Pencil className="size-3.5" />
-                                                Edit
-                                            </Button>
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                className="text-red-700 hover:bg-red-50 hover:text-red-800"
-                                                onClick={() => setDeleting(item)}
-                                            >
-                                                <Trash2 className="size-3.5" />
-                                                Delete
-                                            </Button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                            {filtered.length === 0 && (
-                                <tr>
-                                    <td
-                                        colSpan={6}
-                                        className="px-4 py-12 text-center text-muted-foreground"
-                                    >
-                                        {procedures.length === 0
-                                            ? 'No procedures yet. Add a category, then add a procedure.'
-                                            : 'No procedures match your filters.'}
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                <TablePagination
-                    mode="client"
-                    page={page}
-                    totalPages={totalPages}
-                    totalItems={filtered.length}
-                    pageSize={pageSize}
-                    onPageChange={goToPage}
-                    label="procedures"
-                    filteredTotal={procedures.length}
-                />
             </LimsWorkspace>
 
             <AddCategoryModal
@@ -524,7 +546,7 @@ function AddCategoryModal({
                         <Button
                             type="submit"
                             disabled={form.processing}
-                            className="bg-[#1A3694] hover:bg-[#365BB0]"
+                            className="bg-nppc-900 hover:bg-nppc-700"
                         >
                             {form.processing ? 'Adding…' : 'Add category'}
                         </Button>
@@ -608,7 +630,7 @@ function CategoryEditorRow({ category }: { category: CategoryOption }) {
             <div className="mt-3 flex flex-wrap gap-2">
                 <Button
                     size="sm"
-                    className="bg-[#1A3694] hover:bg-[#365BB0]"
+                    className="bg-nppc-900 hover:bg-nppc-700"
                     disabled={form.processing}
                     onClick={() =>
                         form.patch(`/admin/prices/categories/${category.id}`)
@@ -677,6 +699,7 @@ function ProcedureModal({
         category_id: procedure?.category_id ?? categoryChoices[0]?.id ?? 0,
         default_price: Number(procedure?.default_price ?? 0),
         is_active: procedure?.is_active ?? true,
+        requires_pass_fail: procedure?.requires_pass_fail ?? false,
     });
 
     useEffect(() => {
@@ -692,6 +715,7 @@ function ProcedureModal({
             category_id: procedure?.category_id ?? categoryChoices[0]?.id ?? 0,
             default_price: Number(procedure?.default_price ?? 0),
             is_active: procedure?.is_active ?? true,
+            requires_pass_fail: procedure?.requires_pass_fail ?? false,
         });
         form.clearErrors();
         // Only re-sync when the dialog opens or the edited procedure changes.
@@ -713,6 +737,7 @@ function ProcedureModal({
                         category_id: categories[0]?.id ?? 0,
                         default_price: 0,
                         is_active: true,
+                        requires_pass_fail: false,
                     });
                     onOpenChange(false);
                 },
@@ -866,7 +891,7 @@ function ProcedureModal({
                                 required
                             />
                         </div>
-                        <div className="flex items-end pb-2">
+                        <div className="flex flex-col justify-end gap-2 pb-2">
                             <label className="flex items-center gap-2 text-sm">
                                 <Checkbox
                                     checked={form.data.is_active}
@@ -876,6 +901,23 @@ function ProcedureModal({
                                 />
                                 Active in intake & assignments
                             </label>
+                            <label className="flex items-center gap-2 text-sm">
+                                <Checkbox
+                                    checked={form.data.requires_pass_fail}
+                                    onCheckedChange={(checked) =>
+                                        form.setData(
+                                            'requires_pass_fail',
+                                            !!checked,
+                                        )
+                                    }
+                                />
+                                Require Pass / Fail
+                            </label>
+                            <p className="text-xs text-muted-foreground">
+                                Off by default. When enabled, analysts must
+                                select Passed or Failed to complete this
+                                procedure.
+                            </p>
                         </div>
                     </div>
                     <DialogFooter>
@@ -889,7 +931,7 @@ function ProcedureModal({
                         <Button
                             type="submit"
                             disabled={form.processing || categories.length === 0}
-                            className="bg-[#1A3694] hover:bg-[#365BB0]"
+                            className="bg-nppc-900 hover:bg-nppc-700"
                         >
                             {form.processing
                                 ? 'Saving…'

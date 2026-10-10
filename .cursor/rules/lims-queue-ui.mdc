@@ -1,0 +1,50 @@
+---
+description: Analyst-reference queue/list UI chrome (KPIs, filters, tables, CTAs)
+globs: resources/js/pages/**/*.tsx,resources/js/components/**/*.tsx
+alwaysApply: false
+---
+
+# LIMS queue / list UI chrome
+
+**Visual reference:** `resources/js/components/analyst/analyst-queue-panel.tsx` and Receiving (`resources/js/pages/receiving/index.tsx`) after unify. Keep each role’s domain columns; match shell, density, chips, and CTAs.
+
+## Shared building blocks
+
+- KPIs: `@/components/lims/queue-summary-cards` (`QueueSummaryCards`) — do not invent per-role KPI card layouts.
+- Filters: `@/components/queue-filter-bar` — soft `rounded-lg` tabs (not pills), compact search, optional inline `Sort:` select (Analyst row pattern).
+
+- Fonts/colors: Manrope + `nppc-*` tokens (see `react-inertia-ui`).
+
+## Table shell
+
+```
+outer: overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs
+inner: overflow-x-auto
+footer: border-t border-slate-200 bg-slate-50/50 px-4 py-3  ← TablePagination here
+```
+
+- Sticky header: `bg-slate-50/90`, `text-[11px] font-semibold tracking-wider uppercase text-slate-500`, cells `px-4 py-3`
+- Body: `divide-y divide-slate-200/80`; cells `px-4 py-4 align-top`; rows `hover:bg-slate-50`
+- Keep role-specific row tints (e.g. awaiting Head amber, JO approved emerald)
+
+## Reference / identity
+
+- JO id chip: `JO #{ref}` with `rounded border … font-mono text-xs font-bold` (amber emphasize when awaiting Head)
+
+## Typography
+
+- Primary line: `font-semibold text-slate-900`
+- Meta line: `text-[11px] text-slate-500`
+- Empty state: `font-medium text-nppc-900` title + muted supporting line
+
+## Actions (CTAs)
+
+- No bordered “action cage” around buttons
+- Outline secondary (e.g. Print) + primary `bg-nppc-900 hover:bg-nppc-700` with `ArrowRight`
+- Amber primary tone only for awaiting-Head-style states
+- Right-align the action cell
+
+## Do not
+
+- Change workflow, validation, or API contracts when restyling
+- Restyle controlled PDF / Form Designer UIs with this chrome — use those rules instead

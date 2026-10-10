@@ -124,7 +124,7 @@ export default function FieldLibrary({
         <aside className="flex min-h-0 flex-1 flex-col bg-white">
             {/* Fixed header */}
             <div className="shrink-0 border-b px-3 py-3">
-                <h2 className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
+                <h2 className="text-[11px] font-semibold tracking-wider text-nppc-900 uppercase">
                     Field Library
                 </h2>
                 <div className="relative mt-2">
@@ -151,8 +151,8 @@ export default function FieldLibrary({
             </div>
 
             {pendingSourceKey && (
-                <div className="shrink-0 border-b bg-[#e8eef8] px-3 py-2 text-xs">
-                    <p className="font-medium text-[#1A3694]">Placement mode</p>
+                <div className="shrink-0 border-b bg-nppc-100 px-3 py-2 text-xs">
+                    <p className="font-medium text-nppc-900">Placement mode</p>
                     <p className="mt-0.5 text-muted-foreground">
                         Click on the PDF to place{' '}
                         <span className="font-medium text-slate-800">{pendingLabel}</span>
@@ -216,7 +216,7 @@ export default function FieldLibrary({
                                                     title={source.hint ?? source.key}
                                                     className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors ${
                                                         isPending
-                                                            ? 'bg-[#e8eef8] text-[#1A3694]'
+                                                            ? 'bg-nppc-100 text-nppc-900'
                                                             : 'text-slate-700 hover:bg-slate-50'
                                                     } ${!canEdit ? 'cursor-not-allowed opacity-60' : 'cursor-grab active:cursor-grabbing'}`}
                                                     onClick={() => onSelectSource(source)}
@@ -229,7 +229,7 @@ export default function FieldLibrary({
                                                     }}
                                                 >
                                                     <GripVertical className="size-3 shrink-0 text-muted-foreground/50" />
-                                                    <Icon className="size-3 shrink-0 text-[#1A3694]/70" />
+                                                    <Icon className="size-3 shrink-0 text-nppc-900/70" />
                                                     <span className="min-w-0 flex-1 truncate">{source.label}</span>
                                                     {isMapped && (
                                                         <span className="shrink-0 text-[10px] font-medium text-emerald-600">✓</span>
@@ -274,7 +274,7 @@ export default function FieldLibrary({
                                         className="flex items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                                         onClick={() => onAddFieldType(type)}
                                     >
-                                        <Icon className="size-3 text-[#1A3694]/70" />
+                                        <Icon className="size-3 text-nppc-900/70" />
                                         {type.label}
                                     </button>
                                 );

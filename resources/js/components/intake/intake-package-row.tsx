@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, Plus } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
@@ -40,29 +40,91 @@ export default function IntakePackageRow({
     ).length;
 
     const detailsId = `package-details-${pkg.id}`;
+    const previewTests = pkg.tests.slice(0, 4);
 
     return (
         <div
             className={cn(
-                'rounded-xl border bg-white transition',
+                'overflow-hidden rounded-xl border bg-white shadow-xs transition',
                 selected
-                    ? 'border-[#1A3694] shadow-sm'
-                    : 'border-slate-200/80 hover:border-[#5282D3]/60',
+                    ? 'border-nppc-900 ring-1 ring-nppc-900/15'
+                    : 'border-slate-200 hover:border-nppc-500/50',
             )}
         >
-            <div className="p-3 sm:p-3.5">
-                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-                    <div className="min-w-0 flex-1">
-                        <p className="truncate font-semibold text-[#1A3694]">
+            <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between sm:gap-5">
+                <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="font-heading text-base font-semibold text-nppc-900">
                             {pkg.name}
                         </p>
-                        <p className="mt-0.5 text-sm text-slate-600">
-                            {pkg.tests.length} test
-                            {pkg.tests.length === 1 ? '' : 's'} · ₱
-                            {Number(pkg.default_price).toFixed(2)}
+                        {pkg.form_code ? (
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-600">
+                                {pkg.form_code}
+                            </span>
+                        ) : null}
+                        <span className="rounded bg-nppc-50 px-1.5 py-0.5 text-[10px] font-medium text-nppc-800">
+                            Standard suite
+                        </span>
+                    </div>
+                    {pkg.description ? (
+                        <p className="line-clamp-2 text-sm leading-snug text-slate-600">
+                            {pkg.description}
+                        </p>
+                    ) : null}
+                    <ul className="space-y-1 text-sm text-slate-700">
+                        {previewTests.map((test) => (
+                            <li
+                                key={test.id}
+                                className="flex items-center gap-2"
+                            >
+                                <span
+                                    className={cn(
+                                        'size-1.5 shrink-0 rounded-full',
+                                        selected
+                                            ? 'bg-emerald-500'
+                                            : 'bg-slate-300',
+                                    )}
+                                />
+                                <span className="min-w-0 truncate">
+                                    {test.name}
+                                </span>
+                            </li>
+                        ))}
+                        {pkg.tests.length > 4 ? (
+                            <li className="pl-3.5 text-xs text-slate-500">
+                                +{pkg.tests.length - 4} more
+                            </li>
+                        ) : null}
+                    </ul>
+                    {pkg.tests.length > 0 ? (
+                        <button
+                            type="button"
+                            aria-expanded={detailsOpen}
+                            aria-controls={detailsId}
+                            onClick={() => setDetailsOpen((open) => !open)}
+                            className="inline-flex items-center gap-0.5 text-xs font-medium text-nppc-700 hover:underline focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none"
+                        >
                             {selected
-                                ? ` · ${selectedMemberCount} included`
-                                : ''}
+                                ? 'Adjust included tests'
+                                : 'View all tests'}
+                            <ChevronDown
+                                className={cn(
+                                    'size-3.5 transition',
+                                    detailsOpen && 'rotate-180',
+                                )}
+                                aria-hidden
+                            />
+                        </button>
+                    ) : null}
+                </div>
+
+                <div className="flex shrink-0 flex-row items-center gap-3 sm:flex-col sm:items-end">
+                    <div className="text-right">
+                        <p className="text-[9px] font-semibold tracking-wider text-slate-500 uppercase">
+                            Fee per sample
+                        </p>
+                        <p className="font-heading text-xl font-extrabold tabular-nums text-nppc-900">
+                            ₱{Number(pkg.default_price).toFixed(2)}
                         </p>
                     </div>
                     <button
@@ -70,65 +132,45 @@ export default function IntakePackageRow({
                         onClick={onTogglePackage}
                         aria-pressed={selected}
                         className={cn(
-                            'flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition focus-visible:ring-2 focus-visible:ring-[#1A3694]/40 focus-visible:outline-none',
+                            'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md px-3.5 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none',
                             selected
-                                ? 'bg-[#1A3694] text-white'
-                                : 'border border-[#1A3694]/30 text-[#1A3694] hover:bg-[#eef3fb]',
+                                ? 'bg-nppc-900 text-white'
+                                : 'border border-nppc-900/30 bg-white text-nppc-900 hover:bg-nppc-50',
                         )}
                     >
                         {selected ? (
                             <>
-                                <Check className="size-4" aria-hidden />
-                                Selected
+                                <Check className="size-3.5" aria-hidden />
+                                Added
                             </>
                         ) : (
-                            'Select'
+                            <>
+                                <Plus className="size-3.5" aria-hidden />
+                                Select package
+                            </>
                         )}
                     </button>
                 </div>
-
-                {pkg.description ? (
-                    <p className="mt-1 line-clamp-1 text-sm text-slate-600">
-                        {pkg.description}
-                    </p>
-                ) : null}
-
-                {pkg.tests.length > 0 ? (
-                    <button
-                        type="button"
-                        aria-expanded={detailsOpen}
-                        aria-controls={detailsId}
-                        onClick={() => setDetailsOpen((open) => !open)}
-                        className="mt-1.5 flex items-center gap-1 text-xs font-medium text-[#365BB0] hover:underline focus-visible:ring-2 focus-visible:ring-[#1A3694]/40 focus-visible:outline-none"
-                    >
-                        {selected ? 'Adjust tests' : 'View tests'}
-                        <ChevronDown
-                            className={cn(
-                                'size-3.5 transition',
-                                detailsOpen && 'rotate-180',
-                            )}
-                            aria-hidden
-                        />
-                    </button>
-                ) : null}
             </div>
 
             {detailsOpen && pkg.tests.length > 0 ? (
                 <div
                     id={detailsId}
                     className={cn(
-                        'border-t px-3 py-2.5 sm:px-3.5',
+                        'border-t px-4 py-3',
                         selected
-                            ? 'border-[#d7e2f5] bg-[#eef3fb]/60'
-                            : 'border-slate-100',
+                            ? 'border-nppc-100 bg-nppc-50/40'
+                            : 'border-slate-100 bg-slate-50/40',
                     )}
                 >
                     {selected ? (
                         <>
-                            <p className="text-xs text-muted-foreground">
-                                {pkg.report_layout === 'dynamic_matrix'
-                                    ? 'Uncheck tests you do not need. Those tests are left off the result table.'
-                                    : 'Uncheck tests you do not need. Those slots print as "-" on the package result form.'}
+                            <p className="text-[11px] text-slate-500">
+                                Uncheck tests you do not need
+                                {selectedMemberCount > 0
+                                    ? ` · ${selectedMemberCount} included`
+                                    : ''}
+                                .
                             </p>
                             <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
                                 {pkg.tests.map((test) => (
@@ -152,23 +194,14 @@ export default function IntakePackageRow({
                             </div>
                         </>
                     ) : (
-                        <ul className="grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
+                        <ul className="grid gap-1 text-sm text-slate-600 sm:grid-cols-2">
                             {pkg.tests.map((test) => (
                                 <li key={test.id} className="truncate">
                                     {test.name}
-                                    <span className="ml-1 font-mono text-muted-foreground">
-                                        ({test.code})
-                                    </span>
                                 </li>
                             ))}
                         </ul>
                     )}
-
-                    {pkg.form_code ? (
-                        <p className="mt-2 font-mono text-[11px] text-muted-foreground">
-                            {pkg.form_code}
-                        </p>
-                    ) : null}
                 </div>
             ) : null}
         </div>

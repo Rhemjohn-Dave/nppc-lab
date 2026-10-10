@@ -9,9 +9,11 @@ use App\Models\ControlledForm;
 use App\Models\ControlledFormRevision;
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
+use App\Models\Sample;
 use App\Models\User;
 use App\Support\AnalysisResultReport;
 use App\Support\DynamicTestMatrix;
+use App\Support\SampleControlNumber;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -23,32 +25,271 @@ class AnalysisResultReportResolver
     {
         $analysis->loadMissing(['jobOrder.samples', 'jobOrder.analyses.assignee', 'jobOrder.analyses.analysisType', 'analysisType', 'assignee']);
 
-        $jobReport = $this->forJobOrder($analysis->jobOrder, $user, $withValues);
+        $reports = $this->reportsForJobOrder($analysis->jobOrder, $user, $withValues);
 
-        if ($jobReport->controlledForm) {
-            return $jobReport;
+        $match = $reports->first(
+            fn (AnalysisResultReport $report) => $report->analyses->contains(
+                fn (JobOrderAnalysis $line) => (int) $line->id === (int) $analysis->id,
+            ),
+        );
+
+        if ($match instanceof AnalysisResultReport && $match->controlledForm) {
+            return $match;
+        }
+
+        $sampleMatch = $reports->first(
+            fn (AnalysisResultReport $report) => $report->sampleId !== null
+                && (int) $report->sampleId === (int) $analysis->sample_id
+                && $report->controlledForm,
+        );
+
+        if ($sampleMatch instanceof AnalysisResultReport) {
+            return $sampleMatch;
         }
 
         return $this->individual($analysis->jobOrder, $analysis);
     }
 
     /**
+     * @return Collection<int, AnalysisResultReport>
+     */
+    public function reportsForJobOrder(JobOrder $jobOrder, User $user, bool $withValues = true): Collection
+    {
+        $jobOrder->loadMissing(['samples', 'analyses.assignee', 'analyses.analysisType', 'packageLinks.analysisPackage', 'packages']);
+
+        // Snapshot full analyses — fromControlledForm temporarily scopes the relation per sample.
+        $allAnalyses = $jobOrder->analyses;
+        $allPackageLinks = $jobOrder->packageLinks;
+
+        $reports = collect();
+
+        foreach ($jobOrder->samples as $index => $sample) {
+            $jobOrder->setRelation('analyses', $allAnalyses);
+            $jobOrder->setRelation('packageLinks', $allPackageLinks);
+
+            $sampleReports = $this->reportsForSample($jobOrder, $sample, (int) $index, $user, $withValues);
+            foreach ($sampleReports as $report) {
+                $reports->push($report);
+            }
+        }
+
+        $jobOrder->setRelation('analyses', $allAnalyses);
+        $jobOrder->setRelation('packageLinks', $allPackageLinks);
+
+        // Legacy jobs with analyses but no sample_id (should be rare after backfill).
+        $orphanAnalyses = $allAnalyses->whereNull('sample_id');
+        if ($orphanAnalyses->isNotEmpty() && $reports->isEmpty()) {
+            $controlled = $this->matchingControlledForm($jobOrder);
+            if ($controlled) {
+                $reports->push($this->fromControlledForm($jobOrder, $user, $controlled, $withValues));
+            }
+        }
+
+        if ($reports->isEmpty()) {
+            $reports->push(new AnalysisResultReport(
+                kind: AnalysisResultReport::KIND_UNAVAILABLE,
+                filename: "Result-{$jobOrder->reference_no}.pdf",
+                title: 'Analysis result',
+                message: 'No combined result form is configured for this exact set of tests. Create and activate a controlled form in the Form Designer to enable combined PDF generation.',
+                jobOrder: $jobOrder,
+                analyses: $allAnalyses,
+                values: [],
+            ));
+        }
+
+        return $reports->values();
+    }
+
+    /**
+     * Pick a sample/form report from a job-order report list (defaults to first).
+     *
+     * @param  Collection<int, AnalysisResultReport>  $reports
+     */
+    public function pickReport(Collection $reports, ?int $sampleId = null, ?int $formId = null): AnalysisResultReport
+    {
+        if ($sampleId || $formId) {
+            $matched = $reports->first(
+                function (AnalysisResultReport $report) use ($sampleId, $formId) {
+                    if ($sampleId && (int) $report->sampleId !== $sampleId) {
+                        return false;
+                    }
+                    if ($formId && (int) ($report->controlledForm?->id ?? 0) !== $formId) {
+                        return false;
+                    }
+
+                    return true;
+                },
+            );
+
+            if ($matched instanceof AnalysisResultReport) {
+                return $matched;
+            }
+        }
+
+        $first = $reports->first();
+
+        return $first instanceof AnalysisResultReport
+            ? $first
+            : new AnalysisResultReport(
+                kind: AnalysisResultReport::KIND_UNAVAILABLE,
+                filename: 'result.pdf',
+                title: 'Analysis result',
+                message: 'No result report is available.',
+                jobOrder: new JobOrder,
+                analyses: collect(),
+                values: [],
+            );
+    }
+
+    /**
+     * @return list<AnalysisResultReport>
+     */
+    private function reportsForSample(
+        JobOrder $jobOrder,
+        Sample $sample,
+        int $sampleIndex,
+        User $user,
+        bool $withValues,
+    ): array {
+        $controlNumber = SampleControlNumber::forIndex(
+            (string) $jobOrder->reference_no,
+            $sampleIndex,
+            $jobOrder->samples->count(),
+        ) ?? (string) $jobOrder->reference_no;
+
+        $sampleAnalyses = $jobOrder->analyses
+            ->where('sample_id', $sample->id)
+            ->values();
+
+        if ($sampleAnalyses->isEmpty()) {
+            return [];
+        }
+
+        $packageLinks = $jobOrder->packageLinks
+            ->where('sample_id', $sample->id)
+            ->values();
+
+        $reports = [];
+        $coveredTypeIds = [];
+
+        foreach ($packageLinks as $link) {
+            $packageId = (int) $link->analysis_package_id;
+            $form = ControlledForm::query()
+                ->with(['analysisTypes', 'currentRevision.fields', 'analysisPackage'])
+                ->where('category', ControlledFormCategory::AnalysisResult)
+                ->where('analysis_package_id', $packageId)
+                ->whereHas('revisions', fn ($query) => $query->where('status', ControlledFormRevisionStatus::Active))
+                ->orderBy('id')
+                ->first();
+
+            if (! $form) {
+                continue;
+            }
+
+            $reports[] = $this->fromControlledForm(
+                $jobOrder,
+                $user,
+                $form,
+                $withValues,
+                $sample,
+                $controlNumber,
+                $sampleAnalyses,
+            );
+
+            foreach (($link->selected_type_ids ?? []) as $typeId) {
+                $coveredTypeIds[] = (int) $typeId;
+            }
+        }
+
+        $standaloneTypeIds = $sampleAnalyses
+            ->pluck('analysis_type_id')
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->reject(fn (int $id): bool => in_array($id, $coveredTypeIds, true))
+            ->values()
+            ->all();
+
+        if ($standaloneTypeIds !== [] && ! in_array(null, $sampleAnalyses->pluck('analysis_type_id')->all(), true)) {
+            $unique = array_values(array_unique($standaloneTypeIds));
+            if (count($unique) === count($standaloneTypeIds)) {
+                $exact = ControlledForm::query()
+                    ->with(['analysisTypes', 'currentRevision.fields'])
+                    ->where('category', ControlledFormCategory::AnalysisResult)
+                    ->whereNull('analysis_package_id')
+                    ->where('combination_key', ControlledFormService::combinationKey($unique))
+                    ->whereHas('revisions', fn ($query) => $query->where('status', ControlledFormRevisionStatus::Active))
+                    ->first();
+
+                $form = $exact ?? $this->matchingTypesOnlyMatrixSubsetForm($unique);
+                if ($form) {
+                    $reports[] = $this->fromControlledForm(
+                        $jobOrder,
+                        $user,
+                        $form,
+                        $withValues,
+                        $sample,
+                        $controlNumber,
+                        $sampleAnalyses->filter(
+                            fn (JobOrderAnalysis $line) => in_array((int) $line->analysis_type_id, $unique, true),
+                        )->values(),
+                    );
+                }
+            }
+        }
+
+        if ($reports === [] && $packageLinks->isEmpty()) {
+            $typeIds = $sampleAnalyses->pluck('analysis_type_id')->map(fn ($id) => $id === null ? null : (int) $id)->all();
+            if ($typeIds !== [] && ! in_array(null, $typeIds, true)) {
+                $unique = array_values(array_unique(array_map('intval', $typeIds)));
+                if (count($unique) === count($typeIds)) {
+                    $exact = ControlledForm::query()
+                        ->with(['analysisTypes', 'currentRevision.fields'])
+                        ->where('category', ControlledFormCategory::AnalysisResult)
+                        ->whereNull('analysis_package_id')
+                        ->where('combination_key', ControlledFormService::combinationKey($unique))
+                        ->whereHas('revisions', fn ($query) => $query->where('status', ControlledFormRevisionStatus::Active))
+                        ->first();
+
+                    $form = $exact ?? $this->matchingTypesOnlyMatrixSubsetForm($unique);
+                    if ($form) {
+                        $reports[] = $this->fromControlledForm(
+                            $jobOrder,
+                            $user,
+                            $form,
+                            $withValues,
+                            $sample,
+                            $controlNumber,
+                            $sampleAnalyses,
+                        );
+                    }
+                }
+            }
+        }
+
+        return $reports;
+    }
+
+    /**
+     * Primary report for the job (first sample form). Prefer waiting if any report is waiting.
+     *
      * @param  bool  $withValues  When false, skip FieldValueResolver (list/summary/overlay manifest). PDF fill must pass true.
      */
     public function forJobOrder(JobOrder $jobOrder, User $user, bool $withValues = true): AnalysisResultReport
     {
-        $jobOrder->loadMissing(['samples', 'analyses.assignee', 'analyses.analysisType', 'reviewer']);
+        $reports = $this->reportsForJobOrder($jobOrder, $user, $withValues);
 
-        $controlled = $this->matchingControlledForm($jobOrder);
-        if ($controlled) {
-            return $this->fromControlledForm($jobOrder, $user, $controlled, $withValues);
+        $waiting = $reports->first(
+            fn (AnalysisResultReport $report) => $report->kind === AnalysisResultReport::KIND_WAITING,
+        );
+        if ($waiting instanceof AnalysisResultReport) {
+            return $waiting;
         }
 
-        return new AnalysisResultReport(
+        return $reports->first() ?? new AnalysisResultReport(
             kind: AnalysisResultReport::KIND_UNAVAILABLE,
             filename: "Result-{$jobOrder->reference_no}.pdf",
             title: 'Analysis result',
-            message: 'No combined result form is configured for this exact set of tests. Create and activate a controlled form in the Form Designer to enable combined PDF generation.',
+            message: 'No combined result form is configured for this exact set of tests.',
             jobOrder: $jobOrder,
             analyses: $jobOrder->analyses,
             values: [],
@@ -56,8 +297,9 @@ class AnalysisResultReportResolver
     }
 
     /**
-     * FO4 prints measured MPN only — Pass/Fail is not collected.
-     * FO5 and other result sheets still require Passed/Failed on complete.
+     * Legacy form-level helper used by older package tests.
+     * FO4 sheets historically skip Pass/Fail at the form level; encode/print
+     * gating uses analysis_types.requires_pass_fail instead.
      */
     public function requiresPassFail(JobOrder $jobOrder): bool
     {
@@ -280,9 +522,13 @@ class AnalysisResultReportResolver
     /**
      * @return Collection<int, JobOrderAnalysis>
      */
-    public function orderedAnalysesForIds(JobOrder $jobOrder, array $typeIds): Collection
+    public function orderedAnalysesForIds(JobOrder $jobOrder, array $typeIds, ?int $sampleId = null): Collection
     {
-        $byType = $jobOrder->analyses->keyBy('analysis_type_id');
+        $analyses = $sampleId !== null
+            ? $jobOrder->analyses->where('sample_id', $sampleId)
+            : $jobOrder->analyses;
+
+        $byType = $analyses->keyBy('analysis_type_id');
 
         return collect($typeIds)
             ->map(fn (int $typeId) => $byType->get($typeId))
@@ -303,26 +549,45 @@ class AnalysisResultReportResolver
             analyses: collect([$analysis]),
             values: [],
             analysis: $analysis,
+            sampleId: $analysis->sample_id,
         );
     }
 
-    private function combinedFilenameFor(JobOrder $jobOrder, string $name): string
+    private function combinedFilenameFor(JobOrder $jobOrder, string $name, ?string $controlNumber = null): string
     {
-        $slug = Str::slug($name) ?: 'combined';
+        $slug = AnalysisResultReport::slugFor($jobOrder, $name, null, $controlNumber);
 
         return "Result-{$jobOrder->reference_no}-{$slug}.pdf";
     }
 
+    /**
+     * @param  Collection<int, JobOrderAnalysis>|null  $sampleAnalyses
+     */
     private function fromControlledForm(
         JobOrder $jobOrder,
         User $user,
         ControlledForm $form,
         bool $withValues = true,
+        ?Sample $sample = null,
+        ?string $controlNumber = null,
+        ?Collection $sampleAnalyses = null,
     ): AnalysisResultReport {
         $form->loadMissing('analysisPackage');
         $revision = $form->activeRevision();
         $revision?->loadMissing('fields');
         $package = $form->analysisPackage;
+        $sampleId = $sample?->id;
+
+        if ($sampleAnalyses !== null) {
+            $scopedJobAnalyses = $sampleAnalyses;
+        } elseif ($sampleId !== null) {
+            $scopedJobAnalyses = $jobOrder->analyses->where('sample_id', $sampleId)->values();
+        } else {
+            $scopedJobAnalyses = $jobOrder->analyses;
+        }
+
+        // Temporarily scope analyses for matrix helpers that read $jobOrder->analyses.
+        $jobOrder->setRelation('analyses', $scopedJobAnalyses);
 
         if ($package && DynamicTestMatrix::packageUsesMatrix($package)) {
             $ordered = DynamicTestMatrix::orderedSelectedAnalyses($jobOrder, $package);
@@ -333,22 +598,27 @@ class AnalysisResultReportResolver
             if ($typeIds === [] && $package) {
                 $typeIds = $package->orderedTypeIds();
             }
-            $ordered = $this->orderedAnalysesForIds($jobOrder, $typeIds);
+            $ordered = $this->orderedAnalysesForIds($jobOrder, $typeIds, $sampleId);
         }
 
-        $filename = $this->combinedFilenameFor($jobOrder, $form->name);
+        $filename = $this->combinedFilenameFor($jobOrder, $form->name, $controlNumber);
+        $title = $controlNumber
+            ? "{$form->name} ({$controlNumber})"
+            : $form->name;
 
         if (! $revision?->hasCanonicalPdf()) {
             return new AnalysisResultReport(
                 kind: AnalysisResultReport::KIND_UNAVAILABLE,
                 filename: $filename,
-                title: $form->name,
+                title: $title,
                 message: 'The active controlled form is missing its canonical PDF.',
                 jobOrder: $jobOrder,
                 analyses: $ordered,
                 values: [],
                 controlledForm: $form,
                 controlledRevision: $revision,
+                sampleId: $sampleId,
+                controlNumber: $controlNumber,
             );
         }
 
@@ -356,13 +626,15 @@ class AnalysisResultReportResolver
             return new AnalysisResultReport(
                 kind: AnalysisResultReport::KIND_UNAVAILABLE,
                 filename: $filename,
-                title: $form->name,
+                title: $title,
                 message: 'This package uses a dynamic test matrix report. Add a Dynamic test matrix region on the bound controlled form in Form Designer.',
                 jobOrder: $jobOrder,
                 analyses: $ordered,
                 values: [],
                 controlledForm: $form,
                 controlledRevision: $revision,
+                sampleId: $sampleId,
+                controlNumber: $controlNumber,
             );
         }
 
@@ -374,13 +646,15 @@ class AnalysisResultReportResolver
             return new AnalysisResultReport(
                 kind: AnalysisResultReport::KIND_WAITING,
                 filename: $filename,
-                title: $form->name,
+                title: $title,
                 message: "This job uses the \"{$form->name}\" form. Preview is available after every matched result is complete.",
                 jobOrder: $jobOrder,
                 analyses: $ordered,
                 values: [],
                 controlledForm: $form,
                 controlledRevision: $revision,
+                sampleId: $sampleId,
+                controlNumber: $controlNumber,
             );
         }
 
@@ -388,37 +662,41 @@ class AnalysisResultReportResolver
             return new AnalysisResultReport(
                 kind: AnalysisResultReport::KIND_UNAVAILABLE,
                 filename: $filename,
-                title: $form->name,
+                title: $title,
                 message: 'This combined form includes tests assigned to other analysts. The designated package analyst, an admin, or Head of Analysis can preview it after all results are complete.',
                 jobOrder: $jobOrder,
                 analyses: $ordered,
                 values: [],
                 controlledForm: $form,
                 controlledRevision: $revision,
+                sampleId: $sampleId,
+                controlNumber: $controlNumber,
             );
         }
 
-        // Overlay manifests use pdf_url (server fill). Callers that only need gates/summary
-        // pass withValues: false to skip FieldValueResolver. PDF fill must pass true.
         $values = $withValues
             ? app(FieldValueResolver::class)->forResult(
                 $revision->load('fields'),
                 $jobOrder,
                 $ordered,
                 $form->load('analysisPackage'),
+                $sample,
+                $controlNumber,
             )
             : [];
 
         return new AnalysisResultReport(
             kind: AnalysisResultReport::KIND_COMBINED,
             filename: $filename,
-            title: $form->name,
+            title: $title,
             message: null,
             jobOrder: $jobOrder,
             analyses: $ordered,
             values: $values,
             controlledForm: $form,
             controlledRevision: $revision,
+            sampleId: $sampleId,
+            controlNumber: $controlNumber,
         );
     }
 }

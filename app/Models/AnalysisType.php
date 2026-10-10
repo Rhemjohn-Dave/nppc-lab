@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property bool $is_active
  * @property bool $show_on_kiosk
  * @property string $result_mode
+ * @property bool $requires_pass_fail
  * @property string $catalog_scope
  * @property int $sort_order
  * @property-read AnalysisCategory $category
@@ -34,6 +35,7 @@ class AnalysisType extends Model
         'is_active',
         'show_on_kiosk',
         'result_mode',
+        'requires_pass_fail',
         'catalog_scope',
         'sort_order',
     ];
@@ -44,6 +46,7 @@ class AnalysisType extends Model
             'default_price' => 'decimal:2',
             'is_active' => 'boolean',
             'show_on_kiosk' => 'boolean',
+            'requires_pass_fail' => 'boolean',
         ];
     }
 

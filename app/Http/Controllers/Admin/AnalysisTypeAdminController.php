@@ -46,6 +46,7 @@ class AnalysisTypeAdminController extends Controller
                     'category_label' => $type->category?->name,
                     'default_price' => $type->default_price,
                     'is_active' => $type->is_active,
+                    'requires_pass_fail' => (bool) $type->requires_pass_fail,
                     'sort_order' => $type->sort_order,
                 ]);
 
@@ -132,6 +133,7 @@ class AnalysisTypeAdminController extends Controller
             'category_id' => ['required', 'integer', 'exists:analysis_categories,id'],
             'default_price' => ['required', 'numeric', 'min:0'],
             'is_active' => ['sometimes', 'boolean'],
+            'requires_pass_fail' => ['sometimes', 'boolean'],
         ]);
 
         $maxSort = (int) AnalysisType::query()->max('sort_order');
@@ -146,6 +148,7 @@ class AnalysisTypeAdminController extends Controller
             'category_id' => $data['category_id'],
             'default_price' => $data['default_price'],
             'is_active' => $data['is_active'] ?? true,
+            'requires_pass_fail' => (bool) ($data['requires_pass_fail'] ?? false),
             'sort_order' => $maxSort + 1,
         ]);
 
@@ -167,6 +170,7 @@ class AnalysisTypeAdminController extends Controller
             'category_id' => ['required', 'integer', 'exists:analysis_categories,id'],
             'default_price' => ['required', 'numeric', 'min:0'],
             'is_active' => ['required', 'boolean'],
+            'requires_pass_fail' => ['required', 'boolean'],
         ]);
 
         $analysisType->update([
@@ -179,6 +183,7 @@ class AnalysisTypeAdminController extends Controller
             'category_id' => $data['category_id'],
             'default_price' => $data['default_price'],
             'is_active' => $data['is_active'],
+            'requires_pass_fail' => (bool) $data['requires_pass_fail'],
         ]);
 
         return back()->with('success', 'Procedure updated.');

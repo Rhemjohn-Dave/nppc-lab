@@ -1,5 +1,7 @@
 import { Head, router, useForm } from '@inertiajs/react';
+import QueueKpi from '@/components/lims/queue-kpi';
 import LimsWorkspace from '@/components/lims/lims-workspace';
+import WorkspaceHeader from '@/components/workspace-header';
 import { Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -77,6 +79,7 @@ export default function AdminPackages({
     const [deleting, setDeleting] = useState<PackageRow | null>(null);
     const [deletingBusy, setDeletingBusy] = useState(false);
     const form = useForm(emptyForm);
+    const activeCount = packages.filter((row) => row.is_active).length;
 
     function openCreate() {
         setEditing(null);
@@ -133,105 +136,136 @@ export default function AdminPackages({
         <>
             <Head title="Analysis packages" />
             <LimsWorkspace>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                            Analysis packages
-                        </h1>
-                        <p className="text-sm text-muted-foreground">
-                            Packages appear on the kiosk as one tap and expand
-                            into individual tests for analysts.
-                        </p>
-                    </div>
-                    <Button
-                        className="bg-[#1A3694] hover:bg-[#365BB0]"
-                        onClick={openCreate}
-                    >
-                        <Plus className="size-4" />
-                        New package
-                    </Button>
+                <WorkspaceHeader
+                    title="Analysis packages"
+                    description="Packages appear on the kiosk as one tap and expand into individual tests for analysts."
+                    actions={
+                        <Button
+                            className="bg-nppc-900 hover:bg-nppc-700"
+                            onClick={openCreate}
+                        >
+                            <Plus className="size-4" />
+                            New package
+                        </Button>
+                    }
+                />
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                    <QueueKpi label="Packages" value={packages.length} />
+                    <QueueKpi
+                        label="Active"
+                        value={activeCount}
+                        hint="on kiosk"
+                        tone="success"
+                    />
                 </div>
 
-                <div className="overflow-x-auto rounded-xl border">
-                    <table className="w-full min-w-[720px] text-sm">
-                        <thead className="bg-[#e8eef8] text-left text-[#1A3694]">
-                            <tr>
-                                <th className="px-3 py-2 font-medium">Code</th>
-                                <th className="px-3 py-2 font-medium">Name</th>
-                                <th className="px-3 py-2 font-medium">Tests</th>
-                                <th className="px-3 py-2 font-medium">Price</th>
-                                <th className="px-3 py-2 font-medium">Status</th>
-                                <th className="px-3 py-2 font-medium">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {packages.map((row) => (
-                                <tr key={row.id} className="border-t">
-                                    <td className="px-3 py-2 font-mono text-xs">
-                                        {row.code}
-                                    </td>
-                                    <td className="px-3 py-2">
-                                        <div className="font-medium">{row.name}</div>
-                                        <div className="text-xs text-muted-foreground">
-                                            {(row.classifications ?? []).join(', ') ||
-                                                'All classifications'}
-                                            {row.result_form
-                                                ? ` · ${row.result_form.form_code}`
-                                                : ' · Result form not linked'}
-                                            {row.report_layout === 'dynamic_matrix'
-                                                ? ' · Dynamic matrix'
-                                                : ''}
-                                            {row.signatory_name
-                                                ? ` · Signatory ${row.signatory_name}`
-                                                : ''}
-                                        </div>
-                                    </td>
-                                    <td className="px-3 py-2 text-xs">
-                                        {row.tests.map((test) => test.name).join(', ')}
-                                    </td>
-                                    <td className="px-3 py-2">
-                                        ₱{Number(row.default_price).toFixed(2)}
-                                    </td>
-                                    <td className="px-3 py-2">
-                                        <Badge variant="outline">
-                                            {row.is_active ? 'Active' : 'Inactive'}
-                                        </Badge>
-                                    </td>
-                                    <td className="px-3 py-2">
-                                        <div className="flex flex-wrap gap-2">
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                onClick={() => openEdit(row)}
-                                            >
-                                                Edit
-                                            </Button>
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                className="text-red-700 hover:bg-red-50 hover:text-red-800"
-                                                onClick={() => setDeleting(row)}
-                                            >
-                                                <Trash2 className="size-3.5" />
-                                                Delete
-                                            </Button>
-                                        </div>
-                                    </td>
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[720px] border-collapse text-left text-xs">
+                            <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/90">
+                                <tr className="select-none text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                                    <th className="px-4 py-3">Code</th>
+                                    <th className="px-4 py-3">Name</th>
+                                    <th className="px-4 py-3">Tests</th>
+                                    <th className="px-4 py-3">Price</th>
+                                    <th className="px-4 py-3">Status</th>
+                                    <th className="px-4 py-3 text-right">
+                                        Actions
+                                    </th>
                                 </tr>
-                            ))}
-                            {packages.length === 0 && (
-                                <tr>
-                                    <td
-                                        className="px-3 py-8 text-center text-muted-foreground"
-                                        colSpan={6}
+                            </thead>
+                            <tbody className="divide-y divide-slate-200/80">
+                                {packages.map((row) => (
+                                    <tr
+                                        key={row.id}
+                                        className="transition-colors hover:bg-slate-50"
                                     >
-                                        No packages yet. Create one to offer a
-                                        bundle on the kiosk.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
+                                        <td className="px-4 py-4 align-top font-mono text-xs font-semibold text-slate-900">
+                                            {row.code}
+                                        </td>
+                                        <td className="px-4 py-4 align-top">
+                                            <p className="font-semibold text-slate-900">
+                                                {row.name}
+                                            </p>
+                                            <p className="mt-0.5 text-[11px] text-slate-500">
+                                                {(row.classifications ?? []).join(
+                                                    ', ',
+                                                ) || 'All classifications'}
+                                                {row.result_form
+                                                    ? ` · ${row.result_form.form_code}`
+                                                    : ' · Result form not linked'}
+                                                {row.report_layout ===
+                                                'dynamic_matrix'
+                                                    ? ' · Dynamic matrix'
+                                                    : ''}
+                                                {row.signatory_name
+                                                    ? ` · Signatory ${row.signatory_name}`
+                                                    : ''}
+                                            </p>
+                                        </td>
+                                        <td className="px-4 py-4 align-top text-xs text-slate-700">
+                                            {row.tests
+                                                .map((test) => test.name)
+                                                .join(', ')}
+                                        </td>
+                                        <td className="px-4 py-4 align-top tabular-nums text-slate-800">
+                                            ₱
+                                            {Number(row.default_price).toFixed(2)}
+                                        </td>
+                                        <td className="px-4 py-4 align-top">
+                                            <Badge variant="outline">
+                                                {row.is_active
+                                                    ? 'Active'
+                                                    : 'Inactive'}
+                                            </Badge>
+                                        </td>
+                                        <td className="px-4 py-4 text-right align-top">
+                                            <div className="inline-flex flex-wrap justify-end gap-1.5">
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-8 border-slate-200 text-xs shadow-xs"
+                                                    onClick={() =>
+                                                        openEdit(row)
+                                                    }
+                                                >
+                                                    Edit
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-8 border-slate-200 text-xs text-red-700 shadow-xs hover:bg-red-50 hover:text-red-800"
+                                                    onClick={() =>
+                                                        setDeleting(row)
+                                                    }
+                                                >
+                                                    <Trash2 className="size-3.5" />
+                                                    Delete
+                                                </Button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {packages.length === 0 && (
+                                    <tr>
+                                        <td
+                                            className="px-4 py-12 text-center"
+                                            colSpan={6}
+                                        >
+                                            <p className="text-sm font-medium text-nppc-900">
+                                                No packages yet
+                                            </p>
+                                            <p className="mt-1 text-xs text-muted-foreground">
+                                                Create one to offer a bundle on
+                                                the kiosk.
+                                            </p>
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </LimsWorkspace>
 

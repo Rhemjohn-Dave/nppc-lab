@@ -1,16 +1,19 @@
 <?php
 
+use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\Admin\AnalysisPackageAdminController;
 use App\Http\Controllers\Admin\AnalysisTypeAdminController;
 use App\Http\Controllers\Admin\AssignmentAdminController;
 use App\Http\Controllers\Admin\ControlledFormAdminController;
 use App\Http\Controllers\Admin\ControlNumberAdminController;
 use App\Http\Controllers\Admin\DocumentAuditAdminController;
+use App\Http\Controllers\Admin\EmailSettingsAdminController;
 use App\Http\Controllers\Admin\HistoryAccessAdminController;
 use App\Http\Controllers\Admin\PrintHistoryAdminController;
 use App\Http\Controllers\Admin\UserAdminController;
 use App\Http\Controllers\AnalystController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\EmailLogController;
 use App\Http\Controllers\HistoryController;
 use App\Http\Controllers\IntakeController;
 use App\Http\Controllers\NotificationController;
@@ -34,11 +37,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead'])->name('notifications.read-all');
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead'])->name('notifications.read');
 
+    Route::post('/email-logs/{emailLog}/resend', [EmailLogController::class, 'resend'])
+        ->middleware(['role:receiving', 'throttle:10,1'])
+        ->name('email-logs.resend');
+
     Route::middleware('history.access')->prefix('history')->name('history.')->group(function () {
         Route::get('/', [HistoryController::class, 'index'])->name('index');
         Route::get('/{jobOrder}', [HistoryController::class, 'show'])->name('show');
         Route::get('/{jobOrder}/print', [HistoryController::class, 'print'])->name('print');
         Route::get('/{jobOrder}/pdf', [HistoryController::class, 'pdf'])->name('pdf');
+        Route::get('/{jobOrder}/result-report', [HistoryController::class, 'resultReport'])->name('result-report');
+        Route::get('/{jobOrder}/combined-pdf', [HistoryController::class, 'combinedPdf'])->name('combined-pdf');
     });
 
     Route::middleware('role:receiving')->prefix('receiving')->name('receiving.')->group(function () {
@@ -50,12 +59,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/{jobOrder}/pdf', [ReceivingController::class, 'pdf'])->name('pdf');
     });
 
+    Route::middleware('role:accounting')->prefix('accounting')->name('accounting.')->group(function () {
+        Route::get('/', [AccountingController::class, 'index'])->name('index');
+    });
+
     Route::middleware('role:analyst')->prefix('analyst')->name('analyst.')->group(function () {
         Route::get('/', [AnalystController::class, 'index'])->name('index');
         Route::post('/tasks/{analysis}/draft', [AnalystController::class, 'saveDraft'])->name('draft');
         Route::post('/tasks/{analysis}/complete', [AnalystController::class, 'complete'])->name('complete');
+        Route::post('/job-orders/{jobOrder}/complete-sample', [AnalystController::class, 'completeSample'])->name('complete-sample');
         Route::post('/job-orders/{jobOrder}/submit-for-review', [AnalystController::class, 'submitForReview'])->name('submit-for-review');
         Route::put('/job-orders/{jobOrder}/result-signatories', [AnalystController::class, 'updateResultSignatories'])->name('result-signatories');
+        Route::get('/job-orders/{jobOrder}/result-report', [AnalystController::class, 'resultReport'])->name('result-report');
         Route::get('/tasks/{analysis}/report', [AnalystController::class, 'report'])->name('report');
         Route::get('/tasks/{analysis}/combined-pdf', [AnalystController::class, 'combinedPdf'])->name('combined-pdf');
         Route::get('/tasks/{analysis}/pdf', [AnalystController::class, 'pdf'])->name('pdf');
@@ -108,6 +123,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         Route::get('/control-number', [ControlNumberAdminController::class, 'edit'])->name('control-number');
         Route::put('/control-number', [ControlNumberAdminController::class, 'update'])->name('control-number.update');
+
+        Route::get('/email-settings', [EmailSettingsAdminController::class, 'edit'])->name('email-settings');
+        Route::put('/email-settings', [EmailSettingsAdminController::class, 'update'])->name('email-settings.update');
+        Route::post('/email-settings/test', [EmailSettingsAdminController::class, 'test'])->name('email-settings.test');
 
         Route::get('/controlled-forms', [ControlledFormAdminController::class, 'index'])->name('controlled-forms.index');
         Route::post('/controlled-forms', [ControlledFormAdminController::class, 'store'])->name('controlled-forms.store');

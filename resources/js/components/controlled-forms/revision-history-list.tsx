@@ -34,7 +34,7 @@ export default function RevisionHistoryList({
         <section className="overflow-hidden rounded-lg border bg-white">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
                 <div>
-                    <h2 className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
+                    <h2 className="text-[11px] font-semibold tracking-wider text-nppc-900 uppercase">
                         Revision history ledger
                     </h2>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -193,7 +193,7 @@ export default function RevisionHistoryList({
                                                         }
                                                         className={
                                                             action.status === 'active'
-                                                                ? 'bg-[#1A3694] hover:bg-[#365BB0]'
+                                                                ? 'bg-nppc-900 hover:bg-nppc-700'
                                                                 : undefined
                                                         }
                                                         onClick={() =>

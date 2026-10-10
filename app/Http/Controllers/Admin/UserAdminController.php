@@ -19,7 +19,7 @@ class UserAdminController extends Controller
     {
         $q = trim((string) $request->string('q'));
         $role = (string) $request->string('role', 'all');
-        $allowedRoles = ['admin', 'receiving', 'analyst', 'head_analysis'];
+        $allowedRoles = ['admin', 'receiving', 'analyst', 'head_analysis', 'accounting'];
 
         if (! in_array($role, ['all', ...$allowedRoles], true)) {
             $role = 'all';
@@ -67,7 +67,7 @@ class UserAdminController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', Password::defaults()],
-            'role' => ['required', 'string', Rule::in(['admin', 'receiving', 'analyst', 'head_analysis'])],
+            'role' => ['required', 'string', Rule::in(['admin', 'receiving', 'analyst', 'head_analysis', 'accounting'])],
         ]);
 
         $user = User::create([
@@ -87,7 +87,7 @@ class UserAdminController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'password' => ['nullable', Password::defaults()],
-            'role' => ['required', 'string', Rule::in(['admin', 'receiving', 'analyst', 'head_analysis'])],
+            'role' => ['required', 'string', Rule::in(['admin', 'receiving', 'analyst', 'head_analysis', 'accounting'])],
         ]);
 
         $user->name = $data['name'];

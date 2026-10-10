@@ -10,6 +10,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property int $job_order_id
+ * @property int|null $sample_id
  * @property int|null $analysis_type_id
  * @property string $name
  * @property string|null $category
@@ -25,8 +26,10 @@ use Illuminate\Support\Carbon;
  * @property string|null $result_unit
  * @property string|null $result_remarks
  * @property string|null $result_method
+ * @property Carbon|null $performed_at
  * @property Carbon|null $completed_at
  * @property-read JobOrder $jobOrder
+ * @property-read Sample|null $sample
  * @property-read AnalysisType|null $analysisType
  * @property-read User|null $assignee
  */
@@ -34,6 +37,7 @@ class JobOrderAnalysis extends Model
 {
     protected $fillable = [
         'job_order_id',
+        'sample_id',
         'analysis_type_id',
         'name',
         'category',
@@ -49,6 +53,7 @@ class JobOrderAnalysis extends Model
         'result_unit',
         'result_remarks',
         'result_method',
+        'performed_at',
         'completed_at',
     ];
 
@@ -58,6 +63,7 @@ class JobOrderAnalysis extends Model
             'status' => JobOrderAnalysisStatus::class,
             'unit_price' => 'decimal:2',
             'total_cost' => 'decimal:2',
+            'performed_at' => 'datetime',
             'completed_at' => 'datetime',
         ];
     }
@@ -73,6 +79,12 @@ class JobOrderAnalysis extends Model
     public function jobOrder(): BelongsTo
     {
         return $this->belongsTo(JobOrder::class);
+    }
+
+    /** @return BelongsTo<Sample, $this> */
+    public function sample(): BelongsTo
+    {
+        return $this->belongsTo(Sample::class);
     }
 
     /** @return BelongsTo<AnalysisType, $this> */

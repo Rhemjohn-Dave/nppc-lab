@@ -100,13 +100,13 @@ return [
                     'key' => 'results.examination_datetime',
                     'label' => 'Examination',
                     'type' => 'date',
-                    'hint' => 'When the analyst encodes/completes the first result on this sheet.',
+                    'hint' => 'When the analyst recorded the first test on this sheet was performed.',
                 ],
                 [
                     'key' => 'results.analysis_datetime',
                     'label' => 'Date & Time of Analysis',
                     'type' => 'date',
-                    'hint' => 'When the analyst completed the first result on this sheet.',
+                    'hint' => 'When the analyst recorded the first test on this sheet was performed.',
                 ],
                 [
                     'key' => 'results.report_date',

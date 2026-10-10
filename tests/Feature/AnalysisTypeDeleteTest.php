@@ -53,4 +53,55 @@ class AnalysisTypeDeleteTest extends TestCase
 
         $this->assertDatabaseHas('analysis_types', ['id' => $typeId]);
     }
+
+    public function test_new_procedures_default_requires_pass_fail_off_and_admin_can_enable(): void
+    {
+        $this->seed();
+
+        $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
+        $category = AnalysisCategory::query()->where('slug', 'other')->firstOrFail();
+
+        $this->actingAs($admin)
+            ->post('/admin/prices', [
+                'code' => 'PF-01',
+                'name' => 'Pass fail optional procedure',
+                'category_id' => $category->id,
+                'default_price' => 50,
+                'is_active' => true,
+            ])
+            ->assertRedirect();
+
+        $type = AnalysisType::query()->where('code', 'PF-01')->firstOrFail();
+        $this->assertFalse($type->requires_pass_fail);
+
+        $this->actingAs($admin)
+            ->patch("/admin/prices/{$type->id}", [
+                'code' => 'PF-01',
+                'name' => 'Pass fail optional procedure',
+                'category_id' => $category->id,
+                'default_price' => 50,
+                'is_active' => true,
+                'requires_pass_fail' => true,
+            ])
+            ->assertRedirect();
+
+        $this->assertTrue($type->fresh()->requires_pass_fail);
+
+        $this->actingAs($admin)
+            ->get('/admin/prices')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('admin/prices')
+                ->where('groups', function ($groups) {
+                    foreach ($groups as $group) {
+                        foreach ($group['items'] ?? [] as $item) {
+                            if (($item['code'] ?? null) === 'PF-01') {
+                                return ($item['requires_pass_fail'] ?? false) === true;
+                            }
+                        }
+                    }
+
+                    return false;
+                }));
+    }
 }

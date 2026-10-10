@@ -24,7 +24,7 @@ export default function WorkspaceHeader({
     return (
         <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <h1 className="font-heading text-xl font-semibold text-[#1A3694]">
+                <h1 className="font-heading text-xl font-semibold text-nppc-900">
                     {title}
                 </h1>
                 <p className="text-sm leading-snug text-muted-foreground">

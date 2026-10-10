@@ -68,7 +68,7 @@ export default function CanvasToolbar({
                 <Button
                     variant={snapEnabled ? 'default' : 'outline'}
                     size="sm"
-                    className={`h-8 text-xs ${snapEnabled ? 'bg-[#1A3694] hover:bg-[#1A3694]/90' : ''}`}
+                    className={`h-8 text-xs ${snapEnabled ? 'bg-nppc-900 hover:bg-nppc-900/90' : ''}`}
                     title="Snap to other boxes and page edges. Hold Alt to disable while dragging."
                     onClick={() => onSnapEnabledChange(!snapEnabled)}
                 >

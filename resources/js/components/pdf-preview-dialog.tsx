@@ -35,6 +35,7 @@ type Props = {
     onRequestDownload?: () => void;
     onRequestPrint?: () => void;
     onReady?: (api: PdfPreviewApi) => void;
+    toolbar?: ReactNode;
     footerExtra?: ReactNode;
     /** Replaces the PDF pane (e.g. analyst signatory form). Stays inside the dialog for focus. */
     bodyOverride?: ReactNode;
@@ -49,6 +50,7 @@ export default function PdfPreviewDialog({
     onRequestDownload,
     onRequestPrint,
     onReady,
+    toolbar,
     footerExtra,
     bodyOverride,
 }: Props) {
@@ -201,6 +203,8 @@ export default function PdfPreviewDialog({
                     )}
                 </DialogHeader>
 
+                {toolbar}
+
                 <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-slate-100">
                     {bodyOverride ? (
                         <div className="flex min-h-[min(60vh,520px)] items-center justify-center p-4">
@@ -261,7 +265,7 @@ export default function PdfPreviewDialog({
                                 </Button>
                                 <Button
                                     type="button"
-                                    className="bg-[#1A3694] hover:bg-[#365BB0]"
+                                    className="bg-nppc-900 hover:bg-nppc-700"
                                     disabled={!objectUrl || loading}
                                     onClick={() =>
                                         onRequestDownload

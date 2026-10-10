@@ -100,7 +100,7 @@ export function receivingStatusBadgeClass(status: string, reviewed = false): str
     }
 
     if (status === 'draft_submitted') {
-        return 'border-[#c5d4f0] bg-[#eef3fb] text-[#1A3694]';
+        return 'border-nppc-200 bg-nppc-50 text-nppc-900';
     }
 
     return 'border-slate-200 bg-slate-50 text-slate-700';
@@ -167,14 +167,14 @@ export function nextAction(
 
     if (order.status === 'jo_approved' || canReceive) {
         return {
-            title: 'JO approved',
+            title: 'Print & send',
             steps: [
                 printed
                     ? 'JO print opened this session — send to analysts when ready.'
                     : 'Print 3 JO copies (customer, accounting, Head).',
                 'Send to analysts from the Job Order screen.',
             ],
-            primaryLabel: 'Open & Send →',
+            primaryLabel: 'Open & Send',
             primaryHref: `/receiving/${order.id}`,
             printHref,
             printLabel,

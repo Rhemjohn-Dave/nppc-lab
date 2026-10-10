@@ -96,6 +96,7 @@ class AnalystAssignmentTest extends TestCase
 
         $this->actingAs($second)
             ->post("/analyst/tasks/{$line->id}/draft", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '12.5',
                 'result_unit' => '%',
             ])
@@ -107,6 +108,7 @@ class AnalystAssignmentTest extends TestCase
 
         $this->actingAs($second)
             ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '12.5',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',
@@ -136,6 +138,7 @@ class AnalystAssignmentTest extends TestCase
 
         $this->actingAs($second)
             ->post("/analyst/tasks/{$line->id}/draft", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '1.0',
             ])
             ->assertSessionHasErrors('analysis');

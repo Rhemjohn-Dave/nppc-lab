@@ -25,7 +25,9 @@ class IntakeController extends Controller
 
     public function index(): Response
     {
-        return Inertia::render('intake/index');
+        return Inertia::render('intake/index', [
+            'packages' => $this->kioskPackages(),
+        ]);
     }
 
     public function lookup(Request $request): RedirectResponse
@@ -95,39 +97,9 @@ class IntakeController extends Controller
             ->filter(fn (array $group) => $group['items']->isNotEmpty())
             ->values();
 
-        $packages = AnalysisPackage::query()
-            ->where('is_active', true)
-            ->with(['analysisTypes', 'category'])
-            ->orderBy('sort_order')
-            ->orderBy('name')
-            ->get()
-            ->map(fn (AnalysisPackage $package) => [
-                'id' => $package->id,
-                'code' => $package->code,
-                'name' => $package->name,
-                'description' => $package->description,
-                'default_price' => $package->default_price,
-                'form_code' => $package->form_code,
-                'report_layout' => $package->report_layout?->value ?? 'controlled_form',
-                'classifications' => $package->classifications ?? [],
-                'category' => $package->category?->slug,
-                'category_label' => $package->category?->name,
-                'analysis_type_ids' => $package->orderedTypeIds(),
-                'visible_for_aqua' => $package->visibleForAqua(true),
-                'visible_for_non_aqua' => $package->visibleForAqua(false),
-                'tests' => $package->analysisTypes->map(fn (AnalysisType $type) => [
-                    'id' => $type->id,
-                    'code' => $type->code,
-                    'name' => $type->name,
-                    'default_price' => $type->default_price,
-                    'catalog_scope' => $type->catalog_scope ?: 'non_aqua',
-                ])->values(),
-            ])
-            ->values();
-
         return Inertia::render('intake/wizard', [
             'categories' => $categories,
-            'packages' => $packages,
+            'packages' => $this->kioskPackages(),
             'type_presets' => $this->typePresets(),
             'prefill' => [
                 'customer_name' => $request->string('customer_name')->toString() ?: null,
@@ -272,6 +244,60 @@ class IntakeController extends Controller
     }
 
     /**
+     * Active packages for public intake (landing browse + wizard selection).
+     *
+     * @return list<array{
+     *     id: int,
+     *     code: string,
+     *     name: string,
+     *     description: string|null,
+     *     default_price: mixed,
+     *     form_code: string|null,
+     *     report_layout: string,
+     *     classifications: list<string>,
+     *     category: string|null,
+     *     category_label: string|null,
+     *     analysis_type_ids: list<int>,
+     *     visible_for_aqua: bool,
+     *     visible_for_non_aqua: bool,
+     *     tests: list<array{id: int, code: string, name: string, default_price: mixed, catalog_scope: string}>
+     * }>
+     */
+    private function kioskPackages(): array
+    {
+        return AnalysisPackage::query()
+            ->where('is_active', true)
+            ->with(['analysisTypes', 'category'])
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (AnalysisPackage $package) => [
+                'id' => $package->id,
+                'code' => $package->code,
+                'name' => $package->name,
+                'description' => $package->description,
+                'default_price' => $package->default_price,
+                'form_code' => $package->form_code,
+                'report_layout' => $package->report_layout?->value ?? 'controlled_form',
+                'classifications' => $package->classifications ?? [],
+                'category' => $package->category?->slug,
+                'category_label' => $package->category?->name,
+                'analysis_type_ids' => $package->orderedTypeIds(),
+                'visible_for_aqua' => $package->visibleForAqua(true),
+                'visible_for_non_aqua' => $package->visibleForAqua(false),
+                'tests' => $package->analysisTypes->map(fn (AnalysisType $type) => [
+                    'id' => $type->id,
+                    'code' => $type->code,
+                    'name' => $type->name,
+                    'default_price' => $type->default_price,
+                    'catalog_scope' => $type->catalog_scope ?: 'non_aqua',
+                ])->values(),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
      * @param  list<string>  $codes
      * @return list<array{id: int, code: string, name: string, default_price: mixed, catalog_scope: string}>
      */
@@ -359,6 +385,10 @@ class IntakeController extends Controller
             'samples.*.quantity' => ['nullable', 'numeric', 'min:0'],
             'samples.*.unit' => ['nullable', 'string', 'max:50'],
             'samples.*.remarks' => ['nullable', 'string', 'max:500'],
+            'samples.*.analysis_type_ids' => ['nullable', 'array'],
+            'samples.*.analysis_type_ids.*' => ['integer', 'exists:analysis_types,id'],
+            'samples.*.package_ids' => ['nullable', 'array'],
+            'samples.*.package_ids.*' => ['integer', 'exists:analysis_packages,id'],
             'analysis_type_ids' => ['nullable', 'array'],
             'analysis_type_ids.*' => ['integer', 'exists:analysis_types,id'],
             'package_ids' => ['nullable', 'array'],
@@ -377,10 +407,27 @@ class IntakeController extends Controller
             $data['payment_terms'] = null;
         }
 
-        if (empty($data['analysis_type_ids']) && empty($data['package_ids']) && empty($data['other_tests'])) {
-            return back()->withErrors([
-                'analysis_type_ids' => 'Select at least one analysis, package, or describe other tests.',
-            ])->withInput();
+        $usesLegacyJoLevelSelection = array_key_exists('analysis_type_ids', $data)
+            || array_key_exists('package_ids', $data);
+
+        if ($usesLegacyJoLevelSelection) {
+            if (empty($data['analysis_type_ids']) && empty($data['package_ids']) && empty($data['other_tests'])) {
+                return back()->withErrors([
+                    'analysis_type_ids' => 'Select at least one analysis, package, or describe other tests.',
+                ])->withInput();
+            }
+        } else {
+            foreach ($data['samples'] as $index => $sample) {
+                $hasSelection = ! empty($sample['analysis_type_ids'])
+                    || ! empty($sample['package_ids']);
+                $hasOtherOnFirst = $index === 0 && ! empty($data['other_tests']);
+
+                if (! $hasSelection && ! $hasOtherOnFirst) {
+                    return back()->withErrors([
+                        "samples.{$index}.analysis_type_ids" => 'Select at least one analysis or package for sample '.($index + 1).'.',
+                    ])->withInput();
+                }
+            }
         }
 
         $jobOrder = $this->jobOrders->createFromIntake($data);

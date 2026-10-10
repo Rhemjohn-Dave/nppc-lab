@@ -10,8 +10,8 @@ export default function DocumentControlCallout({
     effectiveDate,
 }: Props) {
     return (
-        <aside className="rounded-lg border border-[#1A3694]/25 bg-[#eef3fb]/80 px-3 py-2.5 text-xs">
-            <p className="font-semibold text-[#1A3694]">
+        <aside className="rounded-lg border border-nppc-900/25 bg-nppc-50/80 px-3 py-2.5 text-xs">
+            <p className="font-semibold text-nppc-900">
                 ISO/IEC 17025:2017 document rule
             </p>
             <p className="mt-1 leading-relaxed text-slate-700">

@@ -95,7 +95,7 @@ export default function AnalysisTypePicker({
                             key={group.label}
                             className="overflow-hidden rounded-lg border"
                         >
-                            <div className="flex items-center gap-2 bg-[#f8fafc] px-3 py-2">
+                            <div className="flex items-center gap-2 bg-nppc-page px-3 py-2">
                                 <Checkbox
                                     checked={allSelected}
                                     onCheckedChange={(checked) =>
@@ -117,7 +117,7 @@ export default function AnalysisTypePicker({
                                         )
                                     }
                                 >
-                                    <p className="text-sm font-medium text-[#1A3694]">
+                                    <p className="text-sm font-medium text-nppc-900">
                                         {group.label}
                                     </p>
                                     <p className="text-xs text-muted-foreground">

@@ -1117,7 +1117,7 @@ export default function FormDesigner({
                         {pendingSource && (
                             <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
                                 <div className="flex items-center gap-2 rounded-full border bg-white/95 px-4 py-1.5 text-xs shadow-md">
-                                    <MousePointerClick className="size-3.5 text-[#1A3694]" />
+                                    <MousePointerClick className="size-3.5 text-nppc-900" />
                                     Click on the PDF to place{' '}
                                     <strong>{pendingSource.label}</strong>
                                 </div>
@@ -1197,7 +1197,7 @@ export default function FormDesigner({
                                     ))}
                                     {marquee && (
                                         <div
-                                            className="pointer-events-none absolute z-30 border border-dashed border-[#1A3694] bg-[#1A3694]/10"
+                                            className="pointer-events-none absolute z-30 border border-dashed border-nppc-900 bg-nppc-900/10"
                                             style={{
                                                 left: px(Math.min(marquee.startX, marquee.endX)),
                                                 top: px(Math.min(marquee.startY, marquee.endY)),
@@ -1248,8 +1248,8 @@ export default function FormDesigner({
                                                     className={`relative h-full w-full overflow-hidden ${
                                                         active
                                                             ? isMatrix
-                                                                ? 'ring-2 ring-[#1A3694] ring-inset'
-                                                                : 'bg-[#1A3694]/8'
+                                                                ? 'ring-2 ring-nppc-900 ring-inset'
+                                                                : 'bg-nppc-900/8'
                                                             : isMatrix
                                                               ? 'bg-white'
                                                               : 'bg-emerald-500/8'
@@ -1259,7 +1259,7 @@ export default function FormDesigner({
                                                         <div
                                                             className={`pointer-events-none absolute inset-0 ${
                                                                 active
-                                                                    ? 'ring-2 ring-[#1A3694] ring-inset'
+                                                                    ? 'ring-2 ring-nppc-900 ring-inset'
                                                                     : 'border border-emerald-600/70'
                                                             }`}
                                                         />
@@ -1302,12 +1302,12 @@ export default function FormDesigner({
                                                 </div>
                                                 {isPrimary && canEdit && (
                                                     <>
-                                                        <span className="pointer-events-none absolute -top-5 left-0 rounded bg-[#1A3694] px-1 py-0.5 text-[9px] text-white shadow-sm">
+                                                        <span className="pointer-events-none absolute -top-5 left-0 rounded bg-nppc-900 px-1 py-0.5 text-[9px] text-white shadow-sm">
                                                             {field.data_source_key ?? field.name}
                                                         </span>
                                                         {selectedIds.length === 1 && (
                                                             <span
-                                                                className="absolute right-0 bottom-0 z-20 size-3 translate-x-1/3 translate-y-1/3 cursor-se-resize rounded-sm border border-white bg-[#1A3694] shadow-sm"
+                                                                className="absolute right-0 bottom-0 z-20 size-3 translate-x-1/3 translate-y-1/3 cursor-se-resize rounded-sm border border-white bg-nppc-900 shadow-sm"
                                                                 onPointerDown={(event) =>
                                                                     onPointerDown(event, field, index, 'resize')
                                                                 }

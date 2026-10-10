@@ -27,7 +27,7 @@ export default function FormUsageCard({
         <section className="rounded-lg border bg-white px-3 py-2">
             <div className="mb-1.5 flex items-center justify-between gap-2 border-b pb-1.5">
                 <div>
-                    <h2 className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
+                    <h2 className="text-[11px] font-semibold tracking-wider text-nppc-900 uppercase">
                         Bound analysis parameters
                     </h2>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -39,7 +39,7 @@ export default function FormUsageCard({
                         type="button"
                         size="sm"
                         variant="ghost"
-                        className="h-7 px-2 text-xs text-[#1A3694]"
+                        className="h-7 px-2 text-xs text-nppc-900"
                         onClick={onEdit}
                     >
                         Edit parameters
@@ -57,7 +57,7 @@ export default function FormUsageCard({
                         <div className="flex items-start gap-2 py-2">
                             <span
                                 aria-hidden="true"
-                                className="mt-1.5 size-1.5 shrink-0 rounded-full bg-[#1A3694]"
+                                className="mt-1.5 size-1.5 shrink-0 rounded-full bg-nppc-900"
                             />
                             <div className="min-w-0">
                                 <p className="text-xs font-semibold text-slate-900">
@@ -73,7 +73,7 @@ export default function FormUsageCard({
                         <div key={type.id} className="flex items-start gap-2 py-2">
                             <span
                                 aria-hidden="true"
-                                className="mt-1.5 size-1.5 shrink-0 rounded-full bg-[#1A3694]"
+                                className="mt-1.5 size-1.5 shrink-0 rounded-full bg-nppc-900"
                             />
                             <div className="min-w-0">
                                 <p className="text-xs font-semibold text-slate-900">

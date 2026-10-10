@@ -23,6 +23,8 @@ type Props = {
     onActiveCategoryChange: (category: string | null) => void;
     selectedTypeIds: Set<number>;
     onToggleType: (id: number) => void;
+    /** Display-only: types covered by a selected package. */
+    packageCoveredIds?: Set<number>;
 };
 
 /**
@@ -37,6 +39,7 @@ export default function IntakeIndividualTestCatalog({
     onActiveCategoryChange,
     selectedTypeIds,
     onToggleType,
+    packageCoveredIds,
 }: Props) {
     const matched = useMemo(() => {
         const needle = query.trim().toLowerCase();
@@ -79,14 +82,14 @@ export default function IntakeIndividualTestCatalog({
     const shown = visible.length > 0 ? visible : [];
 
     return (
-        <div className="space-y-2.5">
+        <div className="space-y-2">
             <div className="relative">
                 <Search
-                    className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400"
+                    className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-slate-400"
                     aria-hidden
                 />
                 <Input
-                    className="h-10 bg-white pl-9"
+                    className="h-9 border-slate-200/80 bg-slate-50 pl-8"
                     placeholder="Search tests by name or code…"
                     value={query}
                     onChange={(e) => onQueryChange(e.target.value)}
@@ -139,28 +142,31 @@ export default function IntakeIndividualTestCatalog({
                     </p>
                 </div>
             ) : (
-                <div className="nppc-scroll max-h-[26rem] space-y-3 overflow-y-auto overscroll-contain pr-1">
+                <div className="nppc-scroll max-h-[22rem] space-y-2 overflow-y-auto overscroll-contain pr-1">
                     {shown.map((group) => (
                         <div key={group.category}>
                             {activeCategory === null ? (
-                                <p className="mb-1.5 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                                <p className="mb-1 text-[10px] font-semibold tracking-wide text-slate-500 uppercase">
                                     {group.label}
                                 </p>
                             ) : null}
-                            <div className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
+                            <div className="grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
                                 {group.items.map((item) => {
                                     const checked = selectedTypeIds.has(
                                         item.id,
                                     );
+                                    const inPackage =
+                                        packageCoveredIds?.has(item.id) ??
+                                        false;
 
                                     return (
                                         <label
                                             key={item.id}
                                             className={cn(
-                                                'flex min-h-10 cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-1.5 text-sm transition',
+                                                'flex min-h-8 cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-xs transition',
                                                 checked
-                                                    ? 'border-[#1A3694] bg-[#eef3fb]'
-                                                    : 'border-slate-200/80 bg-white hover:border-[#5282D3]/40',
+                                                    ? 'border-nppc-900 bg-nppc-50'
+                                                    : 'border-slate-200 bg-white hover:border-nppc-500/40',
                                             )}
                                         >
                                             <Checkbox
@@ -170,10 +176,17 @@ export default function IntakeIndividualTestCatalog({
                                                 }
                                             />
                                             <span className="min-w-0 flex-1">
-                                                <span className="block truncate font-medium text-slate-800">
-                                                    {item.name}
+                                                <span className="flex flex-wrap items-center gap-1">
+                                                    <span className="truncate font-medium text-slate-800">
+                                                        {item.name}
+                                                    </span>
+                                                    {inPackage && checked ? (
+                                                        <span className="rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-semibold tracking-wide text-emerald-800 uppercase ring-1 ring-emerald-200">
+                                                            Part of package
+                                                        </span>
+                                                    ) : null}
                                                 </span>
-                                                <span className="block font-mono text-xs text-slate-500">
+                                                <span className="block font-mono text-[10px] text-slate-500">
                                                     {item.code} · ₱
                                                     {Number(
                                                         item.default_price,
@@ -209,20 +222,20 @@ function CategoryChip({
             aria-pressed={active}
             onClick={onClick}
             className={cn(
-                'rounded-lg border px-2.5 py-1.5 text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-[#1A3694]/40 focus-visible:outline-none',
+                'rounded-lg border px-2 py-1 text-xs font-medium transition focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none',
                 active
-                    ? 'border-[#1A3694] bg-[#1A3694] text-white'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-[#5282D3]',
+                    ? 'border-nppc-900 bg-nppc-900 text-white'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-nppc-500',
             )}
         >
             {children}
             {count > 0 ? (
                 <span
                     className={cn(
-                        'ml-1.5 rounded-md px-1.5 py-0.5 text-xs font-semibold',
+                        'ml-1 rounded px-1 py-0.5 text-[10px] font-semibold',
                         active
                             ? 'bg-white/20 text-white'
-                            : 'bg-[#e8eef8] text-[#1A3694]',
+                            : 'bg-nppc-100 text-nppc-900',
                     )}
                 >
                     {count}

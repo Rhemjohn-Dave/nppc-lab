@@ -15,7 +15,28 @@ class JobOrderFormPresenter
      */
     public static function toArray(JobOrder $jobOrder, bool $withResults = true): array
     {
-        $jobOrder->loadMissing(['samples', 'analyses.assignee', 'receiver', 'reviewer', 'joApprover']);
+        $jobOrder->loadMissing([
+            'samples',
+            'analyses.assignee',
+            'packageLinks.analysisPackage.analysisTypes',
+            'receiver',
+            'reviewer',
+            'joApprover',
+        ]);
+
+        $selectedTypeIds = $jobOrder->packageLinks
+            ->flatMap(fn ($link) => $link->selected_type_ids ?? [])
+            ->unique()
+            ->filter()
+            ->values()
+            ->all();
+
+        $typesById = $selectedTypeIds === []
+            ? collect()
+            : AnalysisType::query()
+                ->whereIn('id', $selectedTypeIds)
+                ->get()
+                ->keyBy('id');
 
         return [
             'id' => $jobOrder->id,
@@ -82,23 +103,63 @@ class JobOrderFormPresenter
                     ),
                 ];
             })->values(),
-            'analyses' => $jobOrder->analyses->map(fn ($line) => [
-                'id' => $line->id,
-                'analysis_type_id' => $line->analysis_type_id,
-                'name' => $line->name,
-                'category' => $line->category,
-                'category_label' => $line->resolvedCategoryLabel(),
-                'quantity' => $line->quantity,
-                'unit_price' => $line->unit_price,
-                'total_cost' => $line->total_cost,
-                'status' => $line->status->value,
-                'status_label' => $line->status->label(),
-                'assigned_to_name' => $line->assignee?->name,
-                'result_value' => $withResults ? $line->result_value : null,
-                'result_measurement' => $withResults ? $line->result_measurement : null,
-                'result_unit' => $withResults ? $line->result_unit : null,
-                'result_remarks' => $withResults ? $line->result_remarks : null,
-            ])->values(),
+            'analyses' => $jobOrder->analyses->map(function ($line) use ($jobOrder, $withResults) {
+                $sampleIndex = $jobOrder->samples->search(
+                    fn ($sample) => (int) $sample->id === (int) $line->sample_id,
+                );
+                $controlNumber = $sampleIndex === false
+                    ? null
+                    : SampleControlNumber::forIndex(
+                        (string) $jobOrder->reference_no,
+                        (int) $sampleIndex,
+                        $jobOrder->samples->count(),
+                    );
+
+                return [
+                    'id' => $line->id,
+                    'sample_id' => $line->sample_id,
+                    'control_number' => $controlNumber,
+                    'analysis_type_id' => $line->analysis_type_id,
+                    'name' => $line->name,
+                    'category' => $line->category,
+                    'category_label' => $line->resolvedCategoryLabel(),
+                    'quantity' => $line->quantity,
+                    'unit_price' => $line->unit_price,
+                    'total_cost' => $line->total_cost,
+                    'status' => $line->status->value,
+                    'status_label' => $line->status->label(),
+                    'assigned_to_name' => $line->assignee?->name,
+                    'result_value' => $withResults ? $line->result_value : null,
+                    'result_measurement' => $withResults ? $line->result_measurement : null,
+                    'result_unit' => $withResults ? $line->result_unit : null,
+                    'result_remarks' => $withResults ? $line->result_remarks : null,
+                ];
+            })->values(),
+            'packages' => $jobOrder->packageLinks->values()->map(function ($link) use ($typesById) {
+                $selectedIds = array_values(array_map(
+                    'intval',
+                    $link->selected_type_ids ?? [],
+                ));
+                $package = $link->analysisPackage;
+                $memberNames = [];
+                foreach ($selectedIds as $typeId) {
+                    $type = $typesById->get($typeId) ?? $package?->analysisTypes->firstWhere('id', $typeId);
+                    if ($type) {
+                        $memberNames[] = $type->name;
+                    }
+                }
+
+                return [
+                    'id' => $link->id,
+                    'sample_id' => $link->sample_id,
+                    'analysis_package_id' => $link->analysis_package_id,
+                    'name' => $package?->name ?? 'Package',
+                    'code' => $package?->code,
+                    'default_price' => $package?->default_price,
+                    'selected_type_ids' => $selectedIds,
+                    'member_names' => $memberNames,
+                ];
+            })->values(),
             'catalog' => self::catalog(),
             'document_control' => OfficialAnalysisCatalog::documentControlForJobOrder($jobOrder),
         ];

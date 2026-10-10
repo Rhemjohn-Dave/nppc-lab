@@ -62,7 +62,7 @@ export default function ControlledFormHeader({
                             </>
                         ) : null}
                     </div>
-                    <h1 className="font-heading text-2xl font-semibold break-words text-[#1A3694]">
+                    <h1 className="font-heading text-2xl font-semibold break-words text-nppc-900">
                         {name}
                     </h1>
                     <p className="text-xs text-muted-foreground">
@@ -75,7 +75,7 @@ export default function ControlledFormHeader({
                     </Button>
                     <Button
                         size="sm"
-                        className="bg-[#1A3694] hover:bg-[#365BB0]"
+                        className="bg-nppc-900 hover:bg-nppc-700"
                         onClick={onNewRevision}
                     >
                         + New Revision Draft

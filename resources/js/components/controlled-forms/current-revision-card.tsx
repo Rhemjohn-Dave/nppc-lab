@@ -38,7 +38,7 @@ export default function CurrentRevisionCard({
     return (
         <section className="rounded-lg border bg-white px-3 py-2">
             <div className="mb-1.5 flex items-center justify-between gap-2 border-b pb-1.5">
-                <h2 className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
+                <h2 className="text-[11px] font-semibold tracking-wider text-nppc-900 uppercase">
                     Revision specs
                 </h2>
                 {onEditFormInfo ? (

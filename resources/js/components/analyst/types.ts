@@ -1,7 +1,9 @@
 export type SampleSummary = {
+    id?: number | null;
     sample_code?: string | null;
     description?: string | null;
     matrix?: string | null;
+    control_number?: string | null;
 };
 
 export type ReportSummary = {
@@ -15,6 +17,9 @@ export type ReportSummary = {
 export type AnalystTask = {
     id: number;
     name: string;
+    sample_id?: number | null;
+    sample_label?: string | null;
+    control_number?: string | null;
     analysis_type_id?: number | null;
     category_label?: string | null;
     status: string;
@@ -25,6 +30,7 @@ export type AnalystTask = {
     result_unit?: string | null;
     result_remarks?: string | null;
     result_method?: string | null;
+    performed_at?: string | null;
     procedure_method?: string | null;
     result_mode?: 'value' | 'pass_fail';
     requires_pass_fail?: boolean;
@@ -98,6 +104,16 @@ export type JobGroup = {
     tasks: AnalystTask[];
 };
 
+export type SampleBreakdownRow = {
+    key: string;
+    sample_id: number | null;
+    label: string;
+    control_number: string | null;
+    total: number;
+    done: number;
+    tasks: AnalystTask[];
+};
+
 export type WorkflowStep = {
     key: string;
     label: string;
@@ -118,7 +134,7 @@ export function statusBadgeClass(status: string): string {
         return 'border-emerald-200 bg-emerald-50 text-emerald-900';
     }
 
-    return 'border-[#c5d4f0] bg-[#eef3fb] text-[#1A3694]';
+    return 'border-nppc-200 bg-nppc-50 text-nppc-900';
 }
 
 /** Icon glyph + label for analysis/job aggregate statuses (not color alone). */
@@ -143,14 +159,23 @@ export function encodedResultLabel(task: {
     result_pass_fail?: string | null;
     result_measurement?: string | null;
     result_unit?: string | null;
+    requires_pass_fail?: boolean;
 }): string {
     const measured = [task.result_value, task.result_unit]
         .map((part) => (part ?? '').trim())
         .filter(Boolean)
         .join(' ');
-    const passFail = (task.result_pass_fail ?? '').trim();
+    const passFail =
+        task.requires_pass_fail === true
+            ? (task.result_pass_fail ?? '').trim()
+            : '';
 
     return [measured, passFail].filter(Boolean).join(' · ');
+}
+
+/** True when the analyst has saved a draft/complete quantitative result. */
+export function hasEncodedResult(task: AnalystTask): boolean {
+    return Boolean(task.result_value?.trim());
 }
 
 export function taskActionLabel(task: AnalystTask): string {
@@ -222,7 +247,14 @@ export function jobAggregateStatus(tasks: AnalystTask[]): {
     return { key: 'assigned', label: 'Needs action' };
 }
 
-export function jobMetaLine(job: AnalystTask['job_order']): string {
+export function jobMetaLine(
+    job: Pick<
+        AnalystTask['job_order'],
+        'classification' | 'sample_storage_temp'
+    > & {
+        samples?: SampleSummary[] | null;
+    },
+): string {
     const parts: string[] = [];
 
     if (job.classification) {
@@ -237,6 +269,93 @@ export function jobMetaLine(job: AnalystTask['job_order']): string {
     }
 
     return parts.join(' · ');
+}
+
+export function taskSampleLine(task: AnalystTask): string | null {
+    return task.sample_label?.trim() || null;
+}
+
+/**
+ * Group tasks by sample for multi-sample job orders (preserving sample order from job.samples).
+ */
+export function groupTasksBySample(tasks: AnalystTask[]): SampleBreakdownRow[] {
+    if (tasks.length === 0) {
+        return [];
+    }
+
+    const job = tasks[0].job_order;
+    const samples = job.samples ?? [];
+    const bySampleId = new Map<number | 'none', AnalystTask[]>();
+
+    for (const task of tasks) {
+        const key =
+            task.sample_id == null ? 'none' : Number(task.sample_id);
+        const list = bySampleId.get(key) ?? [];
+        list.push(task);
+        bySampleId.set(key, list);
+    }
+
+    const rows: SampleBreakdownRow[] = [];
+
+    samples.forEach((sample, index) => {
+        const id = sample.id == null ? null : Number(sample.id);
+        const sampleTasks =
+            id == null ? [] : (bySampleId.get(id) ?? []);
+        if (id != null) {
+            bySampleId.delete(id);
+        }
+
+        const code = sample.sample_code?.trim();
+        const description =
+            sample.description?.trim() || `Sample ${index + 1}`;
+        const label = code ? `${code} — ${description}` : description;
+        const done = sampleTasks.filter((t) => t.status === 'completed').length;
+
+        rows.push({
+            key: id != null ? `sample-${id}` : `sample-idx-${index}`,
+            sample_id: id,
+            label,
+            control_number: sample.control_number ?? null,
+            total: sampleTasks.length,
+            done,
+            tasks: sampleTasks,
+        });
+    });
+
+    const orphan = bySampleId.get('none') ?? [];
+    for (const [key, sampleTasks] of bySampleId) {
+        if (key === 'none') {
+            continue;
+        }
+        const first = sampleTasks[0];
+        rows.push({
+            key: `sample-${key}`,
+            sample_id: Number(key),
+            label: first?.sample_label || `Sample`,
+            control_number: first?.control_number ?? null,
+            total: sampleTasks.length,
+            done: sampleTasks.filter((t) => t.status === 'completed').length,
+            tasks: sampleTasks,
+        });
+    }
+
+    if (orphan.length > 0) {
+        rows.push({
+            key: 'sample-none',
+            sample_id: null,
+            label: 'Unassigned sample',
+            control_number: null,
+            total: orphan.length,
+            done: orphan.filter((t) => t.status === 'completed').length,
+            tasks: orphan,
+        });
+    }
+
+    return rows.filter((row) => row.total > 0);
+}
+
+export function sampleBreakdown(tasks: AnalystTask[]): SampleBreakdownRow[] {
+    return groupTasksBySample(tasks);
 }
 
 export function actionableTasks(tasks: AnalystTask[]): AnalystTask[] {

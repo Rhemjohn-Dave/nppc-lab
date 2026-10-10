@@ -60,6 +60,73 @@ class JobOrderBillingTotalPlacementTest extends TestCase
         $this->assertNotNull($bag['bill_total_20']);
     }
 
+    public function test_identical_tests_across_samples_collapse_on_billing_block(): void
+    {
+        $this->seed();
+
+        $package = \App\Models\AnalysisPackage::query()
+            ->where('code', 'PKG-MIC-NDW')
+            ->with('analysisTypes')
+            ->firstOrFail();
+        $memberIds = $package->orderedTypeIds();
+        $this->assertNotEmpty($memberIds);
+
+        $memberSum = (float) AnalysisType::query()
+            ->whereIn('id', $memberIds)
+            ->sum('default_price');
+        $sampleCount = 2;
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'Dedupe Billing Customer',
+            'customer_email' => 'dedupe@example.com',
+            'classification' => 'Wastewater',
+            'samples' => [
+                [
+                    'description' => 'Sample A',
+                    'matrix' => 'Liquid',
+                    'package_ids' => [$package->id],
+                    'analysis_type_ids' => $memberIds,
+                ],
+                [
+                    'description' => 'Sample B',
+                    'matrix' => 'Liquid',
+                    'package_ids' => [$package->id],
+                    'analysis_type_ids' => $memberIds,
+                ],
+            ],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail()->load('analyses');
+        $this->assertCount(count($memberIds) * $sampleCount, $job->analyses);
+        $this->assertEqualsWithDelta($memberSum * $sampleCount, (float) $job->total_cost, 0.01);
+
+        $bag = app(FieldValueResolver::class)->jobOrderBag($job);
+
+        $uniqueCount = count($memberIds);
+        $this->assertNotNull($bag["bill_param_{$uniqueCount}"]);
+        $this->assertNull($bag['bill_param_'.($uniqueCount + 1)] ?? null);
+
+        $firstType = AnalysisType::query()->whereKey($memberIds[0])->firstOrFail();
+        $this->assertSame($firstType->name, $bag['bill_param_1']);
+        $this->assertSame(
+            number_format((float) $firstType->default_price, 2),
+            $bag['bill_price_1'],
+        );
+        $this->assertSame(
+            number_format((float) $firstType->default_price * $sampleCount, 2),
+            $bag['bill_total_1'],
+        );
+
+        $formattedTotal = number_format($memberSum * $sampleCount, 2);
+        if ($uniqueCount > FieldValueResolver::RFA_BILLING_LEFT_SLOTS) {
+            $this->assertSame(' ', $bag['billing_total']);
+            $this->assertSame($formattedTotal, $bag['billing_total_right']);
+        } else {
+            $this->assertSame($formattedTotal, $bag['billing_total']);
+            $this->assertNull($bag['billing_total_right']);
+        }
+    }
+
     public function test_general_jo_active_revision_has_right_total_field(): void
     {
         $this->seed();

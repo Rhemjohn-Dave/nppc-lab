@@ -49,7 +49,7 @@ createInertiaApp({
         );
     },
     progress: {
-        color: '#1A3694',
+        color: '#1A3694', // nppc-900 (Inertia progress bar requires a CSS color string)
         includeCSS: true,
         showSpinner: false,
     },

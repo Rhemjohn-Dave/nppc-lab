@@ -6,6 +6,7 @@ import {
     FlaskConical,
     Package,
     Shield,
+    Wallet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -26,6 +27,7 @@ const roleIcons: Record<DashboardRole, LucideIcon> = {
     receiving: Package,
     analyst: FlaskConical,
     head: FileCheck,
+    accounting: Wallet,
     generic: ClipboardList,
 };
 
@@ -81,11 +83,11 @@ export function DashboardSection({
     return (
         <section className={className}>
             {title && (
-                <h2 className="mb-2 text-xs font-semibold tracking-wide text-[#1A3694] uppercase">
+                <h2 className="mb-2 text-xs font-semibold tracking-wide text-slate-900 uppercase">
                     {title}
                 </h2>
             )}
-            <div className="rounded-xl border border-slate-200/80 bg-white shadow-sm">
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
                 {children}
             </div>
         </section>
@@ -103,7 +105,7 @@ export function DashboardViewAllLink({
         <div className="border-t border-slate-100 px-3 py-2 text-right">
             <Link
                 href={href}
-                className="text-sm font-medium text-[#1A3694] hover:underline"
+                className="text-sm font-medium text-nppc-900 hover:underline"
             >
                 {label} →
             </Link>

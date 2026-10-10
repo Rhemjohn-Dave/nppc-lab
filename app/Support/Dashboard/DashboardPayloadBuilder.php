@@ -29,6 +29,7 @@ class DashboardPayloadBuilder
             'receiving' => $this->receivingPayload(),
             'analyst' => $this->analystPayload($user),
             'head' => $this->headPayload(),
+            'accounting' => $this->accountingPayload(),
             default => $this->genericPayload(),
         };
 
@@ -60,6 +61,10 @@ class DashboardPayloadBuilder
 
         if ($user->hasRole('analyst')) {
             return 'analyst';
+        }
+
+        if ($user->hasRole('accounting')) {
+            return 'accounting';
         }
 
         return 'generic';
@@ -172,8 +177,8 @@ class DashboardPayloadBuilder
         return [
             'role' => 'admin',
             'header' => [
-                'title' => 'Laboratory Administration',
-                'subtitle' => 'System overview, document control, and laboratory activity.',
+                'title' => 'Laboratory Administration & Governance',
+                'subtitle' => 'System overview, ISO/IEC 17025 accredited document control, and active laboratory operations.',
             ],
             'kpis' => [
                 [
@@ -810,6 +815,109 @@ class DashboardPayloadBuilder
                 ['label' => 'JO approval', 'href' => '/head/jo'],
                 ['label' => 'Results', 'href' => '/head/results'],
                 ['label' => 'History Archive', 'href' => '/history'],
+            ],
+            'extras' => [],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function accountingPayload(): array
+    {
+        $today = now()->toDateString();
+
+        $todayQuery = JobOrder::query()
+            ->whereNotNull('jo_approved_at')
+            ->whereDate('jo_approved_at', $today);
+
+        $aggregates = (clone $todayQuery)
+            ->selectRaw('COUNT(*) as job_count')
+            ->selectRaw('COALESCE(SUM(total_cost), 0) as net')
+            ->first();
+
+        $jobCount = (int) ($aggregates->job_count ?? 0);
+        $net = round((float) ($aggregates->net ?? 0), 2);
+
+        $queueRows = (clone $todayQuery)
+            ->orderByDesc('jo_approved_at')
+            ->limit(self::PREVIEW_LIMIT)
+            ->get()
+            ->map(fn (JobOrder $order) => [
+                'id' => $order->id,
+                'reference_no' => $order->reference_no,
+                'customer_name' => $order->customer_name,
+                'total_cost' => number_format((float) $order->total_cost, 2),
+                'payment_mode' => $order->payment_mode?->label() ?? '—',
+                'status' => $order->status->value,
+                'status_label' => $order->status->label(),
+                'updated_at' => $order->jo_approved_at?->diffForHumans(),
+                'href' => '/accounting?date='.$today,
+                'action_label' => 'View day',
+            ])
+            ->values()
+            ->all();
+
+        $items = [];
+        if ($jobCount > 0) {
+            $items[] = [
+                'text' => $jobCount.' JO'.($jobCount === 1 ? '' : 's').' approved today (₱'.number_format($net, 2).')',
+                'href' => '/accounting?date='.$today,
+            ];
+        }
+
+        return [
+            'role' => 'accounting',
+            'header' => [
+                'title' => 'Accounting',
+                'subtitle' => 'Monitor daily billed sales from Head-approved job orders.',
+            ],
+            'kpis' => [
+                [
+                    'key' => 'sales_today',
+                    'label' => 'Net sales today',
+                    'value' => $net,
+                    'href' => '/accounting?date='.$today,
+                    'tone' => $net > 0 ? 'success' : 'default',
+                    'badge' => 'PHP',
+                    'hint' => 'Head-approved JO totals',
+                ],
+                [
+                    'key' => 'jobs_today',
+                    'label' => 'JOs approved today',
+                    'value' => $jobCount,
+                    'href' => '/accounting?date='.$today,
+                    'tone' => $jobCount > 0 ? 'info' : 'default',
+                ],
+            ],
+            'needsAttention' => [
+                'title' => 'Today’s billing',
+                'summary' => $jobCount > 0
+                    ? $jobCount.' approved JO'.($jobCount === 1 ? '' : 's').' · ₱'.number_format($net, 2)
+                    : 'No Head-approved job orders yet today',
+                'items' => $items,
+                'action' => [
+                    'label' => 'Open Sales Monitor',
+                    'href' => '/accounting',
+                ],
+            ],
+            'queue' => [
+                'title' => 'Approved today',
+                'empty' => 'No job orders approved today.',
+                'columns' => ['reference_no', 'customer_name', 'total_cost', 'payment_mode', 'status', 'updated_at'],
+                'rows' => $queueRows,
+            ],
+            'activity' => [
+                'title' => 'Sales monitor',
+                'empty' => 'Open Accounting to review daily sales.',
+                'items' => [],
+                'action' => [
+                    'label' => 'Open Accounting',
+                    'href' => '/accounting',
+                ],
+            ],
+            'links' => [
+                ['label' => 'Sales monitor', 'href' => '/accounting'],
             ],
             'extras' => [],
         ];

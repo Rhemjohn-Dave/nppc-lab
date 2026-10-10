@@ -203,10 +203,12 @@ class AnalysisPackageTest extends TestCase
             $worker = $line->assignee ?? $analyst;
             $payload = $line->id === $firstLine->id
                 ? [
+                    'performed_at' => '2026-07-29T15:00',
                     'result_value' => 'LT 1.8',
                     'result_unit' => 'MPN/100ml',
                 ]
                 : [
+                    'performed_at' => '2026-07-29T15:00',
                     'result_value' => '16',
                     'result_unit' => 'MPN/100ml',
                 ];
@@ -233,9 +235,9 @@ class AnalysisPackageTest extends TestCase
         $resolved = app(\App\Services\AnalysisResultReportResolver::class)
             ->forJobOrder($job->fresh(['analyses.assignee', 'analyses.analysisType', 'packages']), $admin);
         $values = $resolved->values;
-        // FO4 maps test_N_result to measured MPN (no Pass/Fail on this sheet).
-        $this->assertSame('LT 1.8', $values['test_1_result'] ?? null);
-        $this->assertSame('16', $values['test_2_result'] ?? null);
+        // FO4 overlay maps measured MPN onto test_N_measurement fields.
+        $this->assertSame('LT 1.8', $values['test_1_measurement'] ?? null);
+        $this->assertSame('16', $values['test_2_measurement'] ?? null);
 
         $revision = $form->fresh()->activeRevision();
         $this->assertNotNull($revision);
@@ -318,6 +320,7 @@ class AnalysisPackageTest extends TestCase
             ->assertRedirect('/receiving');
 
         $line = $job->analyses()->firstOrFail();
+        $this->assertFalse((bool) $line->analysisType?->requires_pass_fail);
         $this->assertFalse(
             app(\App\Services\AnalysisResultReportResolver::class)->requiresPassFail($job),
         );
@@ -325,6 +328,7 @@ class AnalysisPackageTest extends TestCase
         $this->actingAs($analyst)
             ->from('/analyst')
             ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '<1.8',
             ])
             ->assertRedirect('/analyst')
@@ -332,6 +336,98 @@ class AnalysisPackageTest extends TestCase
 
         $this->assertSame('<1.8', $line->fresh()->result_value);
         $this->assertNull($line->fresh()->result_pass_fail);
+    }
+
+    public function test_fo4_complete_requires_pass_fail_when_procedure_flag_is_on(): void
+    {
+        Storage::fake('local');
+        $this->seed();
+
+        $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
+        $package = AnalysisPackage::query()->where('code', 'PKG-MIC-NDW')->firstOrFail();
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+
+        $existing = ControlledForm::query()->where('form_code', 'LSP-7.8-FO4')->first();
+        if ($existing) {
+            foreach ($existing->revisions as $revision) {
+                $revision->fields()->delete();
+                $revision->delete();
+            }
+            $existing->delete();
+        }
+
+        $this->actingAs($admin)
+            ->post('/admin/controlled-forms', [
+                'form_code' => 'LSP-7.8-FO4',
+                'name' => 'Micro non-drinking water result',
+                'category' => ControlledFormCategory::AnalysisResult->value,
+                'revision' => '10',
+                'file' => $this->makeBlankResultPdf(),
+                'activate' => 1,
+                'fill_mode' => 'overlay',
+                'analysis_package_id' => $package->id,
+            ])
+            ->assertRedirect();
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'FO4 Pass Fail Customer',
+            'customer_email' => 'fo4-pf@example.com',
+            'samples' => [
+                ['description' => 'Wastewater', 'matrix' => 'Liquid'],
+            ],
+            'package_ids' => [$package->id],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $lines = $job->analyses()->get();
+
+        $this->actingAs($receiving)
+            ->patch("/receiving/{$job->id}/pricing", [
+                'lines' => $lines->map(fn ($line) => [
+                    'id' => $line->id,
+                    'unit_price' => 225,
+                    'quantity' => 1,
+                ])->all(),
+            ])
+            ->assertRedirect();
+
+        $this->approveJobOrder($job);
+
+        $this->actingAs($receiving)
+            ->post("/receiving/{$job->id}/receive")
+            ->assertRedirect('/receiving');
+
+        $line = $job->analyses()->whereHas(
+            'analysisType',
+            fn ($query) => $query->where('code', 'MB-02B'),
+        )->first() ?? $job->analyses()->firstOrFail();
+
+        $line->analysisType?->update(['requires_pass_fail' => true]);
+        $this->assertFalse(
+            app(\App\Services\AnalysisResultReportResolver::class)->requiresPassFail($job),
+        );
+
+        $this->actingAs($analyst)
+            ->from('/analyst')
+            ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
+                'result_value' => '<1.8',
+            ])
+            ->assertRedirect('/analyst')
+            ->assertSessionHasErrors(['result_pass_fail']);
+
+        $this->actingAs($analyst)
+            ->from('/analyst')
+            ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
+                'result_value' => '<1.8',
+                'result_pass_fail' => 'Passed',
+            ])
+            ->assertRedirect('/analyst')
+            ->assertSessionDoesntHaveErrors();
+
+        $this->assertSame('Passed', $line->fresh()->result_pass_fail);
     }
 
     public function test_fo5_complete_still_requires_pass_fail(): void
@@ -396,6 +492,7 @@ class AnalysisPackageTest extends TestCase
             ->assertRedirect('/receiving');
 
         $line = $job->analyses()->firstOrFail();
+        $line->analysisType?->update(['requires_pass_fail' => true]);
         $this->assertTrue(
             app(\App\Services\AnalysisResultReportResolver::class)->requiresPassFail($job),
         );
@@ -403,11 +500,92 @@ class AnalysisPackageTest extends TestCase
         $this->actingAs($analyst)
             ->from('/analyst')
             ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '<1.1',
             ])
             ->assertRedirect('/analyst')
             ->assertSessionHasErrors(['result_pass_fail'])
             ->assertSessionDoesntHaveErrors(['result_method']);
+    }
+
+    public function test_complete_skips_pass_fail_when_procedure_flag_is_off(): void
+    {
+        Storage::fake('local');
+        $this->seed();
+
+        $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
+        $package = AnalysisPackage::query()->where('code', 'PKG-MIC-DW')->firstOrFail();
+        $package->update(['is_active' => true]);
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+
+        $existing = ControlledForm::query()->where('form_code', 'LSP-7.8-FO5')->first();
+        if ($existing) {
+            foreach ($existing->revisions as $revision) {
+                $revision->fields()->delete();
+                $revision->delete();
+            }
+            $existing->delete();
+        }
+
+        $this->actingAs($admin)
+            ->post('/admin/controlled-forms', [
+                'form_code' => 'LSP-7.8-FO5',
+                'name' => 'FO5 drinking water',
+                'category' => ControlledFormCategory::AnalysisResult->value,
+                'revision' => '01',
+                'file' => $this->makeBlankResultPdf(),
+                'activate' => 1,
+                'analysis_package_id' => $package->id,
+            ])
+            ->assertRedirect();
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'FO5 Optional PF Customer',
+            'customer_email' => 'fo5-optional-pf@example.com',
+            'classification' => 'Potability',
+            'samples' => [
+                ['description' => 'Drinking water', 'matrix' => 'Liquid'],
+            ],
+            'package_ids' => [$package->id],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $lines = $job->analyses()->get();
+
+        $this->actingAs($receiving)
+            ->patch("/receiving/{$job->id}/pricing", [
+                'lines' => $lines->map(fn ($line) => [
+                    'id' => $line->id,
+                    'unit_price' => 100,
+                    'quantity' => 1,
+                ])->all(),
+            ])
+            ->assertRedirect();
+
+        $this->approveJobOrder($job);
+
+        $this->actingAs($receiving)
+            ->post("/receiving/{$job->id}/receive")
+            ->assertRedirect('/receiving');
+
+        $line = $job->analyses()->firstOrFail();
+        $this->assertFalse((bool) $line->analysisType?->requires_pass_fail);
+        $this->assertTrue(
+            app(\App\Services\AnalysisResultReportResolver::class)->requiresPassFail($job),
+        );
+
+        $this->actingAs($analyst)
+            ->from('/analyst')
+            ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
+                'result_value' => '<1.1',
+            ])
+            ->assertRedirect('/analyst')
+            ->assertSessionDoesntHaveErrors();
+
+        $this->assertSame('<1.1', $line->fresh()->result_value);
+        $this->assertNull($line->fresh()->result_pass_fail);
     }
 
     public function test_admin_can_create_a_package(): void

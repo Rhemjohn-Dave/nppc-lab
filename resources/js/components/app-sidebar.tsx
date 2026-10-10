@@ -2,17 +2,20 @@ import { Link, usePage } from '@inertiajs/react';
 import {
     Beaker,
     ClipboardCheck,
+    FileCheck,
     FileStack,
     FileText,
     Hash,
     History,
     LayoutGrid,
+    Mail,
     PackageOpen,
     Printer,
     ScrollText,
     Settings2,
     Shield,
     Users,
+    Wallet,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -52,10 +55,19 @@ export function AppSidebar() {
                   } satisfies NavItem,
               ]
             : []),
+        ...(can('accounting')
+            ? [
+                  {
+                      title: 'Accounting',
+                      href: '/accounting',
+                      icon: Wallet,
+                  } satisfies NavItem,
+              ]
+            : []),
         ...(can('analyst')
             ? [
                   {
-                      title: 'Analyst',
+                      title: 'Analyst Workspace',
                       href: '/analyst',
                       icon: Beaker,
                   } satisfies NavItem,
@@ -69,14 +81,14 @@ export function AppSidebar() {
                       icon: ClipboardCheck,
                       children: [
                           {
-                              title: 'JO approval',
+                              title: 'JO Approval',
                               href: '/head/jo',
                               icon: FileText,
                           },
                           {
                               title: 'Results',
                               href: '/head/results',
-                              icon: ClipboardCheck,
+                              icon: FileCheck,
                           },
                       ],
                   } satisfies NavItem,
@@ -85,7 +97,7 @@ export function AppSidebar() {
         ...(canAccessHistory
             ? [
                   {
-                      title: 'History archive',
+                      title: 'History Archive',
                       href: '/history',
                       icon: History,
                   } satisfies NavItem,
@@ -94,12 +106,12 @@ export function AppSidebar() {
         ...(isAdmin
             ? [
                   {
-                      title: 'Users',
+                      title: 'Users & Access',
                       href: '/admin/users',
                       icon: Users,
                   } satisfies NavItem,
                   {
-                      title: 'Procedures',
+                      title: 'Procedures (SOPs)',
                       href: '/admin/prices',
                       icon: Settings2,
                   } satisfies NavItem,
@@ -109,14 +121,19 @@ export function AppSidebar() {
                       icon: Beaker,
                   } satisfies NavItem,
                   {
-                      title: 'History access',
+                      title: 'History Access',
                       href: '/admin/history-access',
                       icon: Shield,
                   } satisfies NavItem,
                   {
-                      title: 'Control number',
+                      title: 'Control Numbers',
                       href: '/admin/control-number',
                       icon: Hash,
+                  } satisfies NavItem,
+                  {
+                      title: 'Email Settings',
+                      href: '/admin/email-settings',
+                      icon: Mail,
                   } satisfies NavItem,
               ]
             : []),
@@ -130,7 +147,7 @@ export function AppSidebar() {
                   icon: PackageOpen,
               },
               {
-                  title: 'Result panels',
+                  title: 'Result Panels',
                   href: '/admin/result-panels',
                   icon: FileStack,
               },
@@ -140,7 +157,7 @@ export function AppSidebar() {
     const documentNavItems: NavItem[] = isAdmin
         ? [
               {
-                  title: 'Controlled Forms',
+                  title: 'Controlled Forms (COA)',
                   href: '/admin/controlled-forms',
                   icon: FileText,
               },
@@ -150,7 +167,7 @@ export function AppSidebar() {
                   icon: Printer,
               },
               {
-                  title: 'Audit Logs',
+                  title: '21 CFR / ISO Audit Trail',
                   href: '/admin/document-audit',
                   icon: ScrollText,
               },
@@ -158,11 +175,19 @@ export function AppSidebar() {
         : [];
 
     return (
-        <Sidebar collapsible="icon" variant="inset">
-            <SidebarHeader>
+        <Sidebar
+            collapsible="icon"
+            variant="inset"
+            className="z-20 border-r border-slate-200 bg-white"
+        >
+            <SidebarHeader className="border-b border-slate-100 px-2 py-2">
                 <SidebarMenu>
                     <SidebarMenuItem>
-                        <SidebarMenuButton size="lg" asChild>
+                        <SidebarMenuButton
+                            size="lg"
+                            asChild
+                            className="h-auto rounded-lg hover:bg-slate-50 data-[slot=sidebar-menu-button]:p-2 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-0!"
+                        >
                             <Link href="/dashboard" prefetch>
                                 <AppLogo />
                             </Link>
@@ -171,13 +196,16 @@ export function AppSidebar() {
                 </SidebarMenu>
             </SidebarHeader>
 
-            <SidebarContent>
+            <SidebarContent className="gap-6 px-0 py-3">
                 <NavMain items={mainNavItems} />
-                <NavMain items={labCatalogNavItems} label="Lab catalog" />
-                <NavMain items={documentNavItems} label="Document Control" />
+                <NavMain items={labCatalogNavItems} label="Lab Catalog" />
+                <NavMain
+                    items={documentNavItems}
+                    label="Quality & Compliance"
+                />
             </SidebarContent>
 
-            <SidebarFooter>
+            <SidebarFooter className="border-t border-slate-200 bg-slate-50/50 p-3">
                 <NavUser />
             </SidebarFooter>
         </Sidebar>

@@ -29,7 +29,7 @@ export default function RevisionWorkflow({
     return (
         <div className={cn(!embedded && 'rounded-lg border bg-white px-3 py-2')}>
             <div className="mb-1.5 flex items-center justify-between gap-2">
-                <p className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
+                <p className="text-[11px] font-semibold tracking-wider text-nppc-900 uppercase">
                     Lifecycle &amp; approval pipeline
                 </p>
                 {currentRevision ? (
@@ -55,7 +55,7 @@ export default function RevisionWorkflow({
                             className={cn(
                                 'flex items-start gap-2 rounded-md border px-2 py-1.5',
                                 isCurrent &&
-                                    'border-[#1A3694]/40 bg-[#eef3fb]',
+                                    'border-nppc-900/40 bg-nppc-50',
                                 isComplete &&
                                     'border-emerald-200 bg-emerald-50/60',
                                 (isFuture || isTerminal) &&
@@ -66,7 +66,7 @@ export default function RevisionWorkflow({
                             <div
                                 className={cn(
                                     'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full',
-                                    isCurrent && 'bg-[#1A3694] text-white',
+                                    isCurrent && 'bg-nppc-900 text-white',
                                     isComplete && 'bg-emerald-100 text-emerald-700',
                                     (isFuture || isTerminal) &&
                                         'bg-slate-100 text-slate-400',
@@ -89,7 +89,7 @@ export default function RevisionWorkflow({
                                     className={cn(
                                         'text-xs font-medium',
                                         isCurrent
-                                            ? 'text-[#1A3694]'
+                                            ? 'text-nppc-900'
                                             : isComplete
                                               ? 'text-emerald-900'
                                               : 'text-slate-500',

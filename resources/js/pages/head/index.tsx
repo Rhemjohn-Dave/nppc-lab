@@ -1,11 +1,13 @@
 import { Head, Link, router } from '@inertiajs/react';
-import LimsWorkspace from '@/components/lims/lims-workspace';
+import { ArrowRight } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import ConfirmDialog from '@/components/confirm-dialog';
+import JoReferenceChip from '@/components/lims/jo-reference-chip';
+import LimsWorkspace from '@/components/lims/lims-workspace';
+import QueueSummaryCards from '@/components/lims/queue-summary-cards';
 import NavigationLoadingShell from '@/components/loading/navigation-loading-shell';
 import QueueFilterBar from '@/components/queue-filter-bar';
 import QueueRangeNote from '@/components/queue-range-note';
-import SummaryStat from '@/components/summary-stat';
 import TablePagination from '@/components/table-pagination';
 import WorkspaceHeader from '@/components/workspace-header';
 import { Badge } from '@/components/ui/badge';
@@ -69,9 +71,8 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
     const tab = filters.tab;
     const joApprovalTab = tab === 'jo_approval';
     const unsignedTab = tab === 'unsigned';
-    const signedTodayTab = tab === 'signed';
-    const resultsPrimary = unsignedTab || signedTodayTab;
     const canSelect = joApprovalTab || unsignedTab;
+    const emphasizeRef = joApprovalTab || unsignedTab;
 
     const pageIds = useMemo(
         () => orders.data.map((order) => order.id),
@@ -113,19 +114,6 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
         );
     }
 
-    function selectPrimary(primary: 'jo' | 'results') {
-        if (primary === 'jo') {
-            applyFilters({ tab: 'jo_approval', q: query.trim() });
-            return;
-        }
-
-        // Keep Released today if already there; otherwise open Awaiting release.
-        applyFilters({
-            tab: signedTodayTab ? 'signed' : 'unsigned',
-            q: query.trim(),
-        });
-    }
-
     function submitSearch() {
         applyFilters({ q: query.trim() });
     }
@@ -163,7 +151,14 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
           ? 'Completed'
           : 'Released';
 
-    const emptyMessage = filters.q
+    const emptyTitle = filters.q
+        ? 'No matching job orders'
+        : joApprovalTab
+          ? 'Queue is clear'
+          : unsignedTab
+            ? 'Queue is clear'
+            : 'No releases today';
+    const emptyBody = filters.q
         ? 'No job orders match your search.'
         : joApprovalTab
           ? 'No Job Orders waiting for Head approval.'
@@ -173,12 +168,51 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
 
     const batchVerb = joApprovalTab ? 'Approve' : 'Release';
     const batchNoun = joApprovalTab ? 'Job Order' : 'result file';
+
+    const kpiTotal = Math.max(
+        counts.jo_approval + counts.unsigned + counts.signed_today,
+        1,
+    );
+    const summaryCards = [
+        {
+            id: 'jo_approval',
+            label: 'Awaiting JO Approval',
+            value: counts.jo_approval,
+            unit:
+                counts.jo_approval > 0 ? 'Action required' : 'None waiting',
+            tone:
+                counts.jo_approval > 0
+                    ? ('warning' as const)
+                    : ('default' as const),
+            share: Math.round((counts.jo_approval / kpiTotal) * 100),
+        },
+        {
+            id: 'unsigned',
+            label: 'Awaiting Result Release',
+            value: counts.unsigned,
+            unit: 'Finished files',
+            tone:
+                counts.unsigned > 0
+                    ? ('warning' as const)
+                    : ('default' as const),
+            share: Math.round((counts.unsigned / kpiTotal) * 100),
+        },
+        {
+            id: 'signed',
+            label: 'Released Today',
+            value: counts.signed_today,
+            unit: 'Result releases',
+            tone: 'success' as const,
+            share: Math.round((counts.signed_today / kpiTotal) * 100),
+        },
+    ];
+
     return (
         <>
             <Head title="Head Analysis" />
             <LabQueueRealtime role="head" only={['orders', 'counts']} />
             <NavigationLoadingShell variant="queue">
-                <LimsWorkspace className="gap-3">
+                <LimsWorkspace className="gap-4">
                     <WorkspaceHeader
                         title="Head Analysis"
                         description={
@@ -191,7 +225,8 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
                         actions={
                             canSelect && selected.length > 0 ? (
                                 <Button
-                                    className="bg-[#1A3694] hover:bg-[#365BB0]"
+                                    size="sm"
+                                    className="h-8 bg-nppc-900 text-xs hover:bg-nppc-700"
                                     onClick={() => setConfirmBatch(true)}
                                 >
                                     {batchVerb} selected ({selected.length})
@@ -200,348 +235,290 @@ export default function HeadIndex({ orders, counts, filters }: Props) {
                         }
                     />
 
-                    <div
-                        className="grid grid-cols-2 gap-1 rounded-xl border bg-[#f8fafc] p-1"
-                        role="tablist"
-                        aria-label="Head work areas"
-                    >
-                        <button
-                            type="button"
-                            role="tab"
-                            aria-selected={joApprovalTab}
-                            onClick={() => selectPrimary('jo')}
-                            className={cn(
-                                'rounded-lg px-3 py-3 text-left transition',
-                                joApprovalTab
-                                    ? 'bg-[#1A3694] text-white shadow-sm'
-                                    : 'text-slate-700 hover:bg-white',
-                            )}
-                        >
-                            <p className="text-xs font-semibold tracking-wide uppercase opacity-80">
-                                JO approval
-                            </p>
-                            <p className="mt-0.5 font-medium">
-                                Costing &amp; Job Order
-                            </p>
-                            <p
-                                className={cn(
-                                    'mt-1 text-sm tabular-nums',
-                                    joApprovalTab
-                                        ? 'text-white/90'
-                                        : 'text-muted-foreground',
-                                )}
-                            >
-                                {counts.jo_approval} waiting
-                            </p>
-                        </button>
-                        <button
-                            type="button"
-                            role="tab"
-                            aria-selected={resultsPrimary}
-                            onClick={() => selectPrimary('results')}
-                            className={cn(
-                                'rounded-lg px-3 py-3 text-left transition',
-                                resultsPrimary
-                                    ? 'bg-[#1A3694] text-white shadow-sm'
-                                    : 'text-slate-700 hover:bg-white',
-                            )}
-                        >
-                            <p className="text-xs font-semibold tracking-wide uppercase opacity-80">
-                                Results
-                            </p>
-                            <p className="mt-0.5 font-medium">
-                                Release finished files
-                            </p>
-                            <p
-                                className={cn(
-                                    'mt-1 text-sm tabular-nums',
-                                    resultsPrimary
-                                        ? 'text-white/90'
-                                        : 'text-muted-foreground',
-                                )}
-                            >
-                                {counts.unsigned} awaiting ·{' '}
-                                {counts.signed_today} today
-                            </p>
-                        </button>
-                    </div>
-
-                    {joApprovalTab ? (
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            <SummaryStat
-                                label="Waiting for JO approval"
-                                value={counts.jo_approval}
-                            />
-                            <div className="rounded-xl border bg-white px-4 py-3 text-sm text-muted-foreground">
-                                Approving a Job Order unlocks Receiving to print
-                                3 JO copies and send the job to analysts.
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            <SummaryStat
-                                label="Awaiting result release"
-                                value={counts.unsigned}
-                            />
-                            <SummaryStat
-                                label="Released today"
-                                value={counts.signed_today}
-                                tone="success"
-                            />
-                        </div>
-                    )}
-
-                    <QueueFilterBar
-                        chips={
-                            resultsPrimary
-                                ? [
-                                      {
-                                          id: 'unsigned',
-                                          label: 'Awaiting release',
-                                          count: counts.unsigned,
-                                      },
-                                      {
-                                          id: 'signed',
-                                          label: 'Released today',
-                                          count: counts.signed_today,
-                                      },
-                                  ]
-                                : []
-                        }
+                    <QueueSummaryCards
+                        cards={summaryCards}
                         activeId={filters.tab}
-                        onChip={(id) =>
+                        onSelect={(id) =>
                             applyFilters({
                                 tab: id,
                                 q: query.trim(),
                             })
                         }
-                        query={query}
-                        onQueryChange={setQuery}
-                        onSearch={submitSearch}
-                        onClear={() => {
-                            setQuery('');
-                            applyFilters({ q: '' });
-                        }}
+                        className="sm:grid-cols-3 lg:grid-cols-3"
                     />
 
-                    {canSelect && selected.length > 0 && (
-                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#1A3694]/20 bg-[#eef3fb] px-4 py-3">
-                            <p className="text-sm font-medium text-[#1A3694]">
-                                {selected.length} {batchNoun}
-                                {selected.length === 1 ? '' : 's'} selected
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setSelected([])}
-                                >
-                                    Clear
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    className="bg-[#1A3694] hover:bg-[#365BB0]"
-                                    onClick={() => setConfirmBatch(true)}
-                                >
-                                    {batchVerb} selected
-                                </Button>
-                            </div>
+                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+                        <div className="space-y-3 border-b border-slate-200 p-3 sm:p-4">
+                            <QueueFilterBar
+                                chips={[
+                                    {
+                                        id: 'jo_approval',
+                                        label: 'Awaiting JO',
+                                        count: counts.jo_approval,
+                                    },
+                                    {
+                                        id: 'unsigned',
+                                        label: 'Awaiting release',
+                                        count: counts.unsigned,
+                                    },
+                                    {
+                                        id: 'signed',
+                                        label: 'Released today',
+                                        count: counts.signed_today,
+                                    },
+                                ]}
+                                activeId={filters.tab}
+                                onChip={(id) =>
+                                    applyFilters({
+                                        tab: id,
+                                        q: query.trim(),
+                                    })
+                                }
+                                query={query}
+                                onQueryChange={setQuery}
+                                onSearch={submitSearch}
+                                onClear={() => {
+                                    setQuery('');
+                                    applyFilters({ q: '' });
+                                }}
+                                placeholder="Search reference, customer…"
+                            />
+
+                            {canSelect && selected.length > 0 ? (
+                                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-nppc-900/20 bg-nppc-50 px-3 py-2.5">
+                                    <p className="text-sm font-medium text-nppc-900">
+                                        {selected.length} {batchNoun}
+                                        {selected.length === 1 ? '' : 's'}{' '}
+                                        selected
+                                    </p>
+                                    <div className="flex flex-wrap gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-8 text-xs shadow-xs"
+                                            onClick={() => setSelected([])}
+                                        >
+                                            Clear
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            className="h-8 bg-nppc-900 text-xs shadow-xs hover:bg-nppc-700"
+                                            onClick={() =>
+                                                setConfirmBatch(true)
+                                            }
+                                        >
+                                            {batchVerb} selected
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            <QueueRangeNote
+                                from={orders.from}
+                                to={orders.to}
+                                total={orders.total}
+                                suffix={
+                                    joApprovalTab
+                                        ? 'Job Orders waiting for Head costing approval.'
+                                        : unsignedTab
+                                          ? 'finished files awaiting result release.'
+                                          : 'results released today.'
+                                }
+                            />
                         </div>
-                    )}
 
-                    <QueueRangeNote
-                        from={orders.from}
-                        to={orders.to}
-                        total={orders.total}
-                        suffix={
-                            joApprovalTab
-                                ? 'Job Orders waiting for Head costing approval.'
-                                : unsignedTab
-                                  ? 'finished files awaiting result release.'
-                                  : 'results released today.'
-                        }
-                    />
-                    <div className="overflow-x-auto rounded-xl border bg-white">
-                        <table className="w-full text-sm">
-                            <thead className="sticky top-0 z-10 bg-[#f8fafc] text-left">
-                                <tr>
-                                    {canSelect && (
-                                        <th className="px-3 py-3">
-                                            <Checkbox
-                                                checked={allSelected}
-                                                onCheckedChange={(checked) =>
-                                                    toggleAll(checked === true)
-                                                }
-                                                aria-label="Select all on page"
-                                            />
-                                        </th>
-                                    )}
-                                    <th className="px-3 py-3 font-medium text-slate-600">
-                                        Reference
-                                    </th>
-                                    <th className="px-3 py-3 font-medium text-slate-600">
-                                        Customer
-                                    </th>
-                                    <th className="px-3 py-3 font-medium text-slate-600">
-                                        Samples
-                                    </th>
-                                    <th className="px-3 py-3 font-medium text-slate-600">
-                                        Tests
-                                    </th>
-                                    <th className="px-3 py-3 font-medium text-slate-600">
-                                        Total
-                                    </th>
-                                    <th className="px-3 py-3 font-medium text-slate-600">
-                                        {dateColumnLabel}
-                                    </th>
-                                    <th className="px-3 py-3" />
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {orders.data.map((order) => (
-                                    <tr
-                                        key={order.id}
-                                        className={cn(
-                                            'border-t transition hover:bg-[#f8fafc]',
-                                            !order.is_signed &&
-                                                'bg-[#eef3fb]/35',
-                                        )}
-                                    >
-                                        {canSelect && (
-                                            <td className="px-3 py-3">
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[920px] border-collapse text-left text-xs">
+                                <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/90">
+                                    <tr className="select-none text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                                        {canSelect ? (
+                                            <th className="px-4 py-3">
                                                 <Checkbox
-                                                    checked={selected.includes(
-                                                        order.id,
-                                                    )}
+                                                    checked={allSelected}
                                                     onCheckedChange={(
                                                         checked,
                                                     ) =>
-                                                        toggleOne(
-                                                            order.id,
+                                                        toggleAll(
                                                             checked === true,
                                                         )
                                                     }
-                                                    aria-label={`Select ${order.reference_no}`}
+                                                    aria-label="Select all on page"
+                                                />
+                                            </th>
+                                        ) : null}
+                                        <th className="px-4 py-3">Reference</th>
+                                        <th className="px-4 py-3">Customer</th>
+                                        <th className="px-4 py-3">Samples</th>
+                                        <th className="px-4 py-3">Tests</th>
+                                        <th className="px-4 py-3 text-right">
+                                            Total
+                                        </th>
+                                        <th className="px-4 py-3">
+                                            {dateColumnLabel}
+                                        </th>
+                                        <th className="min-w-[12rem] px-4 py-3 text-right">
+                                            Actions
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200/80">
+                                    {orders.data.map((order) => (
+                                        <tr
+                                            key={order.id}
+                                            className={cn(
+                                                'transition-colors hover:bg-slate-50',
+                                                emphasizeRef && 'bg-amber-50/30',
+                                            )}
+                                        >
+                                            {canSelect ? (
+                                                <td className="px-4 py-4 align-top">
+                                                    <Checkbox
+                                                        checked={selected.includes(
+                                                            order.id,
+                                                        )}
+                                                        onCheckedChange={(
+                                                            checked,
+                                                        ) =>
+                                                            toggleOne(
+                                                                order.id,
+                                                                checked ===
+                                                                    true,
+                                                            )
+                                                        }
+                                                        aria-label={`Select ${order.reference_no}`}
+                                                    />
+                                                </td>
+                                            ) : null}
+                                            <td className="px-4 py-4 align-top whitespace-nowrap">
+                                                <JoReferenceChip
+                                                    referenceNo={
+                                                        order.reference_no
+                                                    }
+                                                    emphasize={emphasizeRef}
                                                 />
                                             </td>
-                                        )}
-                                        <td className="px-3 py-3 font-semibold text-[#1A3694]">
-                                            {order.reference_no}
-                                        </td>
-                                        <td className="px-3 py-3">
-                                            <div className="font-medium">
-                                                {order.customer_name}
-                                            </div>
-                                            <div className="text-xs text-muted-foreground">
-                                                {[
-                                                    order.company_name,
-                                                    order.classification,
-                                                    order.customer_contact,
-                                                    order.customer_email,
-                                                ]
-                                                    .filter(Boolean)
-                                                    .join(' · ') || '—'}
-                                            </div>
-                                        </td>
-                                        <td className="px-3 py-3 tabular-nums">
-                                            {order.samples_count}
-                                        </td>
-                                        <td className="px-3 py-3 tabular-nums">
-                                            {order.analyses_count}
-                                        </td>
-                                        <td className="px-3 py-3 tabular-nums">
-                                            {money(order.total_cost)}
-                                        </td>
-                                        <td className="px-3 py-3 text-muted-foreground">
-                                            {joApprovalTab || unsignedTab ? (
-                                                order.completed_at
-                                            ) : (
-                                                <div>
-                                                    <div>
-                                                        {order.signed_at}
-                                                    </div>
-                                                    {order.signed_by && (
-                                                        <div className="text-xs">
-                                                            by{' '}
-                                                            {order.signed_by}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-3 py-3 text-right">
-                                            <div className="flex flex-wrap justify-end gap-2">
-                                                {joApprovalTab ? (
-                                                    <Badge
-                                                        variant="outline"
-                                                        className="border-amber-200 bg-amber-50 text-amber-900"
-                                                    >
-                                                        Needs JO approval
-                                                    </Badge>
-                                                ) : order.is_signed ? (
-                                                    <Badge
-                                                        variant="outline"
-                                                        className="border-emerald-200 bg-emerald-50 text-emerald-800"
-                                                    >
-                                                        Released
-                                                    </Badge>
+                                            <td className="px-4 py-4 align-top">
+                                                <p className="font-semibold text-slate-900">
+                                                    {order.customer_name}
+                                                </p>
+                                                <p className="mt-0.5 text-[11px] text-slate-500">
+                                                    {[
+                                                        order.company_name,
+                                                        order.classification,
+                                                        order.customer_contact,
+                                                        order.customer_email,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(' · ') || '—'}
+                                                </p>
+                                            </td>
+                                            <td className="px-4 py-4 align-top tabular-nums text-slate-800">
+                                                {order.samples_count}
+                                            </td>
+                                            <td className="px-4 py-4 align-top tabular-nums text-slate-800">
+                                                {order.analyses_count}
+                                            </td>
+                                            <td className="px-4 py-4 text-right align-top text-xs font-bold tabular-nums text-slate-900">
+                                                {money(order.total_cost)}
+                                            </td>
+                                            <td className="px-4 py-4 align-top text-[11px] text-slate-500">
+                                                {joApprovalTab ||
+                                                unsignedTab ? (
+                                                    order.completed_at
                                                 ) : (
-                                                    <Badge
-                                                        variant="outline"
-                                                        className="border-[#c5d4f0] bg-[#eef3fb] text-[#1A3694]"
-                                                    >
-                                                        Awaiting release
-                                                    </Badge>
+                                                    <div>
+                                                        <div>
+                                                            {order.signed_at}
+                                                        </div>
+                                                        {order.signed_by ? (
+                                                            <div>
+                                                                by{' '}
+                                                                {
+                                                                    order.signed_by
+                                                                }
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
                                                 )}
-                                                <Button
-                                                    asChild
-                                                    size="sm"
-                                                    className={
-                                                        canSelect
-                                                            ? 'bg-[#1A3694] hover:bg-[#365BB0]'
-                                                            : undefined
-                                                    }
-                                                    variant={
-                                                        canSelect
-                                                            ? 'default'
-                                                            : 'outline'
-                                                    }
-                                                >
-                                                    <Link
-                                                        href={`/head/${order.id}`}
+                                            </td>
+                                            <td className="px-4 py-4 text-right align-top">
+                                                <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                                                    {joApprovalTab ? (
+                                                        <Badge
+                                                            variant="outline"
+                                                            className="border-amber-200 bg-amber-50 text-[10px] text-amber-900"
+                                                        >
+                                                            Needs JO approval
+                                                        </Badge>
+                                                    ) : order.is_signed ? (
+                                                        <Badge
+                                                            variant="outline"
+                                                            className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-800"
+                                                        >
+                                                            Released
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge
+                                                            variant="outline"
+                                                            className="border-amber-200 bg-amber-50 text-[10px] text-amber-900"
+                                                        >
+                                                            Awaiting release
+                                                        </Badge>
+                                                    )}
+                                                    <Button
+                                                        asChild
+                                                        size="sm"
+                                                        className={cn(
+                                                            'h-8 gap-1.5 text-xs shadow-xs',
+                                                            canSelect
+                                                                ? 'border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                                                                : 'bg-nppc-900 hover:bg-nppc-700',
+                                                        )}
                                                     >
-                                                        {joApprovalTab
-                                                            ? 'Review & approve JO'
-                                                            : order.is_signed
-                                                              ? 'Open'
-                                                              : 'Release results'}
-                                                    </Link>
-                                                </Button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {orders.data.length === 0 && (
-                                    <tr>
-                                        <td
-                                            colSpan={canSelect ? 8 : 7}
-                                            className="px-3 py-12 text-center text-muted-foreground"
-                                        >
-                                            {emptyMessage}
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                                                        <Link
+                                                            href={`/head/${order.id}`}
+                                                        >
+                                                            {joApprovalTab
+                                                                ? 'Review & approve JO'
+                                                                : order.is_signed
+                                                                  ? 'Open'
+                                                                  : 'Release results'}
+                                                            <ArrowRight className="size-3" />
+                                                        </Link>
+                                                    </Button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {orders.data.length === 0 ? (
+                                        <tr>
+                                            <td
+                                                colSpan={canSelect ? 8 : 7}
+                                                className="px-4 py-12 text-center"
+                                            >
+                                                <p className="text-sm font-medium text-nppc-900">
+                                                    {emptyTitle}
+                                                </p>
+                                                <p className="mt-1 text-xs text-muted-foreground">
+                                                    {emptyBody}
+                                                </p>
+                                            </td>
+                                        </tr>
+                                    ) : null}
+                                </tbody>
+                            </table>
+                        </div>
 
-                    <TablePagination
-                        links={orders.links}
-                        from={orders.from}
-                        to={orders.to}
-                        total={orders.total}
-                        label="job orders"
-                    />
+                        <div className="border-t border-slate-200 bg-slate-50/50 px-4 py-3">
+                            <TablePagination
+                                links={orders.links}
+                                from={orders.from}
+                                to={orders.to}
+                                total={orders.total}
+                                label="job orders"
+                            />
+                        </div>
+                    </div>
                 </LimsWorkspace>
             </NavigationLoadingShell>
 

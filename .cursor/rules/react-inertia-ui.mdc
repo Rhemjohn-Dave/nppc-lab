@@ -21,17 +21,23 @@ alwaysApply: false
 ## LIMS layout tokens
 
 ```tsx
-import { limsPageBackground, limsPageShellWide } from '@/lib/lims-page-shell';
+import { limsPageBackground, limsPageShellWide, limsPanel, limsTitle } from '@/lib/lims-page-shell';
 ```
 
-- Background: `#f4f7fb` via `limsPageBackground`
+- Background: `bg-nppc-page` via `limsPageBackground` (token in `resources/css/app.css`)
 - Wide column: `max-w-[1680px]` via `limsPageShellWide`
 - Intake: prefer **one white workspace card** (stepper + body + sticky footer), **`FormSection`** dividers — avoid nested card stacks per step
 
 ## Visual language
 
-- Primary navy: `#1A3694`, accent `#365BB0`, `#5282D3` borders on hover
-- Dense tables and sidebars: `rounded-xl border border-slate-200/80 bg-white shadow-sm`
+- Font: **Manrope only** for app chrome (`font-sans` / `font-heading` via Bunny CDN in `app.blade.php`) — do not introduce Inter, Instrument Sans, or JetBrains Mono for UI chrome
+- Primary navy: `nppc-900` / `primary`; accent hover `nppc-700`; soft fill `nppc-50`
+- Prefer `text-nppc-900`, `bg-nppc-900`, `bg-primary` — **not** raw `#1A3694` or generic `blue-600`
+- Queue / list shells: `limsQueueShell` or `shadow-xs` (`rounded-xl border border-slate-200 bg-white shadow-xs`)
+- General settings panels: `limsPanel` (`shadow-sm`)
+- KPI numbers: Manrope heading face (`font-heading text-2xl font-extrabold tabular-nums`) — not `font-mono`
+- Page titles: `limsTitle` / `WorkspaceHeader` (`font-heading text-xl font-semibold text-nppc-900`)
+- **Queue / list screens:** Analyst chrome is the visual reference — follow `.cursor/rules/lims-queue-ui.mdc` (`QueueSummaryCards` / `QueueKpi`, JO mono chips, `bg-nppc-900` + `ArrowRight` CTAs)
 
 ## State and forms
 

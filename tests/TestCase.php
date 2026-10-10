@@ -35,6 +35,7 @@ abstract class TestCase extends BaseTestCase
     protected function completeResultPayload(array $overrides = []): array
     {
         return array_merge([
+            'performed_at' => '2026-07-29T15:00',
             'result_value' => '1.0',
             'result_pass_fail' => 'Passed',
             'result_method' => 'Standard Method',

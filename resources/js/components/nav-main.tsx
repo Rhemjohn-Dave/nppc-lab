@@ -20,6 +20,9 @@ import { useCurrentUrl } from '@/hooks/use-current-url';
 import { cn, toUrl } from '@/lib/utils';
 import type { NavItem } from '@/types';
 
+const navButtonClass =
+    'h-9 gap-2.5 rounded-md px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 data-[active=true]:bg-nppc-50/80 data-[active=true]:font-semibold data-[active=true]:text-nppc-900 data-[active=true]:shadow-[inset_0_0_0_1px_rgba(26,54,148,0.2)] [&>svg]:size-4 [&>svg]:text-slate-400 data-[active=true]:[&>svg]:text-nppc-700';
+
 function itemPath(item: NavItem): string {
     return toUrl(item.href);
 }
@@ -52,10 +55,17 @@ function NavLeaf({
                 asChild
                 isActive={isActive}
                 tooltip={{ children: item.title }}
+                className={navButtonClass}
             >
                 <Link href={item.href} prefetch>
                     {item.icon && <item.icon />}
-                    <span>{item.title}</span>
+                    <span className="flex-1 truncate">{item.title}</span>
+                    {isActive ? (
+                        <span
+                            className="size-1.5 shrink-0 rounded-full bg-nppc-900 group-data-[collapsible=icon]:hidden"
+                            aria-hidden="true"
+                        />
+                    ) : null}
                 </Link>
             </SidebarMenuButton>
         </SidebarMenuItem>
@@ -74,8 +84,9 @@ function NavBranch({
     const childActive = children.some((child) =>
         pathMatches(currentPath, itemPath(child), true),
     );
-    const underParent =
-        pathMatches(currentPath, parentPath, true) || childActive;
+    const exactParent = pathMatches(currentPath, parentPath, false);
+    const underParent = exactParent || childActive;
+    const parentActive = exactParent && !childActive;
     const [open, setOpen] = useState(underParent);
 
     useEffect(() => {
@@ -95,20 +106,26 @@ function NavBranch({
                 <CollapsibleTrigger asChild>
                     <SidebarMenuButton
                         tooltip={{ children: item.title }}
-                        isActive={underParent}
+                        isActive={parentActive}
+                        className={cn(
+                            navButtonClass,
+                            (open || childActive) &&
+                                !parentActive &&
+                                'font-semibold text-nppc-900 [&>svg]:text-nppc-700',
+                        )}
                     >
                         {item.icon && <item.icon />}
-                        <span>{item.title}</span>
+                        <span className="flex-1 truncate">{item.title}</span>
                         <ChevronRight
                             className={cn(
-                                'ml-auto size-4 transition-transform',
+                                'ml-auto size-3.5 shrink-0 text-slate-400 transition-transform',
                                 open && 'rotate-90',
                             )}
                         />
                     </SidebarMenuButton>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                    <SidebarMenuSub>
+                    <SidebarMenuSub className="mx-0 ml-3.5 border-l border-slate-200 px-0 pl-2.5">
                         {children.map((child) => {
                             const active = pathMatches(
                                 currentPath,
@@ -121,10 +138,20 @@ function NavBranch({
                                     <SidebarMenuSubButton
                                         asChild
                                         isActive={active}
+                                        size="sm"
+                                        className="h-8 gap-2 rounded-md px-2.5 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 data-[active=true]:bg-nppc-50 data-[active=true]:font-semibold data-[active=true]:text-nppc-900 data-[active=true]:shadow-[inset_0_0_0_1px_rgba(26,54,148,0.2)] [&>svg]:size-3.5 [&>svg]:text-slate-400 data-[active=true]:[&>svg]:text-nppc-700"
                                     >
                                         <Link href={child.href} prefetch>
                                             {child.icon && <child.icon />}
-                                            <span>{child.title}</span>
+                                            <span className="truncate">
+                                                {child.title}
+                                            </span>
+                                            {active ? (
+                                                <span
+                                                    className="ml-auto size-1.5 shrink-0 rounded-full bg-nppc-900 group-data-[collapsible=icon]:hidden"
+                                                    aria-hidden="true"
+                                                />
+                                            ) : null}
                                         </Link>
                                     </SidebarMenuSubButton>
                                 </SidebarMenuSubItem>
@@ -151,9 +178,11 @@ export function NavMain({
     }
 
     return (
-        <SidebarGroup className="px-2 py-0">
-            <SidebarGroupLabel>{label}</SidebarGroupLabel>
-            <SidebarMenu>
+        <SidebarGroup className="px-3 py-0">
+            <SidebarGroupLabel className="mb-1.5 px-2 text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+                {label}
+            </SidebarGroupLabel>
+            <SidebarMenu className="gap-0.5">
                 {items.map((item) =>
                     item.children && item.children.length > 0 ? (
                         <NavBranch

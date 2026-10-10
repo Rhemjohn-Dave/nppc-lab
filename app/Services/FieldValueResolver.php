@@ -47,6 +47,8 @@ class FieldValueResolver
         JobOrder $jobOrder,
         ?Collection $orderedAnalyses = null,
         ?ControlledForm $form = null,
+        ?\App\Models\Sample $focusSample = null,
+        ?string $controlNumber = null,
     ): array {
         $bag = $this->jobOrderBag($jobOrder, true);
         $form ??= $revision->form;
@@ -65,6 +67,31 @@ class FieldValueResolver
             $ordered = DynamicTestMatrix::orderedSelectedAnalyses($jobOrder, $form->analysisPackage);
         } else {
             $ordered = $jobOrder->analyses->values();
+        }
+
+        if ($focusSample !== null) {
+            $sampleIndex = $jobOrder->samples->search(
+                fn ($sample) => (int) $sample->id === (int) $focusSample->id,
+            );
+            $resolvedControl = $controlNumber ?? (
+                $sampleIndex === false
+                    ? (string) $jobOrder->reference_no
+                    : SampleControlNumber::forIndex(
+                        (string) $jobOrder->reference_no,
+                        (int) $sampleIndex,
+                        $jobOrder->samples->count(),
+                    )
+            );
+            $bag['results.control_no'] = $resolvedControl;
+            $bag['results.sample_code'] = $this->rfaSampleCodeOnly($focusSample);
+            if (($form?->form_code ?? null) !== 'LSP-7.8-FO4') {
+                $desc = trim((string) ($focusSample->description ?? ''));
+                if ($desc !== '') {
+                    $bag['results.sample_description'] = $desc;
+                }
+            }
+            $bag['samples.sample_code'] = $focusSample->sample_code;
+            $bag['samples.description'] = $focusSample->description;
         }
 
         $bag['results.issued_date'] = $this->officialDate($jobOrder->reviewed_at);
@@ -217,7 +244,10 @@ class FieldValueResolver
     private function putTestSlot(array &$bag, int $slot, JobOrderAnalysis $line): void
     {
         $measured = filled($line->result_value) ? (string) $line->result_value : null;
-        $passFail = filled($line->result_pass_fail) ? (string) $line->result_pass_fail : null;
+        $requiresPassFail = (bool) ($line->analysisType?->requires_pass_fail);
+        $passFail = $requiresPassFail && filled($line->result_pass_fail)
+            ? (string) $line->result_pass_fail
+            : null;
         $method = filled($line->result_method)
             ? (string) $line->result_method
             : DynamicTestMatrix::methodForAnalysisType($line->analysisType);
@@ -226,7 +256,7 @@ class FieldValueResolver
         $bag["test_{$slot}_code"] = $line->analysisType?->code;
         // FO4/FO5 Form Designer contract:
         // - test_N_measurement → Results of Analysis (measured value)
-        // - test_N_result → Interpretation (Passed/Failed when set)
+        // - test_N_result → Interpretation (Passed/Failed when procedure requires it)
         // Combined "value (Passed)" is for dynamic matrix only, not fixed slots.
         $bag["test_{$slot}_result"] = $passFail ?: $measured;
         $bag["test_{$slot}_measurement"] = $measured;
@@ -235,7 +265,7 @@ class FieldValueResolver
         $bag["test_{$slot}_unit"] = $line->result_unit;
         $bag["test_{$slot}_remarks"] = $line->result_remarks;
         $bag["test_{$slot}_analyst"] = $line->assignee?->name;
-        $bag["test_{$slot}_completed_at"] = $line->completed_at?->format('m/d/Y');
+        $bag["test_{$slot}_completed_at"] = $line->performed_at?->timezone($this->labTimezone())->format('m/d/Y');
     }
 
     /**
@@ -735,9 +765,10 @@ class FieldValueResolver
             'result_unit' => $showResults ? $line->result_unit : null,
         ])->all();
 
+        $billingLines = $this->collapsedBillingLines($analyses);
         for ($i = 1; $i <= self::RFA_BILLING_TOTAL_SLOTS; $i++) {
-            $line = $analyses->get($i - 1);
-            if (! $line) {
+            $line = $billingLines[$i - 1] ?? null;
+            if ($line === null) {
                 $bag["bill_param_{$i}"] = null;
                 $bag["bill_price_{$i}"] = null;
                 $bag["bill_total_{$i}"] = null;
@@ -745,19 +776,58 @@ class FieldValueResolver
                 continue;
             }
 
-            $param = (string) $line->name;
-            if ($showResults && filled($line->result_value)) {
-                $param .= ' = '.$line->result_value.($line->result_unit ? ' '.$line->result_unit : '');
+            $param = $line['name'];
+            if ($showResults && filled($line['result_value'])) {
+                $param .= ' = '.$line['result_value'].($line['result_unit'] ? ' '.$line['result_unit'] : '');
             }
 
             $bag["bill_param_{$i}"] = $param;
-            $bag["bill_price_{$i}"] = number_format((float) $line->unit_price, 2);
-            $bag["bill_total_{$i}"] = number_format((float) $line->total_cost, 2);
+            $bag["bill_price_{$i}"] = number_format($line['unit_price'], 2);
+            $bag["bill_total_{$i}"] = number_format($line['line_total'], 2);
         }
 
-        $this->putBillingTotals($bag, $jobOrder, $analyses->count());
+        $this->putBillingTotals($bag, $jobOrder, count($billingLines));
 
         return $bag;
+    }
+
+    /**
+     * Collapse per-sample analysis lines into unique tests for the RFA billing block.
+     * One row per analysis_type_id (or name for free-text “other” lines); line total =
+     * unit_price × how many samples include that test.
+     *
+     * @param  Collection<int, JobOrderAnalysis>  $analyses
+     * @return list<array{name: string, unit_price: float, quantity: int, line_total: float, result_value: string|null, result_unit: string|null}>
+     */
+    private function collapsedBillingLines(Collection $analyses): array
+    {
+        /** @var array<string, array{name: string, unit_price: float, quantity: int, line_total: float, result_value: string|null, result_unit: string|null}> $groups */
+        $groups = [];
+
+        foreach ($analyses as $line) {
+            $key = $line->analysis_type_id !== null
+                ? 'type:'.(int) $line->analysis_type_id
+                : 'name:'.mb_strtolower(trim((string) $line->name));
+
+            if (! isset($groups[$key])) {
+                $unit = (float) $line->unit_price;
+                $groups[$key] = [
+                    'name' => (string) $line->name,
+                    'unit_price' => $unit,
+                    'quantity' => 1,
+                    'line_total' => $unit,
+                    'result_value' => filled($line->result_value) ? (string) $line->result_value : null,
+                    'result_unit' => filled($line->result_unit) ? (string) $line->result_unit : null,
+                ];
+
+                continue;
+            }
+
+            $groups[$key]['quantity']++;
+            $groups[$key]['line_total'] = $groups[$key]['unit_price'] * $groups[$key]['quantity'];
+        }
+
+        return array_values($groups);
     }
 
     /**
@@ -930,14 +1000,14 @@ class FieldValueResolver
 
     private function officialAnalysisDateTime(JobOrder $jobOrder): ?string
     {
-        $completed = $jobOrder->analyses
-            ->map(fn (JobOrderAnalysis $line) => $line->completed_at)
+        $performed = $jobOrder->analyses
+            ->map(fn (JobOrderAnalysis $line) => $line->performed_at)
             ->filter()
             ->sort()
             ->first();
 
-        return $completed instanceof DateTimeInterface
-            ? $this->officialDateTime($completed)
+        return $performed instanceof DateTimeInterface
+            ? $this->officialDateTime($performed)
             : null;
     }
 

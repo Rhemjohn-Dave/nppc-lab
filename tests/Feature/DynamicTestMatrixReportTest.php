@@ -125,6 +125,7 @@ class DynamicTestMatrixReportTest extends TestCase
         foreach ($job->fresh()->analyses as $line) {
             $this->actingAs($line->assignee ?? $analyst)
                 ->post("/analyst/tasks/{$line->id}/complete", [
+                    'performed_at' => '2026-07-29T15:00',
                     'result_value' => '<1.1',
                     'result_pass_fail' => 'Passed',
                     'result_method' => $line->analysis_type_id === $total->id
@@ -366,6 +367,7 @@ class DynamicTestMatrixReportTest extends TestCase
 
             $this->actingAs($line->assignee ?? $analyst)
                 ->post("/analyst/tasks/{$line->id}/complete", [
+                    'performed_at' => '2026-07-29T15:00',
                     'result_value' => $value,
                     'result_pass_fail' => 'Passed',
                     'result_method' => \App\Support\DynamicTestMatrix::methodForAnalysisType($line->analysisType) ?? 'Standard Method',
@@ -680,6 +682,7 @@ class DynamicTestMatrixReportTest extends TestCase
 
             $this->actingAs($line->assignee ?? $analyst)
                 ->post("/analyst/tasks/{$line->id}/complete", [
+                    'performed_at' => '2026-07-29T15:00',
                     'result_value' => $value,
                     'result_pass_fail' => 'Passed',
                     'result_method' => \App\Support\DynamicTestMatrix::methodForAnalysisType($line->analysisType) ?? 'Standard Method',

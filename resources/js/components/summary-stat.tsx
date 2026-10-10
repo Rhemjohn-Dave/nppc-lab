@@ -4,14 +4,14 @@ import { cn } from '@/lib/utils';
 type Tone = 'default' | 'success' | 'warning' | 'info';
 
 const tones: Record<Tone, string> = {
-    default: 'from-white to-[#e8eef8]/60',
+    default: 'from-white to-nppc-100/60',
     success: 'from-white to-emerald-50/70',
     warning: 'from-white to-amber-50/70',
     info: 'from-white to-sky-50/70',
 };
 
 const valueTones: Record<Tone, string> = {
-    default: 'text-[#1A3694]',
+    default: 'text-nppc-900',
     success: 'text-emerald-800',
     warning: 'text-amber-800',
     info: 'text-sky-800',

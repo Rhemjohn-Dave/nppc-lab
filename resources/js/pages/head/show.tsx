@@ -1,6 +1,7 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
+import LimsSection from '@/components/lims/lims-section';
 import LimsWorkspace from '@/components/lims/lims-workspace';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import ConfirmDialog from '@/components/confirm-dialog';
 import type { RequestForAnalysisData } from '@/components/request-for-analysis-form';
 import ResultReportPreview, {
@@ -11,10 +12,12 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import LoadingState from '@/components/ui/loading-state';
 import { Textarea } from '@/components/ui/textarea';
+import { limsPanel } from '@/lib/lims-page-shell';
 import { cn } from '@/lib/utils';
 import { ChevronDown } from 'lucide-react';
 
 type Props = {
+    viewMode?: 'jo' | 'results';
     jobOrder: RequestForAnalysisData & {
         id: number;
         status?: string;
@@ -40,15 +43,7 @@ function money(value: string | number) {
     return `₱${Number(value || 0).toFixed(2)}`;
 }
 
-function RailHeading({ children }: { children: ReactNode }) {
-    return (
-        <h2 className="text-[10px] font-semibold tracking-wide text-[#365BB0] uppercase">
-            {children}
-        </h2>
-    );
-}
-
-export default function HeadShow({ jobOrder }: Props) {
+export default function HeadShow({ jobOrder, viewMode }: Props) {
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [confirmSign, setConfirmSign] = useState(false);
     const [confirmApprove, setConfirmApprove] = useState(false);
@@ -66,6 +61,7 @@ export default function HeadShow({ jobOrder }: Props) {
     });
 
     const needsJoApproval = Boolean(jobOrder.needs_jo_approval);
+    const showJoForm = needsJoApproval || viewMode === 'jo';
     const isSigned = Boolean(jobOrder.is_signed || jobOrder.reviewed_at);
     const rfaPdfUrl = `/head/${jobOrder.id}/pdf?inline=1&results=0`;
     const resultReportUrl = `/head/${jobOrder.id}/result-report`;
@@ -85,7 +81,7 @@ export default function HeadShow({ jobOrder }: Props) {
             setResultFormTitle(null);
 
             try {
-                if (needsJoApproval) {
+                if (showJoForm) {
                     const response = await fetch(rfaPdfUrl, {
                         credentials: 'same-origin',
                         headers: { Accept: 'application/pdf' },
@@ -134,7 +130,7 @@ export default function HeadShow({ jobOrder }: Props) {
                 setFormError(
                     cause instanceof Error
                         ? cause.message
-                        : needsJoApproval
+                        : showJoForm
                           ? 'Could not prepare the controlled Job Order PDF.'
                           : 'Could not prepare the analysis result form.',
                 );
@@ -152,7 +148,7 @@ export default function HeadShow({ jobOrder }: Props) {
                 URL.revokeObjectURL(createdUrl);
             }
         };
-    }, [needsJoApproval, rfaPdfUrl, resultReportUrl]);
+    }, [showJoForm, rfaPdfUrl, resultReportUrl]);
 
     function toggle(id: number) {
         setSelectedIds((current) =>
@@ -199,7 +195,7 @@ export default function HeadShow({ jobOrder }: Props) {
         );
     }
 
-    const stepLabels = needsJoApproval
+    const stepLabels = showJoForm
         ? (['Review JO / RFA', 'Approve JO', 'Receiving prints'] as const)
         : ([
               'Review results',
@@ -207,7 +203,13 @@ export default function HeadShow({ jobOrder }: Props) {
               isSigned ? 'Released' : 'Or return lines',
           ] as const);
 
-    const stepActive = needsJoApproval ? 1 : isSigned ? 2 : 1;
+    const stepActive = showJoForm
+        ? needsJoApproval
+            ? 1
+            : 2
+        : isSigned
+          ? 2
+          : 1;
 
     const detailsRail = (
         <div className="flex flex-col gap-3">
@@ -216,9 +218,9 @@ export default function HeadShow({ jobOrder }: Props) {
                     <span
                         key={label}
                         className={cn(
-                            'rounded-full px-2 py-0.5 text-[11px] font-medium',
+                            'rounded-md px-2 py-0.5 text-[11px] font-medium',
                             index === stepActive
-                                ? 'bg-[#1A3694] text-white'
+                                ? 'bg-nppc-900 text-white'
                                 : index < stepActive
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : 'bg-slate-100 text-slate-600',
@@ -229,9 +231,8 @@ export default function HeadShow({ jobOrder }: Props) {
                 ))}
             </div>
 
-            <section className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm">
-                <RailHeading>Customer</RailHeading>
-                <dl className="mt-2 space-y-1.5 text-sm">
+            <LimsSection title="Customer" className="min-w-0">
+                <dl className="space-y-1.5 text-sm">
                     <div className="flex justify-between gap-2">
                         <dt className="text-muted-foreground">Name</dt>
                         <dd className="text-right font-medium">
@@ -256,15 +257,15 @@ export default function HeadShow({ jobOrder }: Props) {
                         </dd>
                     </div>
                 </dl>
-            </section>
+            </LimsSection>
 
-            <section className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm">
-                <RailHeading>
-                    Samples ({jobOrder.samples?.length ?? 0})
-                </RailHeading>
-                <ul className="mt-2 divide-y divide-slate-100 text-sm">
+            <LimsSection
+                title={`Samples (${jobOrder.samples?.length ?? 0})`}
+                className="min-w-0"
+            >
+                <ul className="divide-y divide-slate-100 text-sm">
                     {(jobOrder.samples ?? []).slice(0, 5).map((sample, index) => (
-                        <li key={sample.id ?? index} className="py-1.5">
+                        <li key={sample.id ?? index} className="py-1.5 first:pt-0 last:pb-0">
                             <p className="font-medium leading-snug">
                                 {sample.sample_code
                                     ? `${sample.sample_code} — `
@@ -284,14 +285,13 @@ export default function HeadShow({ jobOrder }: Props) {
                         </li>
                     )}
                 </ul>
-            </section>
+            </LimsSection>
 
-            <section className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm">
-                <RailHeading>Summary</RailHeading>
-                <dl className="mt-2 space-y-1.5 text-sm">
+            <LimsSection title="Summary" className="min-w-0">
+                <dl className="space-y-1.5 text-sm">
                     <div className="flex justify-between gap-2">
                         <dt className="text-muted-foreground">Tests</dt>
-                        <dd className="font-semibold text-[#1A3694]">
+                        <dd className="font-semibold text-nppc-900">
                             {resultsWithValues.length}/{jobOrder.analyses.length}{' '}
                             with values
                         </dd>
@@ -308,7 +308,7 @@ export default function HeadShow({ jobOrder }: Props) {
                             {jobOrder.completed_at || '—'}
                         </dd>
                     </div>
-                    {!needsJoApproval && (
+                    {!showJoForm && (
                         <div className="flex justify-between gap-2">
                             <dt className="text-muted-foreground">Return sel.</dt>
                             <dd
@@ -332,7 +332,7 @@ export default function HeadShow({ jobOrder }: Props) {
                         </dd>
                     </div>
                 </dl>
-                {!needsJoApproval && (
+                {!showJoForm && (
                     <ul className="mt-2 max-h-28 space-y-0.5 overflow-y-auto border-t border-slate-100 pt-2 text-xs">
                         {jobOrder.analyses.map((line) => (
                             <li
@@ -349,19 +349,18 @@ export default function HeadShow({ jobOrder }: Props) {
                         ))}
                     </ul>
                 )}
-            </section>
+            </LimsSection>
 
-            {!needsJoApproval && !isSigned && (
-                <section className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm">
-                    <RailHeading>Return selected</RailHeading>
+            {!showJoForm && !isSigned && (
+                <LimsSection title="Return selected" className="min-w-0">
                     {selectedIds.length > 0 && (
-                        <p className="mt-1.5 text-xs text-amber-800">
+                        <p className="mb-2 text-xs text-amber-800">
                             {selectedIds.length} line
                             {selectedIds.length === 1 ? '' : 's'} selected —
                             notes go with return.
                         </p>
                     )}
-                    <div className="mt-2 flex max-h-40 flex-col gap-1.5 overflow-y-auto">
+                    <div className="flex max-h-40 flex-col gap-1.5 overflow-y-auto">
                         {jobOrder.analyses.map((line) => (
                             <label
                                 key={line.id}
@@ -391,10 +390,10 @@ export default function HeadShow({ jobOrder }: Props) {
                             </label>
                         ))}
                     </div>
-                </section>
+                </LimsSection>
             )}
 
-            {!needsJoApproval && isSigned && (
+            {!showJoForm && isSigned && (
                 <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
                     Results released
                     {jobOrder.reviewer_name
@@ -405,159 +404,180 @@ export default function HeadShow({ jobOrder }: Props) {
                 </p>
             )}
 
-            <section className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm">
-                <Label htmlFor="review_notes" className="text-xs">
-                    Notes (optional)
-                </Label>
-                <Textarea
-                    id="review_notes"
-                    className="mt-1 min-h-20 text-sm"
-                    placeholder="End-of-day notes or reason for return…"
-                    value={form.data.review_notes}
-                    onChange={(e) =>
-                        form.setData('review_notes', e.target.value)
-                    }
-                />
-            </section>
+            {(needsJoApproval || !showJoForm) && (
+                <LimsSection title="Notes" className="min-w-0">
+                    <Label htmlFor="review_notes" className="sr-only">
+                        Notes (optional)
+                    </Label>
+                    <Textarea
+                        id="review_notes"
+                        className="min-h-20 text-sm"
+                        placeholder={
+                            showJoForm
+                                ? 'Optional notes for this JO review…'
+                                : 'End-of-day notes or reason for return…'
+                        }
+                        value={form.data.review_notes}
+                        onChange={(e) =>
+                            form.setData('review_notes', e.target.value)
+                        }
+                    />
+                </LimsSection>
+            )}
         </div>
     );
 
     const pdfPane = (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm">
-            <div className="shrink-0 border-b bg-[#f8fafc] px-3 py-1.5">
-                <h2 className="truncate text-xs font-semibold text-[#1A3694]">
-                    {needsJoApproval
+        <div
+            className={cn(
+                'flex min-h-0 flex-1 flex-col overflow-hidden',
+                limsPanel,
+            )}
+        >
+            <div className="shrink-0 border-b border-slate-200 bg-nppc-page px-3 py-1.5">
+                <h2 className="truncate text-xs font-semibold text-nppc-900">
+                    {showJoForm
                         ? 'Official Job Order / RFA'
                         : resultFormTitle || 'Official analysis result form'}
                 </h2>
             </div>
-            <div className="min-h-0 flex-1 bg-slate-100 p-1.5">
+            <div className="min-h-0 flex-1 bg-slate-100 p-1.5 max-lg:min-h-[50vh]">
                 {formLoading && (
                     <LoadingState
                         title="Loading controlled form…"
                         description={
-                            needsJoApproval
+                            showJoForm
                                 ? 'Generating the Job Order PDF overlay'
                                 : 'Generating the analysis result PDF overlay'
                         }
                         size="lg"
                         showDocumentPreview
-                        className="min-h-[calc(100svh-13rem)] rounded-lg border bg-white lg:min-h-[calc(100svh-11rem)]"
+                        className="h-full min-h-[50vh] rounded-lg border border-slate-200 bg-white lg:min-h-0"
                     />
                 )}
                 {!formLoading && formError && (
-                    <div className="flex min-h-[40vh] items-center justify-center rounded-lg border bg-white px-6 text-center text-sm text-red-700 lg:min-h-[calc(100svh-11rem)]">
+                    <div className="flex h-full min-h-[50vh] items-center justify-center rounded-lg border border-slate-200 bg-white px-6 text-center text-sm text-red-700 lg:min-h-0">
                         {formError}
                     </div>
                 )}
                 {!formLoading && formObjectUrl && (
                     <iframe
                         title={
-                            needsJoApproval
+                            showJoForm
                                 ? `Job Order ${jobOrder.reference_no}`
                                 : `Result form ${jobOrder.reference_no}`
                         }
                         src={formObjectUrl}
-                        className="min-h-[calc(100svh-13rem)] w-full rounded-lg border bg-white lg:min-h-[calc(100svh-11rem)]"
+                        className="h-full min-h-[50vh] w-full rounded-lg border border-slate-200 bg-white lg:min-h-0"
                     />
                 )}
             </div>
         </div>
     );
 
+    const pageHeader = (
+        <div className="min-w-0 space-y-2">
+            <div>
+                <Button
+                    asChild
+                    variant="ghost"
+                    size="sm"
+                    className="-ml-2 mb-0.5 h-8 text-slate-600"
+                >
+                    <Link
+                        href={showJoForm ? '/head/jo' : '/head/results'}
+                    >
+                        ← Back to{' '}
+                        {showJoForm ? 'JO Approval' : 'Results'}
+                    </Link>
+                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="font-heading text-xl font-semibold text-nppc-900 sm:text-2xl">
+                        {jobOrder.reference_no}
+                    </h1>
+                    <Badge
+                        variant="outline"
+                        className={
+                            needsJoApproval
+                                ? 'border-amber-200 bg-amber-50 text-amber-900'
+                                : showJoForm
+                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                  : isSigned
+                                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                    : 'border-nppc-200 bg-nppc-50 text-nppc-900'
+                        }
+                    >
+                        {needsJoApproval
+                            ? 'Pending JO approval'
+                            : showJoForm
+                              ? 'JO approved'
+                              : isSigned
+                                ? 'Results released'
+                                : 'Pending result release'}
+                    </Badge>
+                </div>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                    {jobOrder.customer_name}
+                    {jobOrder.company_name
+                        ? ` · ${jobOrder.company_name}`
+                        : ''}
+                </p>
+            </div>
+            {(needsJoApproval || !showJoForm) && (
+                <div className="flex flex-wrap gap-2">
+                    {needsJoApproval ? (
+                        <Button
+                            type="button"
+                            size="sm"
+                            className="h-9 bg-nppc-900 hover:bg-nppc-700"
+                            onClick={() => setConfirmApprove(true)}
+                        >
+                            Approve Job Order
+                        </Button>
+                    ) : (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-9 border-slate-200"
+                            title={
+                                isSigned
+                                    ? 'Open the dated result form'
+                                    : 'Open the analysis result form'
+                            }
+                            onClick={() => setPreviewOpen(true)}
+                        >
+                            Preview
+                        </Button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+
     return (
         <>
             <Head title={`Head Analysis ${jobOrder.reference_no}`} />
-            <LimsWorkspace className="gap-2 pt-2 pb-0">
-                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                        <Button
-                            asChild
-                            variant="ghost"
-                            size="sm"
-                            className="-ml-2 h-8 px-2 text-slate-600"
-                        >
-                            <Link
-                                href={
-                                    needsJoApproval ? '/head/jo' : '/head/results'
-                                }
-                            >
-                                ← {needsJoApproval ? 'JO' : 'Results'}
-                            </Link>
-                        </Button>
-                        <h1 className="font-heading text-lg font-semibold text-[#1A3694]">
-                            {jobOrder.reference_no}
-                        </h1>
-                        <Badge
-                            variant="outline"
-                            className={
-                                needsJoApproval
-                                    ? 'border-amber-200 bg-amber-50 text-amber-900'
-                                    : isSigned
-                                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                                      : 'border-[#c5d4f0] bg-[#eef3fb] text-[#1A3694]'
-                            }
-                        >
-                            {needsJoApproval
-                                ? 'Pending JO approval'
-                                : isSigned
-                                  ? 'Results released'
-                                  : 'Pending result release'}
-                        </Badge>
-                        <p className="max-w-[18rem] truncate text-xs text-muted-foreground sm:max-w-md">
-                            {jobOrder.customer_name}
-                            {jobOrder.company_name
-                                ? ` · ${jobOrder.company_name}`
-                                : ''}
-                        </p>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                        {needsJoApproval ? (
-                            <Button
-                                type="button"
-                                size="sm"
-                                className="h-8 bg-[#1A3694] hover:bg-[#365BB0]"
-                                onClick={() => setConfirmApprove(true)}
-                            >
-                                Approve Job Order
-                            </Button>
-                        ) : (
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8"
-                                title={
-                                    isSigned
-                                        ? 'Open the dated result form'
-                                        : 'Open the analysis result form'
-                                }
-                                onClick={() => setPreviewOpen(true)}
-                            >
-                                Preview
-                            </Button>
-                        )}
-                    </div>
-                </div>
-
-                <div className="hidden gap-3 lg:grid lg:grid-cols-[minmax(260px,300px)_minmax(0,1fr)] lg:items-start">
-                    <aside className="max-h-[calc(100svh-8.5rem)] overflow-y-auto pr-0.5">
+            <LimsWorkspace className="gap-3 pb-0 lg:h-full lg:min-h-0 lg:overflow-hidden">
+                <div className="hidden min-h-0 flex-1 gap-4 overflow-hidden lg:grid lg:grid-cols-[minmax(260px,300px)_minmax(0,1fr)] lg:items-stretch">
+                    <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-0.5">
+                        {pageHeader}
                         {detailsRail}
                     </aside>
-                    {pdfPane}
+                    <div className="flex min-h-0 flex-col">{pdfPane}</div>
                 </div>
 
-                {/* Mobile: PDF first, details collapsible */}
                 <div className="flex flex-col gap-3 lg:hidden">
                     {pdfPane}
-                    <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm">
+                    {pageHeader}
+                    <div className={cn('overflow-hidden', limsPanel)}>
                         <button
                             type="button"
-                            className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
+                            className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left"
                             onClick={() => setDetailsOpen((open) => !open)}
                             aria-expanded={detailsOpen}
                         >
-                            <span className="text-sm font-semibold text-[#1A3694]">
+                            <span className="text-sm font-semibold text-nppc-900">
                                 Job details
                             </span>
                             <ChevronDown
@@ -568,49 +588,53 @@ export default function HeadShow({ jobOrder }: Props) {
                             />
                         </button>
                         {detailsOpen ? (
-                            <div className="border-t border-slate-100 p-3">
+                            <div className="border-t border-slate-100 p-4">
                                 {detailsRail}
                             </div>
                         ) : null}
                     </div>
                 </div>
 
-                <div className="sticky bottom-0 z-20 -mx-4 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-8px_30px_rgba(15,42,120,0.08)] backdrop-blur">
+                <div className="z-20 shrink-0 border-t border-slate-200 bg-white/95 py-3 max-lg:sticky max-lg:bottom-0 max-lg:-mx-4 max-lg:px-4 max-lg:shadow-[0_-8px_30px_rgba(26,54,148,0.08)] max-lg:backdrop-blur sm:max-lg:-mx-6 sm:max-lg:px-6 lg:-mx-6 lg:px-6">
                     <div className="flex w-full flex-wrap items-center justify-between gap-3">
                         <p className="text-sm text-muted-foreground">
                             {needsJoApproval
                                 ? 'Approve costing so Receiving can print 3 JO copies and send to analysts.'
-                                : isSigned
-                                  ? 'This file’s results are already released.'
-                                  : 'Check the result form, then release results — or return selected lines.'}
+                                : showJoForm
+                                  ? 'This Job Order is already approved. Receiving can print JO copies and hand off to analysts.'
+                                  : isSigned
+                                    ? 'This file’s results are already released.'
+                                    : 'Check the result form, then release results — or return selected lines.'}
                         </p>
                         <div className="flex flex-wrap gap-2">
-                            <Button
-                                variant="destructive"
-                                className="h-10"
-                                disabled={
-                                    needsJoApproval ||
-                                    isSigned ||
-                                    form.processing ||
-                                    returning ||
-                                    selectedIds.length === 0
-                                }
-                                onClick={() => setConfirmReturn(true)}
-                            >
-                                Return selected ({selectedIds.length})
-                            </Button>
+                            {!showJoForm && (
+                                <Button
+                                    variant="outline"
+                                    className="h-10 border-slate-200"
+                                    disabled={
+                                        isSigned ||
+                                        form.processing ||
+                                        returning ||
+                                        selectedIds.length === 0
+                                    }
+                                    onClick={() => setConfirmReturn(true)}
+                                >
+                                    Return selected ({selectedIds.length})
+                                </Button>
+                            )}
                             {needsJoApproval ? (
                                 <Button
-                                    className="h-10 bg-[#1A3694] hover:bg-[#365BB0]"
+                                    className="h-10 bg-nppc-900 hover:bg-nppc-700"
                                     onClick={() => setConfirmApprove(true)}
                                     disabled={approving}
                                 >
                                     Approve Job Order
                                 </Button>
                             ) : (
+                                !showJoForm &&
                                 !isSigned && (
                                     <Button
-                                        className="h-10 bg-[#1A3694] hover:bg-[#365BB0]"
+                                        className="h-10 bg-nppc-900 hover:bg-nppc-700"
                                         onClick={() => setConfirmSign(true)}
                                         disabled={form.processing || returning}
                                     >
@@ -665,9 +689,14 @@ export default function HeadShow({ jobOrder }: Props) {
     );
 }
 
-HeadShow.layout = {
+HeadShow.layout = (props: Props) => ({
     breadcrumbs: [
-        { title: 'Head Analysis', href: '/head' },
-        { title: 'Form', href: '#' },
+        props.viewMode === 'jo' || props.jobOrder?.needs_jo_approval
+            ? { title: 'JO Approval', href: '/head/jo' }
+            : { title: 'Results', href: '/head/results' },
+        {
+            title: props.jobOrder?.reference_no ?? 'Review',
+            href: '#',
+        },
     ],
-};
+});

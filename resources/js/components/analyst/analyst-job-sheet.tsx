@@ -12,10 +12,12 @@ import { cn } from '@/lib/utils';
 import type { AnalystTask, Consolidation, ReleasedPrint } from './types';
 import {
     encodedResultLabel,
+    groupTasksBySample,
     jobAggregateStatus,
     jobMetaLine,
     jobProgress,
     taskActionLabel,
+    taskSampleLine,
 } from './types';
 
 type Props = {
@@ -63,7 +65,7 @@ export default function AnalystJobSheet({
                     <p className="text-xs text-muted-foreground">
                         Analyst / Job Orders / {job.reference_no}
                     </p>
-                    <SheetTitle className="text-xl text-[#1A3694]">
+                    <SheetTitle className="text-xl text-nppc-900">
                         {job.reference_no}
                     </SheetTitle>
                     <SheetDescription className="text-sm text-slate-700">
@@ -85,7 +87,7 @@ export default function AnalystJobSheet({
                                 'h-full rounded-full',
                                 progress.percent === 100
                                     ? 'bg-emerald-500'
-                                    : 'bg-[#1A3694]',
+                                    : 'bg-nppc-900',
                             )}
                             style={{ width: `${progress.percent}%` }}
                         />
@@ -94,14 +96,14 @@ export default function AnalystJobSheet({
 
                 <div className="space-y-4 px-4 py-4">
                     <section>
-                        <h3 className="mb-2 text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                        <h3 className="mb-2 text-xs font-semibold tracking-wide text-nppc-700 uppercase">
                             Workflow
                         </h3>
                         <AnalystWorkflowStepper job={job} />
                     </section>
 
-                    <section className="rounded-lg border bg-[#f8fafc] px-3 py-2.5">
-                        <h3 className="mb-2 text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                    <section className="rounded-lg border bg-nppc-page px-3 py-2.5">
+                        <h3 className="mb-2 text-xs font-semibold tracking-wide text-nppc-700 uppercase">
                             Job information
                         </h3>
                         <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
@@ -143,12 +145,12 @@ export default function AnalystJobSheet({
                     </section>
 
                     <section>
-                        <h3 className="mb-1.5 text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                        <h3 className="mb-1.5 text-xs font-semibold tracking-wide text-nppc-700 uppercase">
                             Samples
                         </h3>
                         <ul className="space-y-1 rounded-lg border px-3 py-2 text-sm text-slate-700">
                             {job.samples.map((sample, index) => (
-                                <li key={index}>
+                                <li key={sample.id ?? index}>
                                     {sample.sample_code
                                         ? `${sample.sample_code} — `
                                         : ''}
@@ -166,7 +168,7 @@ export default function AnalystJobSheet({
                     </section>
 
                     <section>
-                        <h3 className="mb-2 text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                        <h3 className="mb-2 text-xs font-semibold tracking-wide text-nppc-700 uppercase">
                             Test results
                         </h3>
 
@@ -189,64 +191,167 @@ export default function AnalystJobSheet({
                             </div>
                         )}
 
-                        <ul className="divide-y divide-slate-100 rounded-lg border">
-                            {tasks.map((task) => {
-                                const done = task.status === 'completed';
-
-                                return (
-                                    <li
-                                        key={task.id}
-                                        className={cn(
-                                            'flex items-center justify-between gap-3 px-3 py-2.5',
-                                            task.status === 'returned' &&
-                                                'bg-amber-50/60',
-                                        )}
+                        {(job.samples?.length ?? 0) >= 2 ? (
+                            <div className="space-y-2">
+                                {groupTasksBySample(tasks).map((group) => (
+                                    <div
+                                        key={group.key}
+                                        className="overflow-hidden rounded-lg border"
                                     >
-                                        <div className="min-w-0 flex-1">
-                                            <p className="truncate text-sm font-medium">
-                                                {task.name}
+                                        <div className="border-b border-slate-100 bg-nppc-page px-3 py-2">
+                                            <p className="text-xs font-semibold text-nppc-900">
+                                                {group.label}
                                             </p>
-                                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                                <AnalystStatusBadge
-                                                    status={task.status}
-                                                    label={task.status_label}
-                                                />
-                                                {task.category_label && (
-                                                    <span className="text-xs text-muted-foreground">
-                                                        {task.category_label}
-                                                    </span>
-                                                )}
-                                                {task.result_value && (
-                                                    <span className="truncate text-xs text-muted-foreground">
-                                                        {encodedResultLabel(
-                                                            task,
-                                                        )}
-                                                    </span>
-                                                )}
-                                            </div>
+                                            <p className="text-[11px] text-muted-foreground">
+                                                {group.total} test
+                                                {group.total === 1 ? '' : 's'}
+                                            </p>
                                         </div>
-                                        <Button
-                                            size="sm"
+                                        <ul className="divide-y divide-slate-100">
+                                            {group.tasks.map((task) => {
+                                                const done =
+                                                    task.status === 'completed';
+
+                                                return (
+                                                    <li
+                                                        key={task.id}
+                                                        className={cn(
+                                                            'flex items-center justify-between gap-3 px-3 py-2.5',
+                                                            task.status ===
+                                                                'returned' &&
+                                                                'bg-amber-50/60',
+                                                        )}
+                                                    >
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="truncate text-sm font-medium">
+                                                                {task.name}
+                                                            </p>
+                                                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                                                <AnalystStatusBadge
+                                                                    status={
+                                                                        task.status
+                                                                    }
+                                                                    label={
+                                                                        task.status_label
+                                                                    }
+                                                                />
+                                                                {task.category_label && (
+                                                                    <span className="text-xs text-muted-foreground">
+                                                                        {
+                                                                            task.category_label
+                                                                        }
+                                                                    </span>
+                                                                )}
+                                                                {task.result_value && (
+                                                                    <span className="truncate text-xs text-muted-foreground">
+                                                                        {encodedResultLabel(
+                                                                            task,
+                                                                        )}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <Button
+                                                            size="sm"
+                                                            className={cn(
+                                                                'h-8 shrink-0',
+                                                                !done &&
+                                                                    'bg-nppc-900 hover:bg-nppc-700',
+                                                            )}
+                                                            variant={
+                                                                done
+                                                                    ? 'outline'
+                                                                    : 'default'
+                                                            }
+                                                            onClick={() =>
+                                                                onOpenTask(task)
+                                                            }
+                                                        >
+                                                            {taskActionLabel(
+                                                                task,
+                                                            )}
+                                                        </Button>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <ul className="divide-y divide-slate-100 rounded-lg border">
+                                {tasks.map((task) => {
+                                    const done = task.status === 'completed';
+                                    const sampleLine = taskSampleLine(task);
+
+                                    return (
+                                        <li
+                                            key={task.id}
                                             className={cn(
-                                                'h-8 shrink-0',
-                                                !done &&
-                                                    'bg-[#1A3694] hover:bg-[#365BB0]',
+                                                'flex items-center justify-between gap-3 px-3 py-2.5',
+                                                task.status === 'returned' &&
+                                                    'bg-amber-50/60',
                                             )}
-                                            variant={
-                                                done ? 'outline' : 'default'
-                                            }
-                                            onClick={() => onOpenTask(task)}
                                         >
-                                            {taskActionLabel(task)}
-                                        </Button>
-                                    </li>
-                                );
-                            })}
-                        </ul>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate text-sm font-medium">
+                                                    {task.name}
+                                                </p>
+                                                {sampleLine ? (
+                                                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                                        {sampleLine}
+                                                    </p>
+                                                ) : null}
+                                                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                                    <AnalystStatusBadge
+                                                        status={task.status}
+                                                        label={
+                                                            task.status_label
+                                                        }
+                                                    />
+                                                    {task.category_label && (
+                                                        <span className="text-xs text-muted-foreground">
+                                                            {
+                                                                task.category_label
+                                                            }
+                                                        </span>
+                                                    )}
+                                                    {task.result_value && (
+                                                        <span className="truncate text-xs text-muted-foreground">
+                                                            {encodedResultLabel(
+                                                                task,
+                                                            )}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <Button
+                                                size="sm"
+                                                className={cn(
+                                                    'h-8 shrink-0',
+                                                    !done &&
+                                                        'bg-nppc-900 hover:bg-nppc-700',
+                                                )}
+                                                variant={
+                                                    done
+                                                        ? 'outline'
+                                                        : 'default'
+                                                }
+                                                onClick={() =>
+                                                    onOpenTask(task)
+                                                }
+                                            >
+                                                {taskActionLabel(task)}
+                                            </Button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
                     </section>
 
                     <section className="space-y-2 border-t pt-3">
-                        <h3 className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                        <h3 className="text-xs font-semibold tracking-wide text-nppc-700 uppercase">
                             Actions
                         </h3>
                         <div className="flex flex-wrap gap-2">
@@ -271,7 +376,7 @@ export default function AnalystJobSheet({
                                     </Button>
                                     <Button
                                         size="sm"
-                                        className="bg-[#1A3694] hover:bg-[#365BB0]"
+                                        className="bg-nppc-900 hover:bg-nppc-700"
                                         disabled={!consolidation.can_submit}
                                         onClick={() => onSubmit(job.id)}
                                     >
@@ -319,7 +424,7 @@ export default function AnalystJobSheet({
                                         )}
                                     <Button
                                         size="sm"
-                                        className="bg-[#1A3694] hover:bg-[#365BB0]"
+                                        className="bg-nppc-900 hover:bg-nppc-700"
                                         disabled={
                                             !releasedPrint.can_print ||
                                             !releasedPrint.print_url

@@ -185,7 +185,7 @@ class ReviewController extends Controller
             });
     }
 
-    public function show(JobOrder $jobOrder): Response
+    public function show(Request $request, JobOrder $jobOrder): Response
     {
         $needsJoApproval = $jobOrder->jo_approved_at === null
             && in_array($jobOrder->status, [
@@ -193,7 +193,12 @@ class ReviewController extends Controller
                 JobOrderStatus::Priced,
             ], true);
 
+        $viewMode = $request->query('view') === 'jo' || $needsJoApproval
+            ? 'jo'
+            : 'results';
+
         return Inertia::render('head/show', [
+            'viewMode' => $viewMode,
             'jobOrder' => array_merge(
                 JobOrderFormPresenter::toArray($jobOrder, withResults: true),
                 [
@@ -307,36 +312,57 @@ class ReviewController extends Controller
         $user = $request->user();
         abort_unless($user !== null, 403);
 
-        $resolved = $this->reports->forJobOrder($jobOrder, $user, withValues: false);
+        $sampleId = $request->integer('sample_id') ?: null;
+        $formId = $request->integer('form_id') ?: null;
+
+        $allReports = $this->reports->reportsForJobOrder($jobOrder, $user, withValues: false);
+        $resolved = $this->reports->pickReport($allReports, $sampleId, $formId);
+
         if (
             $resolved->kind === AnalysisResultReport::KIND_COMBINED
             && $resolved->canPreview()
             && ! $resolved->isOverlay()
         ) {
-            $resolved = $this->reports->forJobOrder($jobOrder, $user, withValues: true);
+            $withValues = $this->reports->reportsForJobOrder($jobOrder, $user, withValues: true);
+            $resolved = $this->reports->pickReport($withValues, $sampleId ?: $resolved->sampleId, $formId ?: $resolved->controlledForm?->id);
         }
+
         $isOverlayCombined = $resolved->kind === AnalysisResultReport::KIND_COMBINED
             && $resolved->isOverlay();
+
+        $selectedQuery = http_build_query(array_filter([
+            'sample_id' => $resolved->sampleId,
+            'form_id' => $resolved->controlledForm?->id,
+        ], fn ($value) => $value !== null && $value !== ''));
 
         $templateUrl = $resolved->canPreview()
             && $resolved->kind === AnalysisResultReport::KIND_COMBINED
             && ! $isOverlayCombined
             && $resolved->controlledRevision
             ? "/head/{$jobOrder->id}/controlled-revisions/{$resolved->controlledRevision->id}"
+                .($selectedQuery !== '' ? "?{$selectedQuery}" : '')
             : '';
         $pdfUrl = $isOverlayCombined && $resolved->canPreview()
-            ? "/head/{$jobOrder->id}/combined-pdf"
+            ? "/head/{$jobOrder->id}/combined-pdf".($selectedQuery !== '' ? "?{$selectedQuery}" : '')
             : null;
+
+        $baseReportUrl = "/head/{$jobOrder->id}/result-report";
+        $reportsManifest = $allReports->map(
+            fn (AnalysisResultReport $report) => $this->reportTabManifest($jobOrder, $report, $baseReportUrl),
+        )->values()->all();
 
         return response()->json($resolved->manifest(
             $templateUrl,
             $pdfUrl,
             $resolved->fillMode(),
-            $this->signatoryManifestExtra(
-                $jobOrder,
-                $resolved,
-                null,
-            ),
+            [
+                ...$this->signatoryManifestExtra(
+                    $jobOrder,
+                    $resolved,
+                    null,
+                ),
+                'reports' => $reportsManifest,
+            ],
         ));
     }
 
@@ -345,7 +371,14 @@ class ReviewController extends Controller
         $user = $request->user();
         abort_unless($user !== null, 403);
 
-        $resolved = $this->reports->forJobOrder($jobOrder, $user);
+        $sampleId = $request->integer('sample_id') ?: null;
+        $formId = $request->integer('form_id') ?: null;
+
+        $resolved = $this->reports->pickReport(
+            $this->reports->reportsForJobOrder($jobOrder, $user),
+            $sampleId,
+            $formId,
+        );
         abort_unless($resolved->canPreview(), 403);
         abort_unless(
             $resolved->kind === AnalysisResultReport::KIND_COMBINED
@@ -372,7 +405,14 @@ class ReviewController extends Controller
         $user = $request->user();
         abort_unless($user !== null, 403);
 
-        $resolved = $this->reports->forJobOrder($jobOrder, $user);
+        $sampleId = $request->integer('sample_id') ?: null;
+        $formId = $request->integer('form_id') ?: null;
+
+        $resolved = $this->reports->pickReport(
+            $this->reports->reportsForJobOrder($jobOrder, $user),
+            $sampleId,
+            $formId,
+        );
         abort_unless($resolved->canPreview(), 403);
         abort_unless(
             $resolved->kind === AnalysisResultReport::KIND_COMBINED
@@ -385,6 +425,30 @@ class ReviewController extends Controller
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="'.$revision->form->form_code.'.pdf"',
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function reportTabManifest(JobOrder $jobOrder, AnalysisResultReport $report, string $baseReportUrl): array
+    {
+        $query = http_build_query(array_filter([
+            'sample_id' => $report->sampleId,
+            'form_id' => $report->controlledForm?->id,
+        ], fn ($value) => $value !== null && $value !== ''));
+
+        $isOverlay = $report->kind === AnalysisResultReport::KIND_COMBINED && $report->isOverlay();
+
+        return [
+            ...$report->summary(),
+            'label' => $report->controlNumber
+                ? 'Control no. '.$report->controlNumber
+                : $report->title,
+            'report_url' => $baseReportUrl.($query !== '' ? "?{$query}" : ''),
+            'pdf_url' => $isOverlay && $report->canPreview()
+                ? "/head/{$jobOrder->id}/combined-pdf".($query !== '' ? "?{$query}" : '')
+                : null,
+        ];
     }
 
     public function resultPdf(Request $request, JobOrder $jobOrder, JobOrderAnalysis $analysis): HttpResponse

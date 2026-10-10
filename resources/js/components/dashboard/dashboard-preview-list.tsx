@@ -4,6 +4,7 @@ import AnalystStatusBadge from '@/components/analyst/analyst-status-badge';
 import DashboardEmptyState from '@/components/dashboard/dashboard-empty-state';
 import { DashboardViewAllLink } from '@/components/dashboard/dashboard-shell';
 import type { DashboardQueue } from '@/components/dashboard/types';
+import JoReferenceChip from '@/components/lims/jo-reference-chip';
 import { cn } from '@/lib/utils';
 
 type Props = {
@@ -22,7 +23,7 @@ export default function DashboardPreviewList({
     if (data.rows.length === 0) {
         return (
             <section className={compact ? 'space-y-2' : 'space-y-3'}>
-                <h2 className="text-xs font-semibold tracking-wide text-[#1A3694] uppercase">
+                <h2 className="text-xs font-semibold tracking-wide text-slate-900 uppercase">
                     {data.title}
                 </h2>
                 <DashboardEmptyState body={data.empty} />
@@ -32,18 +33,18 @@ export default function DashboardPreviewList({
 
     return (
         <section className={compact ? 'space-y-2' : 'space-y-3'}>
-            <h2 className="text-xs font-semibold tracking-wide text-[#1A3694] uppercase">
+            <h2 className="text-xs font-semibold tracking-wide text-slate-900 uppercase">
                 {data.title}
             </h2>
-            <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm">
-                <ul className="divide-y divide-slate-100">
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+                <ul className="divide-y divide-slate-200/80">
                     {data.rows.map((row, index) => {
                         const href =
                             typeof row.href === 'string' ? row.href : null;
                         const reference =
                             typeof row.reference_no === 'string'
                                 ? row.reference_no
-                                : '—';
+                                : null;
                         const customer =
                             typeof row.customer_name === 'string'
                                 ? row.customer_name
@@ -74,9 +75,15 @@ export default function DashboardPreviewList({
                             <>
                                 <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-center gap-2">
-                                        <p className="font-semibold text-[#1A3694]">
-                                            {reference}
-                                        </p>
+                                        {reference ? (
+                                            <JoReferenceChip
+                                                referenceNo={reference}
+                                            />
+                                        ) : (
+                                            <p className="font-semibold text-nppc-900">
+                                                —
+                                            </p>
+                                        )}
                                         <AnalystStatusBadge
                                             status={status}
                                             label={statusLabel}
@@ -93,10 +100,16 @@ export default function DashboardPreviewList({
                         ) : (
                             <>
                                 <div className="min-w-0 flex-1">
-                                    <p className="font-semibold text-[#1A3694]">
-                                        {reference}
-                                    </p>
-                                    <p className="truncate text-sm text-slate-700">
+                                    {reference ? (
+                                        <JoReferenceChip
+                                            referenceNo={reference}
+                                        />
+                                    ) : (
+                                        <p className="font-semibold text-nppc-900">
+                                            —
+                                        </p>
+                                    )}
+                                    <p className="mt-0.5 truncate text-sm text-slate-700">
                                         {customer}
                                         {meta ? ` · ${meta}` : ''}
                                     </p>
@@ -122,7 +135,7 @@ export default function DashboardPreviewList({
                                     <Link
                                         href={href}
                                         className={cn(
-                                            'flex items-center gap-3 transition hover:bg-[#f8fafc]',
+                                            'flex items-center gap-3 transition hover:bg-slate-50',
                                             compact
                                                 ? 'px-3 py-2.5'
                                                 : 'px-4 py-3.5',

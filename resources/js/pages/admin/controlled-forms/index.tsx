@@ -11,7 +11,9 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import AnalysisTypePicker from '@/components/analysis-type-picker';
+import QueueKpi from '@/components/lims/queue-kpi';
 import LimsWorkspace from '@/components/lims/lims-workspace';
+import WorkspaceHeader from '@/components/workspace-header';
 import PackageSelect, {
     type AnalysisPackageOption,
 } from '@/components/package-select';
@@ -39,6 +41,7 @@ import {
     type AnalysisGroup,
     type ControlledFormSummary,
 } from '@/lib/controlled-forms';
+import { limsPanel } from '@/lib/lims-page-shell';
 import { cn } from '@/lib/utils';
 
 type Props = {
@@ -107,7 +110,7 @@ function FormRowActions({ item }: { item: ControlledFormSummary }) {
             {item.current_revision ? (
                 <Button
                     size="sm"
-                    className="bg-[#1A3694] hover:bg-[#365BB0]"
+                    className="bg-nppc-900 hover:bg-nppc-700"
                     asChild
                 >
                     <Link
@@ -180,7 +183,7 @@ function FormTitleCell({ item }: { item: ControlledFormSummary }) {
             <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                 <span
                     aria-hidden="true"
-                    className="size-1.5 rounded-full bg-[#365BB0]"
+                    className="size-1.5 rounded-full bg-nppc-700"
                 />
                 {item.category_label}
                 {item.department ? ` · ${item.department}` : ''}
@@ -295,24 +298,36 @@ export default function ControlledFormsIndex({
         <>
             <Head title="Controlled Forms" />
             <LimsWorkspace className="gap-2.5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0 max-w-2xl">
-                        <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                            Controlled Forms &amp; Blueprints
-                        </h1>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                            Manage approved ISO/IEC 17025 laboratory templates,
-                            configure PDF field coordinate bindings, and track
-                            document lifecycles without redrawing forms.
-                        </p>
-                    </div>
-                    <Button
-                        className="bg-[#1A3694] hover:bg-[#365BB0]"
-                        onClick={() => setOpen(true)}
-                    >
-                        <Plus className="size-4" />
-                        Upload controlled form
-                    </Button>
+                <WorkspaceHeader
+                    title="Controlled Forms & Blueprints"
+                    description="Manage approved ISO/IEC 17025 laboratory templates, configure PDF field coordinate bindings, and track document lifecycles without redrawing forms."
+                    actions={
+                        <Button
+                            className="bg-nppc-900 hover:bg-nppc-700"
+                            onClick={() => setOpen(true)}
+                        >
+                            <Plus className="size-4" />
+                            Upload controlled form
+                        </Button>
+                    }
+                />
+
+                <div className="grid gap-3 sm:grid-cols-3">
+                    <QueueKpi
+                        label="Controlled forms"
+                        value={statusCounts.total}
+                    />
+                    <QueueKpi
+                        label="Active"
+                        value={statusCounts.active}
+                        tone="success"
+                    />
+                    <QueueKpi
+                        label="Pending QA"
+                        value={statusCounts.pendingQa}
+                        tone="warning"
+                        emphasize={statusCounts.pendingQa > 0}
+                    />
                 </div>
 
                 {!workflowDismissed ? (
@@ -460,7 +475,7 @@ export default function ControlledFormsIndex({
                                     className={cn(
                                         'rounded p-1.5',
                                         viewMode === 'table'
-                                            ? 'bg-white text-[#1A3694] shadow-sm'
+                                            ? 'bg-white text-nppc-900 shadow-sm'
                                             : 'text-muted-foreground hover:text-slate-800',
                                     )}
                                     aria-pressed={viewMode === 'table'}
@@ -474,7 +489,7 @@ export default function ControlledFormsIndex({
                                     className={cn(
                                         'rounded p-1.5',
                                         viewMode === 'grid'
-                                            ? 'bg-white text-[#1A3694] shadow-sm'
+                                            ? 'bg-white text-nppc-900 shadow-sm'
                                             : 'text-muted-foreground hover:text-slate-800',
                                     )}
                                     aria-pressed={viewMode === 'grid'}
@@ -515,30 +530,30 @@ export default function ControlledFormsIndex({
                 </div>
 
                 {viewMode === 'table' ? (
-                    <div className="overflow-hidden rounded-lg border bg-white">
+                    <div className={cn('overflow-hidden', limsPanel)}>
                         <div className="overflow-x-auto">
                             <table className="w-full min-w-[720px] text-left text-xs">
-                                <thead className="border-b bg-slate-50/80 text-muted-foreground">
+                                <thead className="sticky top-0 z-10 border-b bg-nppc-page text-left">
                                     <tr>
-                                        <th className="px-3 py-2 font-medium">
+                                        <th className="px-3 py-2.5 text-xs font-medium text-slate-600">
                                             Form code
                                         </th>
-                                        <th className="px-3 py-2 font-medium">
+                                        <th className="px-3 py-2.5 text-xs font-medium text-slate-600">
                                             Form title &amp; department
                                         </th>
-                                        <th className="px-3 py-2 text-center font-medium">
+                                        <th className="px-3 py-2.5 text-center text-xs font-medium text-slate-600">
                                             Rev
                                         </th>
-                                        <th className="px-3 py-2 font-medium">
+                                        <th className="px-3 py-2.5 text-xs font-medium text-slate-600">
                                             Effective date
                                         </th>
-                                        <th className="px-3 py-2 font-medium">
+                                        <th className="px-3 py-2.5 text-xs font-medium text-slate-600">
                                             Status
                                         </th>
-                                        <th className="px-3 py-2 font-medium">
+                                        <th className="px-3 py-2.5 text-xs font-medium text-slate-600">
                                             Last updated
                                         </th>
-                                        <th className="px-3 py-2 text-right font-medium">
+                                        <th className="px-3 py-2.5 text-right text-xs font-medium text-slate-600">
                                             Actions
                                         </th>
                                     </tr>
@@ -830,8 +845,8 @@ export default function ControlledFormsIndex({
                                 />
                             </>
                         )}
-                        <div className="rounded-xl border bg-[#f8fafc] p-4">
-                            <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                        <div className="rounded-xl border bg-nppc-page p-4">
+                            <p className="text-xs font-semibold tracking-wide text-nppc-700 uppercase">
                                 Document info
                             </p>
                             <p className="mt-1 text-sm text-muted-foreground">
@@ -858,8 +873,8 @@ export default function ControlledFormsIndex({
                                 <p className="text-sm text-red-600">{form.errors.file}</p>
                             )}
                         </div>
-                        <div className="rounded-xl border bg-[#f8fafc] p-4">
-                            <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                        <div className="rounded-xl border bg-nppc-page p-4">
+                            <p className="text-xs font-semibold tracking-wide text-nppc-700 uppercase">
                                 Revision info
                             </p>
                             <p className="mt-1 text-sm text-muted-foreground">
@@ -931,8 +946,8 @@ export default function ControlledFormsIndex({
                                 }
                             />
                         </div>
-                        <div className="rounded-xl border bg-[#f8fafc] p-4">
-                            <p className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                        <div className="rounded-xl border bg-nppc-page p-4">
+                            <p className="text-xs font-semibold tracking-wide text-nppc-700 uppercase">
                                 Activation
                             </p>
                             <label className="mt-2 flex items-center gap-2 text-sm">
@@ -1022,7 +1037,7 @@ function CatalogPagination({
                 >
                     Previous
                 </Button>
-                <span className="min-w-8 rounded bg-[#1A3694] px-2 py-1 text-center font-medium text-white">
+                <span className="min-w-8 rounded bg-nppc-900 px-2 py-1 text-center font-medium text-white">
                     {currentPage}
                 </span>
                 <Button

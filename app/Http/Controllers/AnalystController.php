@@ -14,6 +14,7 @@ use App\Support\AnalysisResultPdfExporter;
 use App\Support\AnalysisResultReport;
 use App\Support\DynamicTestMatrix;
 use App\Support\ResultSignatories;
+use App\Support\SampleControlNumber;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -191,16 +192,14 @@ class AnalystController extends Controller
             ->values();
 
         $reportByJob = [];
-        $requiresPassFailByJob = [];
         foreach ($tasks as $task) {
             $jobId = $task->job_order_id;
             if (! isset($reportByJob[$jobId])) {
                 $reportByJob[$jobId] = $this->reports->forJobOrder($task->jobOrder, $user, withValues: false)->summary();
-                $requiresPassFailByJob[$jobId] = $this->reports->requiresPassFail($task->jobOrder);
             }
         }
 
-        $tasks = $tasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin, $qualifiedTypeIds, $reportByJob, $requiresPassFailByJob) {
+        $tasks = $tasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin, $qualifiedTypeIds, $reportByJob) {
             $isMine = $isAdmin || (int) $task->assigned_to === (int) $user->id;
             $canWork = $isAdmin
                 || $isMine
@@ -209,9 +208,34 @@ class AnalystController extends Controller
                     && in_array((int) $task->analysis_type_id, $qualifiedTypeIds, true)
                 );
 
+            $samples = $task->jobOrder->samples->values();
+            $sampleCount = $samples->count();
+            $sampleIndex = $samples->search(
+                fn ($sample) => (int) $sample->id === (int) $task->sample_id,
+            );
+            $controlNumber = $sampleIndex === false
+                ? null
+                : SampleControlNumber::forIndex(
+                    (string) $task->jobOrder->reference_no,
+                    (int) $sampleIndex,
+                    $sampleCount,
+                );
+            $sample = $sampleIndex === false ? null : $samples->get($sampleIndex);
+            $sampleLabel = null;
+            if ($sample) {
+                $code = filled($sample->sample_code) ? (string) $sample->sample_code : null;
+                $description = filled($sample->description)
+                    ? (string) $sample->description
+                    : 'Sample '.((int) $sampleIndex + 1);
+                $sampleLabel = $code ? "{$code} — {$description}" : $description;
+            }
+
             return [
                 'id' => $task->id,
                 'name' => $task->name,
+                'sample_id' => $task->sample_id,
+                'sample_label' => $sampleLabel,
+                'control_number' => $controlNumber,
                 'analysis_type_id' => $task->analysis_type_id,
                 'category_label' => $task->resolvedCategoryLabel(),
                 'status' => $task->status->value,
@@ -222,9 +246,14 @@ class AnalystController extends Controller
                 'result_unit' => $task->result_unit,
                 'result_remarks' => $task->result_remarks,
                 'result_method' => $task->result_method,
+                'performed_at' => $task->performed_at
+                    ? $task->performed_at
+                        ->timezone((string) config('app.lab_timezone', 'Asia/Manila'))
+                        ->format('Y-m-d\TH:i')
+                    : null,
                 'procedure_method' => DynamicTestMatrix::methodForAnalysisType($task->analysisType),
                 'result_mode' => $task->analysisType?->isPassFail() ? 'pass_fail' : 'value',
-                'requires_pass_fail' => (bool) ($requiresPassFailByJob[$task->job_order_id] ?? true),
+                'requires_pass_fail' => (bool) ($task->analysisType?->requires_pass_fail),
                 'updated_at' => $task->updated_at?->toIso8601String(),
                 'assigned_to' => $task->assigned_to,
                 'assignee_name' => $task->assignee?->name,
@@ -243,11 +272,19 @@ class AnalystController extends Controller
                     'received_at' => $task->jobOrder->received_at?->toIso8601String(),
                     'reviewed_at' => $task->jobOrder->reviewed_at?->toIso8601String(),
                     'review_notes' => $task->jobOrder->review_notes,
-                    'samples' => $task->jobOrder->samples->map(fn ($sample) => [
-                        'sample_code' => $sample->sample_code,
-                        'description' => $sample->description,
-                        'matrix' => $sample->matrix,
-                    ])->values()->all(),
+                    'samples' => $samples->map(function ($sample, int $index) use ($task, $sampleCount) {
+                        return [
+                            'id' => $sample->id,
+                            'sample_code' => $sample->sample_code,
+                            'description' => $sample->description,
+                            'matrix' => $sample->matrix,
+                            'control_number' => SampleControlNumber::forIndex(
+                                (string) $task->jobOrder->reference_no,
+                                $index,
+                                $sampleCount,
+                            ),
+                        ];
+                    })->values()->all(),
                 ],
             ];
         });
@@ -274,6 +311,7 @@ class AnalystController extends Controller
     public function saveDraft(Request $request, JobOrderAnalysis $analysis): RedirectResponse
     {
         $data = $request->validate([
+            'performed_at' => ['nullable', 'date'],
             'result_value' => ['nullable', 'string', 'max:255'],
             'result_pass_fail' => ['nullable', 'string', 'max:20'],
             'result_measurement' => ['nullable', 'string', 'max:80'],
@@ -284,15 +322,17 @@ class AnalystController extends Controller
 
         $this->jobOrders->saveAnalysisDraft($analysis, $data, $request->user());
 
-        return back()->with('success', 'Draft result saved.');
+        // Silent redirect — autosave on blur must not toast or feel like a full navigation.
+        return back();
     }
 
     public function complete(Request $request, JobOrderAnalysis $analysis): RedirectResponse
     {
-        $analysis->loadMissing(['jobOrder.packages', 'jobOrder.analyses']);
-        $requiresPassFail = $this->reports->requiresPassFail($analysis->jobOrder);
+        $analysis->loadMissing(['jobOrder.packages', 'jobOrder.analyses', 'analysisType']);
+        $requiresPassFail = (bool) ($analysis->analysisType?->requires_pass_fail);
 
         $data = $request->validate([
+            'performed_at' => ['required', 'date'],
             'result_value' => ['required', 'string', 'max:255'],
             'result_pass_fail' => [$requiresPassFail ? 'required' : 'nullable', 'string', 'max:20'],
             'result_measurement' => ['nullable', 'string', 'max:80'],
@@ -309,6 +349,39 @@ class AnalystController extends Controller
             $wasCompleted
                 ? 'Result updated.'
                 : 'Result saved and analysis marked complete.',
+        );
+    }
+
+    public function completeSample(Request $request, JobOrder $jobOrder): RedirectResponse
+    {
+        $data = $request->validate([
+            'sample_id' => ['nullable', 'integer'],
+        ]);
+
+        $sampleId = isset($data['sample_id']) ? (int) $data['sample_id'] : null;
+
+        $completed = $this->jobOrders->completeSampleAnalyses(
+            $jobOrder,
+            $request->user(),
+            $sampleId,
+        );
+
+        $count = count($completed);
+
+        if ($sampleId === null) {
+            return back()->with(
+                'success',
+                $count === 1
+                    ? 'Assay marked complete.'
+                    : "{$count} assays on this job order marked complete.",
+            );
+        }
+
+        return back()->with(
+            'success',
+            $count === 1
+                ? 'Sample assay marked complete.'
+                : "{$count} assays for this sample marked complete.",
         );
     }
 
@@ -357,15 +430,92 @@ class AnalystController extends Controller
             ? "/analyst/controlled-revisions/{$resolved->controlledRevision->id}?analysis={$analysis->id}"
             : '';
 
+        $jobOrder = $analysis->jobOrder;
+        $allReports = $this->reports->reportsForJobOrder($jobOrder, $user, withValues: false);
+        $baseReportUrl = "/analyst/job-orders/{$jobOrder->id}/result-report";
+
         return response()->json($resolved->manifest(
             $templateUrl,
             $inlinePdf,
             $resolved->fillMode(),
-            $this->signatoryManifestExtra(
-                $analysis->jobOrder,
-                $resolved,
-                "/analyst/job-orders/{$analysis->job_order_id}/result-signatories",
-            ),
+            [
+                ...$this->signatoryManifestExtra(
+                    $jobOrder,
+                    $resolved,
+                    "/analyst/job-orders/{$jobOrder->id}/result-signatories",
+                ),
+                'reports' => $allReports->map(
+                    fn (AnalysisResultReport $report) => $this->reportTabManifest($jobOrder, $report, $baseReportUrl),
+                )->values()->all(),
+            ],
+        ));
+    }
+
+    public function resultReport(Request $request, JobOrder $jobOrder): JsonResponse
+    {
+        $user = $request->user();
+        $this->assertCanViewJobOrder($user, $jobOrder);
+
+        $jobOrder->loadMissing(['analyses', 'samples', 'packages']);
+
+        $sampleId = $request->integer('sample_id') ?: null;
+        $formId = $request->integer('form_id') ?: null;
+
+        $allReports = $this->reports->reportsForJobOrder($jobOrder, $user, withValues: false);
+        $resolved = $this->reports->pickReport($allReports, $sampleId, $formId);
+
+        if (
+            $resolved->kind === AnalysisResultReport::KIND_COMBINED
+            && $resolved->canPreview()
+            && ! $resolved->isOverlay()
+        ) {
+            $withValues = $this->reports->reportsForJobOrder($jobOrder, $user, withValues: true);
+            $resolved = $this->reports->pickReport(
+                $withValues,
+                $sampleId ?: $resolved->sampleId,
+                $formId ?: $resolved->controlledForm?->id,
+            );
+        }
+
+        $isOverlayCombined = $resolved->kind === AnalysisResultReport::KIND_COMBINED
+            && $resolved->isOverlay();
+
+        // Prefer an analysis on the selected sample for task-scoped PDF/template routes.
+        $anchorAnalysis = $resolved->analyses->first()
+            ?? $jobOrder->analyses->firstWhere('sample_id', $resolved->sampleId)
+            ?? $jobOrder->analyses->first();
+
+        $inlinePdf = match (true) {
+            $resolved->kind === AnalysisResultReport::KIND_INDIVIDUAL && $anchorAnalysis =>
+                "/analyst/tasks/{$anchorAnalysis->id}/pdf?inline=1",
+            $isOverlayCombined && $anchorAnalysis =>
+                "/analyst/tasks/{$anchorAnalysis->id}/combined-pdf",
+            default => null,
+        };
+
+        $templateUrl = $resolved->kind === AnalysisResultReport::KIND_COMBINED
+            && ! $isOverlayCombined
+            && $resolved->controlledRevision
+            && $anchorAnalysis
+            ? "/analyst/controlled-revisions/{$resolved->controlledRevision->id}?analysis={$anchorAnalysis->id}"
+            : '';
+
+        $baseReportUrl = "/analyst/job-orders/{$jobOrder->id}/result-report";
+
+        return response()->json($resolved->manifest(
+            $templateUrl,
+            $inlinePdf,
+            $resolved->fillMode(),
+            [
+                ...$this->signatoryManifestExtra(
+                    $jobOrder,
+                    $resolved,
+                    "/analyst/job-orders/{$jobOrder->id}/result-signatories",
+                ),
+                'reports' => $allReports->map(
+                    fn (AnalysisResultReport $report) => $this->reportTabManifest($jobOrder, $report, $baseReportUrl),
+                )->values()->all(),
+            ],
         ));
     }
 
@@ -516,6 +666,55 @@ class AnalystController extends Controller
             $this->reports->userIsPackageSignatory($analysis->jobOrder, $user),
             403,
         );
+    }
+
+    private function assertCanViewJobOrder(?User $user, JobOrder $jobOrder): void
+    {
+        abort_unless($user instanceof User, 403);
+
+        if ($user->hasRole('admin')) {
+            return;
+        }
+
+        $jobOrder->loadMissing(['analyses', 'packages']);
+
+        if ($this->reports->userIsPackageSignatory($jobOrder, $user)) {
+            return;
+        }
+
+        abort_unless(
+            $jobOrder->analyses->contains(
+                fn (JobOrderAnalysis $line) => (int) $line->assigned_to === (int) $user->id,
+            ),
+            403,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function reportTabManifest(JobOrder $jobOrder, AnalysisResultReport $report, string $baseReportUrl): array
+    {
+        $query = http_build_query(array_filter([
+            'sample_id' => $report->sampleId,
+            'form_id' => $report->controlledForm?->id,
+        ], fn ($value) => $value !== null && $value !== ''));
+
+        $anchor = $report->analyses->first()
+            ?? $jobOrder->analyses->firstWhere('sample_id', $report->sampleId);
+
+        $isOverlay = $report->kind === AnalysisResultReport::KIND_COMBINED && $report->isOverlay();
+
+        return [
+            ...$report->summary(),
+            'label' => $report->controlNumber
+                ? 'Control no. '.$report->controlNumber
+                : $report->title,
+            'report_url' => $baseReportUrl.($query !== '' ? "?{$query}" : ''),
+            'pdf_url' => $isOverlay && $report->canPreview() && $anchor
+                ? "/analyst/tasks/{$anchor->id}/combined-pdf"
+                : null,
+        ];
     }
 
     /**

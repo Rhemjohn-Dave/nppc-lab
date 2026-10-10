@@ -1,463 +1,400 @@
-import { Head, router } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
+import { ArrowRight, Plus, Search } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import AssignmentModal, {
+    type AssignmentAnalyst,
+    type AssignmentGroup,
+} from '@/components/admin/assignment-modal';
+import QueueKpi from '@/components/lims/queue-kpi';
 import LimsWorkspace from '@/components/lims/lims-workspace';
-import { useEffect, useMemo, useState } from 'react';
-import TablePagination from '@/components/table-pagination';
+import WorkspaceHeader from '@/components/workspace-header';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
-type Analyst = {
-    id: number;
-    name: string;
-    email: string;
-    analysis_type_ids: number[];
-};
-
-type Procedure = {
-    id: number;
-    code: string;
-    name: string;
-    category: string;
-    category_label: string;
-};
-
-type Group = {
-    category: string;
-    label: string;
-    items: Procedure[];
-    type_ids: number[];
-};
-
 type Props = {
-    analysts: Analyst[];
-    groups: Group[];
+    analysts: AssignmentAnalyst[];
+    groups: AssignmentGroup[];
 };
 
-const ANALYSTS_PAGE_SIZE = 10;
-const CATEGORIES_PAGE_SIZE = 5;
+function initials(name: string): string {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) {
+        return '?';
+    }
+    if (parts.length === 1) {
+        return parts[0].slice(0, 2).toUpperCase();
+    }
+    return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
+}
+
+function isActiveAnalyst(analyst: AssignmentAnalyst): boolean {
+    return analyst.analysis_type_ids.length > 0;
+}
 
 export default function AdminAssignments({ analysts, groups }: Props) {
-    const [selectedAnalyst, setSelectedAnalyst] = useState<Analyst | null>(
-        analysts[0] ?? null,
+    const [analystQuery, setAnalystQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>(
+        'all',
     );
-    const [selectedIds, setSelectedIds] = useState<number[]>(
-        analysts[0]?.analysis_type_ids ?? [],
-    );
-    const [saving, setSaving] = useState(false);
-    const [openCategories, setOpenCategories] = useState<string[]>(
-        groups.map((group) => group.category),
-    );
-    const [analystPage, setAnalystPage] = useState(1);
-    const [categoryPage, setCategoryPage] = useState(1);
+    const [modalAnalystId, setModalAnalystId] = useState<number | null>(null);
 
     const totalProcedures = useMemo(
         () => groups.reduce((sum, group) => sum + group.items.length, 0),
         [groups],
     );
 
-    const analystTotalPages = Math.max(
-        1,
-        Math.ceil(analysts.length / ANALYSTS_PAGE_SIZE),
+    const modalAnalyst = useMemo(
+        () =>
+            modalAnalystId == null
+                ? null
+                : (analysts.find((analyst) => analyst.id === modalAnalystId) ??
+                  null),
+        [analysts, modalAnalystId],
     );
-    const pagedAnalysts = useMemo(() => {
-        const start = (analystPage - 1) * ANALYSTS_PAGE_SIZE;
 
-        return analysts.slice(start, start + ANALYSTS_PAGE_SIZE);
-    }, [analysts, analystPage]);
+    const filteredAnalysts = useMemo(() => {
+        const q = analystQuery.trim().toLowerCase();
 
-    const categoryTotalPages = Math.max(
-        1,
-        Math.ceil(groups.length / CATEGORIES_PAGE_SIZE),
-    );
-    const pagedGroups = useMemo(() => {
-        const start = (categoryPage - 1) * CATEGORIES_PAGE_SIZE;
-
-        return groups.slice(start, start + CATEGORIES_PAGE_SIZE);
-    }, [groups, categoryPage]);
-
-    useEffect(() => {
-        if (analystPage > analystTotalPages) {
-            setAnalystPage(analystTotalPages);
-        }
-    }, [analystPage, analystTotalPages]);
-
-    useEffect(() => {
-        if (categoryPage > categoryTotalPages) {
-            setCategoryPage(categoryTotalPages);
-        }
-    }, [categoryPage, categoryTotalPages]);
-
-    function chooseAnalyst(analyst: Analyst) {
-        setSelectedAnalyst(analyst);
-        setSelectedIds(analyst.analysis_type_ids);
-    }
-
-    function toggle(id: number) {
-        setSelectedIds((current) =>
-            current.includes(id)
-                ? current.filter((value) => value !== id)
-                : [...current, id],
-        );
-    }
-
-    function setCategory(ids: number[], checked: boolean) {
-        setSelectedIds((current) => {
-            if (checked) {
-                return [...new Set([...current, ...ids])];
+        return analysts.filter((analyst) => {
+            const active = isActiveAnalyst(analyst);
+            if (statusFilter === 'active' && !active) {
+                return false;
             }
-
-            return current.filter((id) => !ids.includes(id));
+            if (statusFilter === 'inactive' && active) {
+                return false;
+            }
+            if (!q) {
+                return true;
+            }
+            return (
+                analyst.name.toLowerCase().includes(q) ||
+                analyst.email.toLowerCase().includes(q)
+            );
         });
-    }
-
-    function categoryState(ids: number[]) {
-        const selectedCount = ids.filter((id) =>
-            selectedIds.includes(id),
-        ).length;
-
-        if (selectedCount === 0) {
-            return false as const;
-        }
-
-        if (selectedCount === ids.length) {
-            return true as const;
-        }
-
-        return 'indeterminate' as const;
-    }
-
-    function toggleCategoryOpen(category: string) {
-        setOpenCategories((current) =>
-            current.includes(category)
-                ? current.filter((value) => value !== category)
-                : [...current, category],
-        );
-    }
-
-    function save() {
-        if (!selectedAnalyst) {
-            return;
-        }
-
-        setSaving(true);
-        router.put(
-            `/admin/assignments/${selectedAnalyst.id}`,
-            {
-                analysis_type_ids: selectedIds,
-            },
-            {
-                onFinish: () => setSaving(false),
-                onSuccess: () => {
-                    setSelectedAnalyst((current) =>
-                        current
-                            ? {
-                                  ...current,
-                                  analysis_type_ids: selectedIds,
-                              }
-                            : current,
-                    );
-                },
-            },
-        );
-    }
+    }, [analysts, analystQuery, statusFilter]);
 
     return (
         <>
             <Head title="Assignments" />
-            <LimsWorkspace>
-                <div>
-                    <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                        Analyst assignments
-                    </h1>
-                    <p className="text-sm text-muted-foreground">
-                        Assign by category for fast setup (e.g. all
-                        Microbiological procedures), then fine-tune individual
-                        tests. When Receiving marks a job received, each line
-                        goes to the checked analyst with the fewest open
-                        tasks.
-                    </p>
+            <LimsWorkspace className="gap-4">
+                <WorkspaceHeader
+                    title="Assignments"
+                    description="Manage analyst test assignments and workload."
+                    actions={
+                        <Badge
+                            variant="outline"
+                            className="border-sky-200 bg-sky-50 text-[10px] font-medium text-sky-800"
+                        >
+                            Workload Auto-Balancer
+                        </Badge>
+                    }
+                />
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <QueueKpi
+                        label="Analysts"
+                        value={analysts.length}
+                        hint="active"
+                    />
+                    <QueueKpi
+                        label="Procedures"
+                        value={totalProcedures}
+                        hint="assignable"
+                        tone="info"
+                    />
+                    <QueueKpi
+                        label="Dispatch"
+                        value="Least-busy"
+                        hint="Sample Receiving"
+                        tone="success"
+                    />
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-                    <aside className="rounded-xl border bg-white p-3">
-                        <p className="mb-2 px-2 text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
-                            Analysts
-                        </p>
-                        {pagedAnalysts.map((analyst) => {
-                            const active =
-                                selectedAnalyst?.id === analyst.id;
-                            const count = active
-                                ? selectedIds.length
-                                : analyst.analysis_type_ids.length;
-
-                            return (
-                                <button
-                                    key={analyst.id}
-                                    type="button"
-                                    className={cn(
-                                        'mb-1 w-full rounded-lg px-3 py-2.5 text-left text-sm transition',
-                                        active
-                                            ? 'bg-[#1A3694] text-white'
-                                            : 'hover:bg-[#f8fafc]',
-                                    )}
-                                    onClick={() => chooseAnalyst(analyst)}
-                                >
-                                    <div className="font-medium">
-                                        {analyst.name}
-                                    </div>
-                                    <div
-                                        className={cn(
-                                            'text-xs',
-                                            active
-                                                ? 'text-white/80'
-                                                : 'text-muted-foreground',
-                                        )}
-                                    >
-                                        {analyst.email}
-                                    </div>
-                                    <div
-                                        className={cn(
-                                            'mt-1 text-xs font-medium',
-                                            active
-                                                ? 'text-white/90'
-                                                : 'text-[#1A3694]',
-                                        )}
-                                    >
-                                        {count}/{totalProcedures} procedures
-                                    </div>
-                                </button>
-                            );
-                        })}
-                        {analysts.length === 0 && (
-                            <p className="px-2 py-4 text-sm text-muted-foreground">
-                                No analyst accounts yet.
+                <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+                    <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h2 className="text-base font-semibold text-nppc-900">
+                                Analyst accounts
+                            </h2>
+                            <p className="text-xs text-slate-500">
+                                {analysts.length} registered
                             </p>
-                        )}
-                        <div className="mt-3 px-1">
-                            <TablePagination
-                                mode="client"
-                                page={analystPage}
-                                totalPages={analystTotalPages}
-                                totalItems={analysts.length}
-                                pageSize={ANALYSTS_PAGE_SIZE}
-                                onPageChange={setAnalystPage}
-                                label="analysts"
-                            />
                         </div>
-                    </aside>
 
-                    <section className="rounded-xl border bg-white">
-                        {selectedAnalyst ? (
-                            <>
-                                <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-[#f8fafc] px-4 py-3">
-                                    <div>
-                                        <h2 className="font-semibold text-[#1A3694]">
-                                            {selectedAnalyst.name}
-                                        </h2>
-                                        <p className="text-xs text-muted-foreground">
-                                            {selectedIds.length} of{' '}
-                                            {totalProcedures} procedures
-                                            selected
-                                        </p>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() =>
-                                                setSelectedIds(
-                                                    groups.flatMap(
-                                                        (group) =>
-                                                            group.type_ids,
-                                                    ),
-                                                )
-                                            }
-                                        >
-                                            Select all
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => setSelectedIds([])}
-                                        >
-                                            Clear
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            className="bg-[#1A3694] hover:bg-[#365BB0]"
-                                            disabled={saving}
-                                            onClick={save}
-                                        >
-                                            {saving
-                                                ? 'Saving…'
-                                                : 'Save assignments'}
-                                        </Button>
-                                    </div>
-                                </div>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <div className="relative min-w-0 flex-1 sm:w-56">
+                                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-slate-400" />
+                                <Input
+                                    value={analystQuery}
+                                    onChange={(event) =>
+                                        setAnalystQuery(event.target.value)
+                                    }
+                                    placeholder="Search analyst…"
+                                    className="h-9 pl-8 text-sm"
+                                />
+                            </div>
+                            <Select
+                                value={statusFilter}
+                                onValueChange={(value) =>
+                                    setStatusFilter(
+                                        value as 'all' | 'active' | 'inactive',
+                                    )
+                                }
+                            >
+                                <SelectTrigger className="h-9 w-full text-sm sm:w-[140px]">
+                                    <SelectValue placeholder="Status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All</SelectItem>
+                                    <SelectItem value="active">
+                                        Active
+                                    </SelectItem>
+                                    <SelectItem value="inactive">
+                                        Inactive
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <Button
+                                asChild
+                                size="sm"
+                                className="h-9 gap-1.5 bg-nppc-900 text-sm hover:bg-nppc-700"
+                            >
+                                <Link href="/admin/users">
+                                    <Plus className="size-3.5" />
+                                    Add analyst
+                                </Link>
+                            </Button>
+                        </div>
+                    </div>
 
-                                <div className="space-y-3 p-4">
-                                    {pagedGroups.map((group) => {
-                                        const open = openCategories.includes(
-                                            group.category,
-                                        );
-                                        const state = categoryState(
-                                            group.type_ids,
-                                        );
-                                        const selectedInCategory =
-                                            group.type_ids.filter((id) =>
-                                                selectedIds.includes(id),
-                                            ).length;
+                    {/* Desktop table */}
+                    <div className="hidden overflow-x-auto md:block">
+                        <table className="min-w-full text-left text-sm">
+                            <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                                <tr className="h-11">
+                                    <th className="px-4 py-2.5">Analyst</th>
+                                    <th className="px-4 py-2.5">
+                                        Assigned procedures
+                                    </th>
+                                    <th className="px-4 py-2.5">Active tasks</th>
+                                    <th className="px-4 py-2.5">Status</th>
+                                    <th className="px-4 py-2.5 text-right">
+                                        Action
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {filteredAnalysts.map((analyst) => {
+                                    const assigned =
+                                        analyst.analysis_type_ids.length;
+                                    const active = isActiveAnalyst(analyst);
+                                    const share =
+                                        totalProcedures > 0
+                                            ? Math.min(
+                                                  100,
+                                                  Math.round(
+                                                      (assigned /
+                                                          totalProcedures) *
+                                                          100,
+                                                  ),
+                                              )
+                                            : 0;
 
-                                        return (
-                                            <div
-                                                key={group.category}
-                                                className="overflow-hidden rounded-xl border"
-                                            >
-                                                <div className="flex flex-wrap items-center justify-between gap-3 bg-[#f8fafc] px-4 py-3">
-                                                    <div className="flex min-w-0 items-start gap-3">
-                                                        <Checkbox
-                                                            checked={state}
-                                                            onCheckedChange={(
-                                                                checked,
-                                                            ) =>
-                                                                setCategory(
-                                                                    group.type_ids,
-                                                                    checked ===
-                                                                        true,
-                                                                )
-                                                            }
-                                                            className="mt-0.5"
-                                                            aria-label={`Assign all ${group.label}`}
-                                                        />
-                                                        <button
-                                                            type="button"
-                                                            className="min-w-0 text-left"
-                                                            onClick={() =>
-                                                                toggleCategoryOpen(
-                                                                    group.category,
-                                                                )
-                                                            }
-                                                        >
-                                                            <p className="font-semibold text-[#1A3694]">
-                                                                {group.label}
-                                                            </p>
-                                                            <p className="text-xs text-muted-foreground">
-                                                                {selectedInCategory}
-                                                                /
-                                                                {
-                                                                    group
-                                                                        .items
-                                                                        .length
-                                                                }{' '}
-                                                                assigned · click
-                                                                to{' '}
-                                                                {open
-                                                                    ? 'collapse'
-                                                                    : 'expand'}
-                                                            </p>
-                                                        </button>
-                                                    </div>
-                                                    <div className="flex gap-2">
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() =>
-                                                                setCategory(
-                                                                    group.type_ids,
-                                                                    true,
-                                                                )
-                                                            }
-                                                        >
-                                                            Assign category
-                                                        </Button>
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            onClick={() =>
-                                                                setCategory(
-                                                                    group.type_ids,
-                                                                    false,
-                                                                )
-                                                            }
-                                                        >
-                                                            Clear
-                                                        </Button>
+                                    return (
+                                        <tr
+                                            key={analyst.id}
+                                            className="h-16 hover:bg-slate-50/80"
+                                        >
+                                            <td className="px-4 py-3">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-nppc-50 text-[11px] font-semibold text-nppc-900">
+                                                        {initials(analyst.name)}
+                                                    </span>
+                                                    <div className="min-w-0">
+                                                        <p className="truncate font-medium text-slate-900">
+                                                            {analyst.name}
+                                                        </p>
+                                                        <p className="truncate text-xs text-slate-500">
+                                                            {analyst.email}
+                                                        </p>
                                                     </div>
                                                 </div>
-
-                                                {open && (
-                                                    <div className="grid gap-2 border-t p-3 sm:grid-cols-2">
-                                                        {group.items.map(
-                                                            (type) => {
-                                                                const checked =
-                                                                    selectedIds.includes(
-                                                                        type.id,
-                                                                    );
-
-                                                                return (
-                                                                    <label
-                                                                        key={
-                                                                            type.id
-                                                                        }
-                                                                        className={cn(
-                                                                            'flex min-h-12 cursor-pointer items-start gap-3 rounded-xl border px-3 py-3 text-sm transition',
-                                                                            checked
-                                                                                ? 'border-[#1A3694] bg-[#eef3fb]'
-                                                                                : 'border-slate-100 bg-white hover:border-[#5282D3]/40',
-                                                                        )}
-                                                                    >
-                                                                        <Checkbox
-                                                                            checked={
-                                                                                checked
-                                                                            }
-                                                                            onCheckedChange={() =>
-                                                                                toggle(
-                                                                                    type.id,
-                                                                                )
-                                                                            }
-                                                                            className="mt-0.5"
-                                                                        />
-                                                                        <span>
-                                                                            <span className="font-medium">
-                                                                                {
-                                                                                    type.code
-                                                                                }
-                                                                            </span>{' '}
-                                                                            {
-                                                                                type.name
-                                                                            }
-                                                                        </span>
-                                                                    </label>
-                                                                );
-                                                            },
-                                                        )}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="max-w-[11rem]">
+                                                    <p className="tabular-nums text-slate-900">
+                                                        {assigned} /{' '}
+                                                        {totalProcedures}
+                                                    </p>
+                                                    <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-100">
+                                                        <div
+                                                            className="h-full rounded-full bg-nppc-900"
+                                                            style={{
+                                                                width: `${share}%`,
+                                                            }}
+                                                        />
                                                     </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 tabular-nums text-slate-800">
+                                                {analyst.active_tasks}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <Badge
+                                                    variant="outline"
+                                                    className={cn(
+                                                        'text-[10px] font-medium',
+                                                        active
+                                                            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                                            : 'border-slate-200 bg-slate-50 text-slate-600',
+                                                    )}
+                                                >
+                                                    {active
+                                                        ? 'Active'
+                                                        : 'Inactive'}
+                                                </Badge>
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-8 gap-1 border-slate-200 text-xs shadow-xs"
+                                                    onClick={() =>
+                                                        setModalAnalystId(
+                                                            analyst.id,
+                                                        )
+                                                    }
+                                                >
+                                                    Assign Tests
+                                                    <ArrowRight className="size-3.5" />
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {filteredAnalysts.length === 0 ? (
+                                    <tr>
+                                        <td
+                                            colSpan={5}
+                                            className="px-4 py-10 text-center text-sm text-slate-500"
+                                        >
+                                            {analysts.length === 0
+                                                ? 'No analyst accounts yet. Add an analyst from Users.'
+                                                : 'No analysts match your search or filter.'}
+                                        </td>
+                                    </tr>
+                                ) : null}
+                            </tbody>
+                        </table>
+                    </div>
 
-                                    <TablePagination
-                                        mode="client"
-                                        page={categoryPage}
-                                        totalPages={categoryTotalPages}
-                                        totalItems={groups.length}
-                                        pageSize={CATEGORIES_PAGE_SIZE}
-                                        onPageChange={setCategoryPage}
-                                        label="categories"
-                                    />
+                    {/* Mobile cards */}
+                    <div className="space-y-3 p-3 md:hidden">
+                        {filteredAnalysts.map((analyst) => {
+                            const assigned = analyst.analysis_type_ids.length;
+                            const active = isActiveAnalyst(analyst);
+
+                            return (
+                                <div
+                                    key={analyst.id}
+                                    className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-xs"
+                                >
+                                    <div className="flex items-start gap-3">
+                                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-nppc-50 text-[11px] font-semibold text-nppc-900">
+                                            {initials(analyst.name)}
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <p className="truncate font-medium text-slate-900">
+                                                        {analyst.name}
+                                                    </p>
+                                                    <p className="truncate text-xs text-slate-500">
+                                                        {analyst.email}
+                                                    </p>
+                                                </div>
+                                                <Badge
+                                                    variant="outline"
+                                                    className={cn(
+                                                        'shrink-0 text-[10px] font-medium',
+                                                        active
+                                                            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                                            : 'border-slate-200 bg-slate-50 text-slate-600',
+                                                    )}
+                                                >
+                                                    {active
+                                                        ? 'Active'
+                                                        : 'Inactive'}
+                                                </Badge>
+                                            </div>
+                                            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                                                <div>
+                                                    <p className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+                                                        Assigned
+                                                    </p>
+                                                    <p className="mt-0.5 tabular-nums text-slate-900">
+                                                        {assigned} /{' '}
+                                                        {totalProcedures}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+                                                        Active tasks
+                                                    </p>
+                                                    <p className="mt-0.5 tabular-nums text-slate-900">
+                                                        {analyst.active_tasks}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                className="mt-3 h-9 w-full gap-1.5 bg-nppc-900 text-sm hover:bg-nppc-700"
+                                                onClick={() =>
+                                                    setModalAnalystId(
+                                                        analyst.id,
+                                                    )
+                                                }
+                                            >
+                                                Assign Tests
+                                                <ArrowRight className="size-3.5" />
+                                            </Button>
+                                        </div>
+                                    </div>
                                 </div>
-                            </>
-                        ) : (
-                            <p className="p-6 text-sm text-muted-foreground">
-                                No analysts available.
+                            );
+                        })}
+                        {filteredAnalysts.length === 0 ? (
+                            <p className="py-8 text-center text-sm text-slate-500">
+                                {analysts.length === 0
+                                    ? 'No analyst accounts yet. Add an analyst from Users.'
+                                    : 'No analysts match your search or filter.'}
                             </p>
-                        )}
-                    </section>
-                </div>
+                        ) : null}
+                    </div>
+                </section>
             </LimsWorkspace>
+
+            <AssignmentModal
+                open={modalAnalystId !== null}
+                analyst={modalAnalyst}
+                groups={groups}
+                onOpenChange={(next) => {
+                    if (!next) {
+                        setModalAnalystId(null);
+                    }
+                }}
+            />
         </>
     );
 }

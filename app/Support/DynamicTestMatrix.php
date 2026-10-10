@@ -573,7 +573,10 @@ class DynamicTestMatrix
     {
         return $ordered
             ->map(function (JobOrderAnalysis $line): array {
-                $passFail = filled($line->result_pass_fail) ? (string) $line->result_pass_fail : null;
+                $requiresPassFail = (bool) ($line->analysisType?->requires_pass_fail);
+                $passFail = $requiresPassFail && filled($line->result_pass_fail)
+                    ? (string) $line->result_pass_fail
+                    : null;
                 $value = self::formatPrintedResult(
                     $line->result_value,
                     $line->result_unit,
@@ -662,7 +665,7 @@ class DynamicTestMatrix
             return null;
         }
 
-        $stamp = self::formatAnalysisStamp($line->completed_at, $caption);
+        $stamp = self::formatAnalysisStamp($line->performed_at, $caption);
 
         return $stamp !== null ? "{$caption}: {$stamp}" : "{$caption}:";
     }

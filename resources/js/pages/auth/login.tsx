@@ -86,7 +86,7 @@ export default function Login({ status, canResetPassword }: Props) {
 
                             <Button
                                 type="submit"
-                                className="mt-2 h-11 w-full bg-[#1A3694] hover:bg-[#365BB0]"
+                                className="mt-2 h-11 w-full bg-nppc-900 hover:bg-nppc-700"
                                 tabIndex={4}
                                 disabled={processing}
                                 data-test="login-button"
@@ -100,7 +100,7 @@ export default function Login({ status, canResetPassword }: Props) {
                                     <span className="w-full border-t border-slate-200" />
                                 </div>
                                 <div className="relative flex justify-center text-xs uppercase">
-                                    <span className="bg-[#eef3fb] px-2 text-slate-500">
+                                    <span className="bg-nppc-50 px-2 text-slate-500">
                                         or
                                     </span>
                                 </div>
@@ -110,7 +110,7 @@ export default function Login({ status, canResetPassword }: Props) {
                                 asChild
                                 type="button"
                                 variant="outline"
-                                className="h-11 w-full border-[#1A3694]/30 text-[#1A3694] hover:bg-[#eef3fb]"
+                                className="h-11 w-full border-nppc-900/30 text-nppc-900 hover:bg-nppc-50"
                                 tabIndex={6}
                             >
                                 <Link href="/intake">Go to customer intake</Link>

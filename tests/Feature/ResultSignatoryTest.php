@@ -354,6 +354,7 @@ class ResultSignatoryTest extends TestCase
         foreach ($job->fresh()->analyses as $line) {
             $this->actingAs($analyst)
                 ->post("/analyst/tasks/{$line->id}/complete", [
+                    'performed_at' => '2026-07-29T15:00',
                     'result_value' => '<1.1',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',

@@ -26,7 +26,7 @@ export default function LimsSection({
             {(title || action) && (
                 <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
                     {title ? (
-                        <h2 className="text-xs font-semibold tracking-wide text-[#365BB0] uppercase">
+                        <h2 className="text-xs font-semibold tracking-wide text-nppc-700 uppercase">
                             {title}
                         </h2>
                     ) : (
@@ -40,7 +40,7 @@ export default function LimsSection({
             ) : (
                 <div
                     className={cn(
-                        'rounded-xl border border-slate-200/80 bg-white shadow-sm',
+                        'rounded-xl border border-slate-200 bg-white shadow-sm',
                         limsPanelPadding,
                     )}
                 >

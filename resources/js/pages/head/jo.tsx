@@ -1,12 +1,13 @@
 import { Head, Link, router } from '@inertiajs/react';
-import LimsWorkspace from '@/components/lims/lims-workspace';
-import { Download } from 'lucide-react';
+import { ArrowRight, Download } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import ConfirmDialog from '@/components/confirm-dialog';
+import JoReferenceChip from '@/components/lims/jo-reference-chip';
+import LimsWorkspace from '@/components/lims/lims-workspace';
+import QueueSummaryCards from '@/components/lims/queue-summary-cards';
 import NavigationLoadingShell from '@/components/loading/navigation-loading-shell';
 import QueueFilterBar from '@/components/queue-filter-bar';
 import QueueRangeNote from '@/components/queue-range-note';
-import SummaryStat from '@/components/summary-stat';
 import TablePagination from '@/components/table-pagination';
 import WorkspaceHeader from '@/components/workspace-header';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { LabQueueRealtime } from '@/hooks/use-lab-queue-realtime';
 import { useInertiaNavigation } from '@/hooks/use-inertia-navigation';
+import { receivingStatusBadgeClass } from '@/lib/receiving-workflow';
 import { cn } from '@/lib/utils';
 
 type Order = {
@@ -57,6 +59,115 @@ type Props = {
 
 function money(value: string | number) {
     return `₱${Number(value || 0).toFixed(2)}`;
+}
+
+function joStatusLabel(order: Order): string {
+    if (order.needs_jo_approval) {
+        return 'Needs JO approval';
+    }
+
+    switch (order.status) {
+        case 'jo_approved':
+            return 'JO approved';
+        case 'in_analysis':
+            return 'In analysis';
+        case 'pending_review':
+            return 'Awaiting result release';
+        case 'ready_for_pickup':
+            return 'Results released';
+        default:
+            return order.status_label || order.status || 'JO approved';
+    }
+}
+
+function CustomerCell({ order }: { order: Order }) {
+    return (
+        <>
+            <p className="font-semibold text-slate-900">{order.customer_name}</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+                {[
+                    order.company_name,
+                    order.classification,
+                    order.customer_contact,
+                    order.customer_email,
+                ]
+                    .filter(Boolean)
+                    .join(' · ') || '—'}
+            </p>
+        </>
+    );
+}
+
+function OrderActions({
+    order,
+    pendingTab,
+}: {
+    order: Order;
+    pendingTab: boolean;
+}) {
+    return (
+        <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+            {!pendingTab && order.jo_pdf_url ? (
+                <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 border-slate-200 text-xs shadow-xs"
+                >
+                    <a href={order.jo_pdf_url}>
+                        <Download className="size-3.5" />
+                        Download JO
+                    </a>
+                </Button>
+            ) : null}
+            <Button
+                asChild
+                size="sm"
+                className={cn(
+                    'h-8 gap-1.5 text-xs shadow-xs',
+                    pendingTab
+                        ? 'border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                        : 'bg-nppc-900 hover:bg-nppc-700',
+                )}
+            >
+                <Link href={`/head/${order.id}?view=jo`}>
+                    {pendingTab ? 'Review & approve JO' : 'Open JO'}
+                    <ArrowRight className="size-3" />
+                </Link>
+            </Button>
+        </div>
+    );
+}
+
+function OrderStatusBadge({
+    order,
+    pendingTab,
+}: {
+    order: Order;
+    pendingTab: boolean;
+}) {
+    if (pendingTab) {
+        return (
+            <Badge
+                variant="outline"
+                className="border-amber-200 bg-amber-50 text-amber-900"
+            >
+                Needs JO approval
+            </Badge>
+        );
+    }
+
+    return (
+        <Badge
+            variant="outline"
+            className={receivingStatusBadgeClass(
+                order.status ?? 'jo_approved',
+                order.is_signed,
+            )}
+        >
+            {joStatusLabel(order)}
+        </Badge>
+    );
 }
 
 export default function HeadJoIndex({ orders, counts, filters }: Props) {
@@ -141,27 +252,57 @@ export default function HeadJoIndex({ orders, counts, filters }: Props) {
         );
     }
 
-    const emptyMessage = filters.q
+    const emptyTitle = filters.q
+        ? 'No matching job orders'
+        : pendingTab
+          ? 'Queue is clear'
+          : 'No JO-approved orders yet';
+    const emptyBody = filters.q
         ? 'No job orders match your search.'
         : pendingTab
-          ? 'No Job Orders waiting for Head approval.'
-          : 'No approved Job Orders yet.';
+          ? 'No Job Orders waiting for Head JO approval.'
+          : 'No JO-approved Job Orders yet.';
+
+    const kpiTotal = Math.max(counts.pending + counts.approved, 1);
+    const summaryCards = [
+        {
+            id: 'pending',
+            label: 'Awaiting JO Approval',
+            value: counts.pending,
+            unit:
+                counts.pending > 0 ? 'Action required' : 'None waiting',
+            tone:
+                counts.pending > 0
+                    ? ('warning' as const)
+                    : ('default' as const),
+            share: Math.round((counts.pending / kpiTotal) * 100),
+        },
+        {
+            id: 'approved',
+            label: 'JO Approved',
+            value: counts.approved,
+            unit: 'All JO-approved orders',
+            tone: 'success' as const,
+            share: Math.round((counts.approved / kpiTotal) * 100),
+        },
+    ];
 
     return (
         <>
-            <Head title="JO approval" />
+            <Head title="JO Approval" />
             <LabQueueRealtime role="head" only={['orders', 'counts']} />
             <NavigationLoadingShell variant="queue">
-                <LimsWorkspace className="gap-3">
+                <LimsWorkspace className="gap-4">
                     <WorkspaceHeader
-                        title="JO approval"
-                        description="Approve Job Orders after costing so Receiving can print JO copies and send work to analysts."
+                        title="JO Approval"
+                        description="Approve priced Job Orders for Receiving print and analyst handoff. Test result sign-off is under Head Analysis → Results."
                         refreshing={isRefreshing}
                         refreshLabel="Updating queue…"
                         actions={
                             canSelect && selected.length > 0 ? (
                                 <Button
-                                    className="bg-[#1A3694] hover:bg-[#365BB0]"
+                                    size="sm"
+                                    className="h-8 bg-nppc-900 text-xs hover:bg-nppc-700"
                                     onClick={() => setConfirmBatch(true)}
                                 >
                                     Approve selected ({selected.length})
@@ -170,273 +311,335 @@ export default function HeadJoIndex({ orders, counts, filters }: Props) {
                         }
                     />
 
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        <SummaryStat
-                            label="Awaiting JO approval"
-                            value={counts.pending}
-                        />
-                        <SummaryStat
-                            label="Approved (archive)"
-                            value={counts.approved}
-                            tone="success"
-                        />
-                    </div>
-
-                    <QueueFilterBar
-                        chips={[
-                            {
-                                id: 'pending',
-                                label: 'Awaiting',
-                                count: counts.pending,
-                            },
-                            {
-                                id: 'approved',
-                                label: 'Approved',
-                                count: counts.approved,
-                            },
-                        ]}
+                    <QueueSummaryCards
+                        cards={summaryCards}
                         activeId={filters.tab}
-                        onChip={(id) =>
+                        onSelect={(id) =>
                             applyFilters({
-                                tab: id,
+                                tab: id as 'pending' | 'approved',
                                 q: query.trim(),
                             })
                         }
-                        query={query}
-                        onQueryChange={setQuery}
-                        onSearch={submitSearch}
-                        onClear={() => {
-                            setQuery('');
-                            applyFilters({ q: '' });
-                        }}
+                        className="sm:grid-cols-2 lg:grid-cols-2"
                     />
 
-                    {canSelect && selected.length > 0 && (
-                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#1A3694]/20 bg-[#eef3fb] px-4 py-3">
-                            <p className="text-sm font-medium text-[#1A3694]">
-                                {selected.length} Job Order
-                                {selected.length === 1 ? '' : 's'} selected
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setSelected([])}
-                                >
-                                    Clear
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    className="bg-[#1A3694] hover:bg-[#365BB0]"
-                                    onClick={() => setConfirmBatch(true)}
-                                >
-                                    Approve selected
-                                </Button>
-                            </div>
+                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+                        <div className="space-y-3 border-b border-slate-200 p-3 sm:p-4">
+                            <QueueFilterBar
+                                chips={[
+                                    {
+                                        id: 'pending',
+                                        label: 'Awaiting JO',
+                                        count: counts.pending,
+                                    },
+                                    {
+                                        id: 'approved',
+                                        label: 'JO approved',
+                                        count: counts.approved,
+                                    },
+                                ]}
+                                activeId={filters.tab}
+                                onChip={(id) =>
+                                    applyFilters({
+                                        tab: id,
+                                        q: query.trim(),
+                                    })
+                                }
+                                query={query}
+                                onQueryChange={setQuery}
+                                onSearch={submitSearch}
+                                onClear={() => {
+                                    setQuery('');
+                                    applyFilters({ q: '' });
+                                }}
+                                placeholder="Search reference, customer…"
+                            />
+
+                            {canSelect && selected.length > 0 ? (
+                                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-nppc-900/20 bg-nppc-50 px-3 py-2.5">
+                                    <p className="text-sm font-medium text-nppc-900">
+                                        {selected.length} Job Order
+                                        {selected.length === 1 ? '' : 's'}{' '}
+                                        selected
+                                    </p>
+                                    <div className="flex flex-wrap gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-8 text-xs shadow-xs"
+                                            onClick={() => setSelected([])}
+                                        >
+                                            Clear
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            className="h-8 bg-nppc-900 text-xs shadow-xs hover:bg-nppc-700"
+                                            onClick={() =>
+                                                setConfirmBatch(true)
+                                            }
+                                        >
+                                            Approve selected
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            <QueueRangeNote
+                                from={orders.from}
+                                to={orders.to}
+                                total={orders.total}
+                                suffix={
+                                    pendingTab
+                                        ? 'Job Orders waiting for Head JO approval.'
+                                        : 'JO-approved Job Orders (not the result release queue).'
+                                }
+                            />
                         </div>
-                    )}
 
-                    <QueueRangeNote
-                        from={orders.from}
-                        to={orders.to}
-                        total={orders.total}
-                        suffix={
-                            pendingTab
-                                ? 'Job Orders waiting for Head costing approval.'
-                                : 'approved Job Orders (view / download JO form).'
-                        }
-                    />
-
-                    <div className="overflow-x-auto rounded-xl border bg-white">
-                        <table className="w-full text-sm">
-                            <thead className="sticky top-0 z-10 bg-[#f8fafc] text-left">
-                                <tr>
-                                    {canSelect && (
-                                        <th className="px-3 py-3">
-                                            <Checkbox
-                                                checked={allSelected}
-                                                onCheckedChange={(checked) =>
-                                                    toggleAll(checked === true)
-                                                }
-                                                aria-label="Select all on page"
-                                            />
-                                        </th>
+                        {/* Mobile cards */}
+                        <div className="divide-y divide-slate-200/80 md:hidden">
+                            {orders.data.map((order) => (
+                                <div
+                                    key={order.id}
+                                    className={cn(
+                                        'space-y-3 p-4',
+                                        pendingTab && 'bg-amber-50/30',
                                     )}
-                                    <th className="px-3 py-3 font-medium text-slate-600">
-                                        Reference
-                                    </th>
-                                    <th className="px-3 py-3 font-medium text-slate-600">
-                                        Customer
-                                    </th>
-                                    <th className="px-3 py-3 font-medium text-slate-600">
-                                        Samples
-                                    </th>
-                                    <th className="px-3 py-3 font-medium text-slate-600">
-                                        Tests
-                                    </th>
-                                    <th className="px-3 py-3 font-medium text-slate-600">
-                                        Total
-                                    </th>
-                                    <th className="px-3 py-3 font-medium text-slate-600">
-                                        {pendingTab ? 'Priced' : 'Approved'}
-                                    </th>
-                                    <th className="px-3 py-3" />
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {orders.data.map((order) => (
-                                    <tr
-                                        key={order.id}
-                                        className={cn(
-                                            'border-t transition hover:bg-[#f8fafc]',
-                                            pendingTab && 'bg-[#eef3fb]/35',
-                                        )}
-                                    >
-                                        {canSelect && (
-                                            <td className="px-3 py-3">
+                                >
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0 space-y-1">
+                                            {canSelect ? (
+                                                <div className="mb-1">
+                                                    <Checkbox
+                                                        checked={selected.includes(
+                                                            order.id,
+                                                        )}
+                                                        onCheckedChange={(
+                                                            checked,
+                                                        ) =>
+                                                            toggleOne(
+                                                                order.id,
+                                                                checked ===
+                                                                    true,
+                                                            )
+                                                        }
+                                                        aria-label={`Select ${order.reference_no}`}
+                                                    />
+                                                </div>
+                                            ) : null}
+                                            <JoReferenceChip
+                                                referenceNo={order.reference_no}
+                                                emphasize={pendingTab}
+                                            />
+                                            <CustomerCell order={order} />
+                                        </div>
+                                        <p className="shrink-0 text-xs font-bold tabular-nums text-slate-900">
+                                            {money(order.total_cost)}
+                                        </p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-3 text-[11px] text-slate-600">
+                                        <span>
+                                            {order.samples_count} sample
+                                            {order.samples_count === 1
+                                                ? ''
+                                                : 's'}
+                                        </span>
+                                        <span>
+                                            {order.analyses_count} test
+                                            {order.analyses_count === 1
+                                                ? ''
+                                                : 's'}
+                                        </span>
+                                        <span className="text-slate-500">
+                                            {pendingTab
+                                                ? order.completed_at
+                                                : order.jo_approved_at}
+                                        </span>
+                                    </div>
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <OrderStatusBadge
+                                            order={order}
+                                            pendingTab={pendingTab}
+                                        />
+                                        <OrderActions
+                                            order={order}
+                                            pendingTab={pendingTab}
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                            {orders.data.length === 0 ? (
+                                <div className="px-4 py-12 text-center">
+                                    <p className="text-sm font-medium text-nppc-900">
+                                        {emptyTitle}
+                                    </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        {emptyBody}
+                                    </p>
+                                </div>
+                            ) : null}
+                        </div>
+
+                        {/* Desktop table */}
+                        <div className="hidden overflow-x-auto md:block">
+                            <table className="w-full min-w-[920px] border-collapse text-left text-xs">
+                                <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/90">
+                                    <tr className="select-none text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                                        {canSelect ? (
+                                            <th className="px-4 py-3">
                                                 <Checkbox
-                                                    checked={selected.includes(
-                                                        order.id,
-                                                    )}
+                                                    checked={allSelected}
                                                     onCheckedChange={(
                                                         checked,
                                                     ) =>
-                                                        toggleOne(
-                                                            order.id,
+                                                        toggleAll(
                                                             checked === true,
                                                         )
                                                     }
-                                                    aria-label={`Select ${order.reference_no}`}
+                                                    aria-label="Select all on page"
+                                                />
+                                            </th>
+                                        ) : null}
+                                        <th className="px-4 py-3">Reference</th>
+                                        <th className="px-4 py-3">Customer</th>
+                                        <th className="px-4 py-3">Samples</th>
+                                        <th className="px-4 py-3">Tests</th>
+                                        <th className="px-4 py-3 text-right">
+                                            Total
+                                        </th>
+                                        <th className="px-4 py-3">
+                                            {pendingTab
+                                                ? 'Priced'
+                                                : 'JO approved'}
+                                        </th>
+                                        {approvedTab ? (
+                                            <th className="px-4 py-3">Status</th>
+                                        ) : null}
+                                        <th className="min-w-[12rem] px-4 py-3 text-right">
+                                            Actions
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200/80">
+                                    {orders.data.map((order) => (
+                                        <tr
+                                            key={order.id}
+                                            className={cn(
+                                                'transition-colors hover:bg-slate-50',
+                                                pendingTab && 'bg-amber-50/30',
+                                            )}
+                                        >
+                                            {canSelect ? (
+                                                <td className="px-4 py-4 align-top">
+                                                    <Checkbox
+                                                        checked={selected.includes(
+                                                            order.id,
+                                                        )}
+                                                        onCheckedChange={(
+                                                            checked,
+                                                        ) =>
+                                                            toggleOne(
+                                                                order.id,
+                                                                checked ===
+                                                                    true,
+                                                            )
+                                                        }
+                                                        aria-label={`Select ${order.reference_no}`}
+                                                    />
+                                                </td>
+                                            ) : null}
+                                            <td className="px-4 py-4 align-top whitespace-nowrap">
+                                                <JoReferenceChip
+                                                    referenceNo={
+                                                        order.reference_no
+                                                    }
+                                                    emphasize={pendingTab}
                                                 />
                                             </td>
-                                        )}
-                                        <td className="px-3 py-3 font-semibold text-[#1A3694]">
-                                            {order.reference_no}
-                                        </td>
-                                        <td className="px-3 py-3">
-                                            <div className="font-medium">
-                                                {order.customer_name}
-                                            </div>
-                                            <div className="text-xs text-muted-foreground">
-                                                {[
-                                                    order.company_name,
-                                                    order.classification,
-                                                    order.customer_contact,
-                                                    order.customer_email,
-                                                ]
-                                                    .filter(Boolean)
-                                                    .join(' · ') || '—'}
-                                            </div>
-                                        </td>
-                                        <td className="px-3 py-3 tabular-nums">
-                                            {order.samples_count}
-                                        </td>
-                                        <td className="px-3 py-3 tabular-nums">
-                                            {order.analyses_count}
-                                        </td>
-                                        <td className="px-3 py-3 tabular-nums">
-                                            {money(order.total_cost)}
-                                        </td>
-                                        <td className="px-3 py-3 text-muted-foreground">
-                                            {pendingTab ? (
-                                                order.completed_at
-                                            ) : (
-                                                <div>
+                                            <td className="px-4 py-4 align-top">
+                                                <CustomerCell order={order} />
+                                            </td>
+                                            <td className="px-4 py-4 align-top tabular-nums text-slate-800">
+                                                {order.samples_count}
+                                            </td>
+                                            <td className="px-4 py-4 align-top tabular-nums text-slate-800">
+                                                {order.analyses_count}
+                                            </td>
+                                            <td className="px-4 py-4 text-right align-top text-xs font-bold tabular-nums text-slate-900">
+                                                {money(order.total_cost)}
+                                            </td>
+                                            <td className="px-4 py-4 align-top text-[11px] text-slate-500">
+                                                {pendingTab ? (
+                                                    order.completed_at
+                                                ) : (
                                                     <div>
-                                                        {order.jo_approved_at}
-                                                    </div>
-                                                    {order.jo_approver_name && (
-                                                        <div className="text-xs">
-                                                            by{' '}
+                                                        <div>
                                                             {
-                                                                order.jo_approver_name
+                                                                order.jo_approved_at
                                                             }
                                                         </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-3 py-3 text-right">
-                                            <div className="flex flex-wrap justify-end gap-2">
-                                                {pendingTab ? (
-                                                    <Badge
-                                                        variant="outline"
-                                                        className="border-amber-200 bg-amber-50 text-amber-900"
-                                                    >
-                                                        Needs JO approval
-                                                    </Badge>
-                                                ) : (
-                                                    <Badge
-                                                        variant="outline"
-                                                        className="border-emerald-200 bg-emerald-50 text-emerald-800"
-                                                    >
-                                                        Approved
-                                                    </Badge>
-                                                )}
-                                                {approvedTab &&
-                                                    order.jo_pdf_url && (
-                                                        <Button
-                                                            asChild
-                                                            size="sm"
-                                                            variant="outline"
-                                                        >
-                                                            <a
-                                                                href={
-                                                                    order.jo_pdf_url
+                                                        {order.jo_approver_name ? (
+                                                            <div>
+                                                                by{' '}
+                                                                {
+                                                                    order.jo_approver_name
                                                                 }
-                                                            >
-                                                                <Download className="size-3.5" />
-                                                                Download JO
-                                                            </a>
-                                                        </Button>
-                                                    )}
-                                                <Button
-                                                    asChild
-                                                    size="sm"
-                                                    className={
-                                                        pendingTab
-                                                            ? 'bg-[#1A3694] hover:bg-[#365BB0]'
-                                                            : undefined
-                                                    }
-                                                    variant={
-                                                        pendingTab
-                                                            ? 'default'
-                                                            : 'outline'
-                                                    }
-                                                >
-                                                    <Link
-                                                        href={`/head/${order.id}`}
-                                                    >
-                                                        {pendingTab
-                                                            ? 'Review & approve JO'
-                                                            : 'Open'}
-                                                    </Link>
-                                                </Button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {orders.data.length === 0 && (
-                                    <tr>
-                                        <td
-                                            colSpan={canSelect ? 8 : 7}
-                                            className="px-3 py-12 text-center text-muted-foreground"
-                                        >
-                                            {emptyMessage}
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            {approvedTab ? (
+                                                <td className="px-4 py-4 align-top whitespace-nowrap">
+                                                    <OrderStatusBadge
+                                                        order={order}
+                                                        pendingTab={false}
+                                                    />
+                                                </td>
+                                            ) : null}
+                                            <td className="px-4 py-4 text-right align-top">
+                                                <OrderActions
+                                                    order={order}
+                                                    pendingTab={pendingTab}
+                                                />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {orders.data.length === 0 ? (
+                                        <tr>
+                                            <td
+                                                colSpan={
+                                                    canSelect
+                                                        ? 8
+                                                        : approvedTab
+                                                          ? 8
+                                                          : 7
+                                                }
+                                                className="px-4 py-12 text-center"
+                                            >
+                                                <p className="text-sm font-medium text-nppc-900">
+                                                    {emptyTitle}
+                                                </p>
+                                                <p className="mt-1 text-xs text-muted-foreground">
+                                                    {emptyBody}
+                                                </p>
+                                            </td>
+                                        </tr>
+                                    ) : null}
+                                </tbody>
+                            </table>
+                        </div>
 
-                    <TablePagination
-                        links={orders.links}
-                        from={orders.from}
-                        to={orders.to}
-                        total={orders.total}
-                        label="job orders"
-                    />
+                        <div className="border-t border-slate-200 bg-slate-50/50 px-4 py-3">
+                            <TablePagination
+                                links={orders.links}
+                                from={orders.from}
+                                to={orders.to}
+                                total={orders.total}
+                                label="job orders"
+                            />
+                        </div>
+                    </div>
                 </LimsWorkspace>
             </NavigationLoadingShell>
 
@@ -444,7 +647,7 @@ export default function HeadJoIndex({ orders, counts, filters }: Props) {
                 open={confirmBatch}
                 onOpenChange={setConfirmBatch}
                 title={`Approve ${selected.length} Job Order${selected.length === 1 ? '' : 's'}?`}
-                description="Approves costing so Receiving can print 3 JO copies (customer, accounting, Head) and send to analysts. Payment stays outside this system."
+                description="Approves costing so Receiving can print 3 JO copies (customer, accounting, Head) and send work to analysts. This does not sign test results — use Head Analysis → Results for that."
                 confirmLabel="Approve Job Orders"
                 processingLabel="Approving…"
                 processing={signing}
@@ -457,6 +660,6 @@ export default function HeadJoIndex({ orders, counts, filters }: Props) {
 HeadJoIndex.layout = {
     breadcrumbs: [
         { title: 'Head Analysis', href: '/head' },
-        { title: 'JO approval', href: '/head/jo' },
+        { title: 'JO Approval', href: '/head/jo' },
     ],
 };

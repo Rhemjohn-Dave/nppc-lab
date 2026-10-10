@@ -9,7 +9,7 @@ export default function DashboardEmptyState({
 }: Props) {
     return (
         <div className="rounded-xl border bg-white px-4 py-10 text-center">
-            <p className="font-medium text-[#1A3694]">{title}</p>
+            <p className="font-medium text-nppc-900">{title}</p>
             <p className="mt-1 text-sm text-muted-foreground">{body}</p>
         </div>
     );

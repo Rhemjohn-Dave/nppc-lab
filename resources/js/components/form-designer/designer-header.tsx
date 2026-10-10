@@ -118,7 +118,7 @@ export default function DesignerHeader({
             <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 lg:px-4">
                 <div className="flex min-w-0 items-center gap-2">
                     <SidebarTrigger
-                        className="shrink-0 text-[#1A3694] hover:bg-[#eef3fb]"
+                        className="shrink-0 text-nppc-900 hover:bg-nppc-50"
                         title="Show or hide navigation"
                     />
                     <Button variant="ghost" size="sm" className="shrink-0 px-2" asChild>
@@ -128,7 +128,7 @@ export default function DesignerHeader({
                         </Link>
                     </Button>
                     <div className="hidden h-5 w-px bg-border sm:block" />
-                    <span className="hidden text-xs font-medium tracking-wide text-[#1A3694] sm:inline">
+                    <span className="hidden text-xs font-medium tracking-wide text-nppc-900 sm:inline">
                         Form Designer
                     </span>
                 </div>
@@ -229,7 +229,7 @@ export default function DesignerHeader({
                             </span>
                         )}
                         <Button
-                            className="bg-[#1A3694] hover:bg-[#365BB0]"
+                            className="bg-nppc-900 hover:bg-nppc-700"
                             size="sm"
                             onClick={onSave}
                             disabled={!canEdit || isSaving || (!isDirty && justSaved)}

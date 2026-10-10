@@ -22,11 +22,11 @@ export default function AnalystDashboard({
     const viewAllLabel = links.primary?.label ?? 'Open Analyst Workspace';
 
     return (
-        <div className="flex flex-col gap-3 md:gap-4">
+        <div className="flex flex-col gap-5">
             <NeedsAttentionPanel data={needsAttention} compact />
             <KpiGrid kpis={kpis} compact />
             <section className="space-y-2">
-                <h2 className="text-xs font-semibold tracking-wide text-[#1A3694] uppercase">
+                <h2 className="text-xs font-semibold tracking-wide text-slate-900 uppercase">
                     {queue.title}
                 </h2>
                 <AnalystJobPreviewCards

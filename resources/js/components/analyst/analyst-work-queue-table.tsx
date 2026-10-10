@@ -2,10 +2,13 @@ import AnalystStatusBadge from '@/components/analyst/analyst-status-badge';
 import type { AnalystTask, Consolidation } from '@/components/analyst/types';
 import {
     actionableTasks,
+    groupTasksBySample,
     jobAggregateStatus,
     jobMetaLine,
     jobProgress,
+    sampleBreakdown,
     taskActionLabel,
+    taskSampleLine,
 } from '@/components/analyst/types';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -84,6 +87,78 @@ function TaskActionContent({ task }: { task: AnalystTask }) {
     );
 }
 
+function QueueTaskRow({
+    task,
+    reviewNotes,
+    onOpenTask,
+    showSampleLine,
+}: {
+    task: AnalystTask;
+    reviewNotes?: string | null;
+    onOpenTask: (task: AnalystTask) => void;
+    showSampleLine: boolean;
+}) {
+    const mine = task.is_mine !== false;
+    const canWork =
+        task.can_work !== undefined ? task.can_work : mine;
+    const done = task.status === 'completed';
+    const sampleLine = showSampleLine ? taskSampleLine(task) : null;
+
+    return (
+        <li
+            className={cn(
+                'flex flex-wrap items-center justify-between gap-2 px-3 py-2.5',
+                task.status === 'returned' && canWork && 'bg-amber-50/70',
+                !canWork && 'opacity-90',
+            )}
+        >
+            <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-slate-900">
+                    {task.name}
+                </p>
+                {sampleLine ? (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {sampleLine}
+                    </p>
+                ) : null}
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <AnalystStatusBadge
+                        status={task.status}
+                        label={task.status_label}
+                    />
+                    <span className="text-xs text-muted-foreground">
+                        {assigneeLabel(task)}
+                    </span>
+                    {canWork &&
+                        task.status === 'returned' &&
+                        reviewNotes && (
+                            <span className="text-xs text-amber-800">
+                                Correction requested
+                            </span>
+                        )}
+                </div>
+            </div>
+            {canWork ? (
+                <Button
+                    size="sm"
+                    className={cn(
+                        'h-8 shrink-0 gap-1.5',
+                        !done && 'bg-nppc-900 hover:bg-nppc-700',
+                    )}
+                    variant={done ? 'outline' : 'default'}
+                    onClick={() => onOpenTask(task)}
+                >
+                    <TaskActionContent task={task} />
+                </Button>
+            ) : (
+                <span className="shrink-0 text-xs text-muted-foreground">
+                    View only
+                </span>
+            )}
+        </li>
+    );
+}
+
 export default function AnalystWorkQueueTable({
     groups,
     expandedIds,
@@ -98,7 +173,7 @@ export default function AnalystWorkQueueTable({
     if (groups.length === 0) {
         return (
             <div className="rounded-xl border bg-white px-4 py-12 text-center">
-                <p className="font-medium text-[#1A3694]">{empty.title}</p>
+                <p className="font-medium text-nppc-900">{empty.title}</p>
                 <p className="mt-1 text-sm text-muted-foreground">{empty.body}</p>
             </div>
         );
@@ -108,7 +183,7 @@ export default function AnalystWorkQueueTable({
         <div className="overflow-hidden rounded-xl border bg-white">
             <div className="max-h-[min(70vh,720px)] overflow-auto">
                 <table className="w-full min-w-[640px] border-collapse text-sm">
-                    <thead className="sticky top-0 z-10 bg-[#f8fafc] shadow-[0_1px_0_0_rgb(226_232_240)]">
+                    <thead className="sticky top-0 z-10 bg-nppc-page shadow-[0_1px_0_0_rgb(226_232_240)]">
                         <tr className="text-left text-xs font-semibold tracking-wide text-slate-500 uppercase">
                             <th className="px-2.5 py-2 font-semibold">
                                 Job Order
@@ -149,21 +224,24 @@ export default function AnalystWorkQueueTable({
                             const previewUrl = consolidation?.preview_url
                                 ? consolidation.preview_url
                                 : tasks[0]?.report?.can_preview
-                                  ? `/analyst/tasks/${tasks[0].id}/report`
+                                  ? `/analyst/job-orders/${job.id}/result-report`
                                   : null;
                             const canPreview = Boolean(
                                 consolidation?.can_preview ||
                                     tasks[0]?.report?.can_preview,
                             );
+                            const sampleRows = sampleBreakdown(tasks);
+                            const multiSample =
+                                (job.samples?.length ?? 0) >= 2;
 
                             return (
                                 <Fragment key={job.id}>
                                     <tr
                                         className={cn(
-                                            'cursor-pointer border-t border-slate-100 transition hover:bg-[#f8fafc]',
+                                            'cursor-pointer border-t border-slate-100 transition hover:bg-nppc-page',
                                             hasReturnedMine &&
                                                 'border-l-2 border-l-amber-400 bg-amber-50/20',
-                                            expanded && 'bg-[#f8fafc]',
+                                            expanded && 'bg-nppc-page',
                                         )}
                                         onClick={() => onToggleExpand(job.id)}
                                     >
@@ -174,7 +252,7 @@ export default function AnalystWorkQueueTable({
                                                 ) : (
                                                     <ChevronRight className="size-4 shrink-0 text-slate-500" />
                                                 )}
-                                                <span className="font-semibold text-[#1A3694]">
+                                                <span className="font-semibold text-nppc-900">
                                                     {job.reference_no}
                                                 </span>
                                                 <span className="text-xs text-muted-foreground">
@@ -185,13 +263,29 @@ export default function AnalystWorkQueueTable({
                                                 </span>
                                             </div>
                                         </td>
-                                        <td className="max-w-[14rem] px-2.5 py-1 align-middle">
+                                        <td className="max-w-[16rem] px-2.5 py-1 align-middle">
                                             <p className="truncate text-slate-800">
                                                 {job.customer_name}
                                             </p>
                                             <p className="truncate text-xs text-muted-foreground">
                                                 {jobMetaLine(job)}
                                             </p>
+                                            {multiSample ? (
+                                                <ul className="mt-1 space-y-0.5">
+                                                    {sampleRows.map((row) => (
+                                                        <li
+                                                            key={row.key}
+                                                            className="truncate text-[11px] leading-snug text-slate-600"
+                                                        >
+                                                            {row.label}
+                                                            {` · ${row.total} test${row.total === 1 ? '' : 's'}`}
+                                                            {row.done > 0
+                                                                ? ` (${row.done} done)`
+                                                                : ''}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            ) : null}
                                         </td>
                                         <td className="min-w-[8rem] px-2.5 py-1 align-middle">
                                             <p className="text-xs text-slate-600">
@@ -204,7 +298,7 @@ export default function AnalystWorkQueueTable({
                                                         'h-full rounded-full',
                                                         progress.percent === 100
                                                             ? 'bg-emerald-500'
-                                                            : 'bg-[#1A3694]',
+                                                            : 'bg-nppc-900',
                                                     )}
                                                     style={{
                                                         width: `${progress.percent}%`,
@@ -228,7 +322,7 @@ export default function AnalystWorkQueueTable({
                                                 {canSendToHead ? (
                                                     <Button
                                                         size="sm"
-                                                        className="h-7 gap-1.5 bg-[#1A3694] hover:bg-[#365BB0]"
+                                                        className="h-7 gap-1.5 bg-nppc-900 hover:bg-nppc-700"
                                                         onClick={() =>
                                                             onSendToHead(job.id)
                                                         }
@@ -243,7 +337,7 @@ export default function AnalystWorkQueueTable({
                                                     primaryTask && (
                                                         <Button
                                                             size="sm"
-                                                            className="h-7 gap-1.5 bg-[#1A3694] hover:bg-[#365BB0]"
+                                                            className="h-7 gap-1.5 bg-nppc-900 hover:bg-nppc-700"
                                                             onClick={() =>
                                                                 onOpenTask(
                                                                     primaryTask,
@@ -301,99 +395,83 @@ export default function AnalystWorkQueueTable({
                                                 colSpan={5}
                                                 className="px-3 py-0"
                                             >
-                                                <ul className="my-2 divide-y divide-slate-100 rounded-lg border bg-[#fafbfc]">
-                                                    {tasks.map((task) => {
-                                                        const mine =
-                                                            task.is_mine !==
-                                                            false;
-                                                        const canWork =
-                                                            task.can_work !==
-                                                            undefined
-                                                                ? task.can_work
-                                                                : mine;
-                                                        const done =
-                                                            task.status ===
-                                                            'completed';
-
-                                                        return (
-                                                            <li
-                                                                key={task.id}
-                                                                className={cn(
-                                                                    'flex flex-wrap items-center justify-between gap-2 px-3 py-2.5',
-                                                                    task.status ===
-                                                                        'returned' &&
-                                                                        canWork &&
-                                                                        'bg-amber-50/70',
-                                                                    !canWork &&
-                                                                        'opacity-90',
-                                                                )}
+                                                {multiSample ? (
+                                                    <div className="my-2 space-y-2">
+                                                        {groupTasksBySample(
+                                                            tasks,
+                                                        ).map((group) => (
+                                                            <div
+                                                                key={group.key}
+                                                                className="overflow-hidden rounded-lg border bg-[#fafbfc]"
                                                             >
-                                                                <div className="min-w-0 flex-1">
-                                                                    <p className="truncate text-sm font-medium text-slate-900">
-                                                                        {
-                                                                            task.name
-                                                                        }
-                                                                    </p>
-                                                                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                                                                        <AnalystStatusBadge
-                                                                            status={
-                                                                                task.status
+                                                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-white px-3 py-2">
+                                                                    <div className="min-w-0">
+                                                                        <p className="truncate text-xs font-semibold text-nppc-900">
+                                                                            {
+                                                                                group.label
                                                                             }
-                                                                            label={
-                                                                                task.status_label
-                                                                            }
-                                                                        />
-                                                                        <span className="text-xs text-muted-foreground">
-                                                                            {assigneeLabel(
-                                                                                task,
-                                                                            )}
-                                                                        </span>
-                                                                        {canWork &&
-                                                                            task.status ===
-                                                                                'returned' &&
-                                                                            job.review_notes && (
-                                                                                <span className="text-xs text-amber-800">
-                                                                                    Correction
-                                                                                    requested
-                                                                                </span>
-                                                                            )}
+                                                                        </p>
+                                                                        <p className="text-[11px] text-muted-foreground">
+                                                                            {
+                                                                                group.total
+                                                                            }{' '}
+                                                                            test
+                                                                            {group.total ===
+                                                                            1
+                                                                                ? ''
+                                                                                : 's'}
+                                                                            {group.done >
+                                                                            0
+                                                                                ? ` · ${group.done} done`
+                                                                                : ''}
+                                                                        </p>
                                                                     </div>
                                                                 </div>
-                                                                {canWork ? (
-                                                                    <Button
-                                                                        size="sm"
-                                                                        className={cn(
-                                                                            'h-8 shrink-0 gap-1.5',
-                                                                            !done &&
-                                                                                'bg-[#1A3694] hover:bg-[#365BB0]',
-                                                                        )}
-                                                                        variant={
-                                                                            done
-                                                                                ? 'outline'
-                                                                                : 'default'
-                                                                        }
-                                                                        onClick={() =>
-                                                                            onOpenTask(
-                                                                                task,
-                                                                            )
-                                                                        }
-                                                                    >
-                                                                        <TaskActionContent
-                                                                            task={
-                                                                                task
-                                                                            }
-                                                                        />
-                                                                    </Button>
-                                                                ) : (
-                                                                    <span className="shrink-0 text-xs text-muted-foreground">
-                                                                        View
-                                                                        only
-                                                                    </span>
-                                                                )}
-                                                            </li>
-                                                        );
-                                                    })}
-                                                </ul>
+                                                                <ul className="divide-y divide-slate-100">
+                                                                    {group.tasks.map(
+                                                                        (
+                                                                            task,
+                                                                        ) => (
+                                                                            <QueueTaskRow
+                                                                                key={
+                                                                                    task.id
+                                                                                }
+                                                                                task={
+                                                                                    task
+                                                                                }
+                                                                                reviewNotes={
+                                                                                    job.review_notes
+                                                                                }
+                                                                                onOpenTask={
+                                                                                    onOpenTask
+                                                                                }
+                                                                                showSampleLine={
+                                                                                    false
+                                                                                }
+                                                                            />
+                                                                        ),
+                                                                    )}
+                                                                </ul>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <ul className="my-2 divide-y divide-slate-100 rounded-lg border bg-[#fafbfc]">
+                                                        {tasks.map((task) => (
+                                                            <QueueTaskRow
+                                                                key={task.id}
+                                                                task={task}
+                                                                reviewNotes={
+                                                                    job.review_notes
+                                                                }
+                                                                onOpenTask={
+                                                                    onOpenTask
+                                                                }
+                                                                showSampleLine
+                                                            />
+                                                        ))}
+                                                    </ul>
+                                                )}
                                             </td>
                                         </tr>
                                     )}

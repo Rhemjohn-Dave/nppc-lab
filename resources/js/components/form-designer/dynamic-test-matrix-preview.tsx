@@ -201,7 +201,7 @@ function isSelected(
 }
 
 function selectionRing(selected: boolean): string {
-    return selected ? 'ring-2 ring-[#1A3694] ring-inset bg-[#1A3694]/10' : 'hover:bg-slate-50/80';
+    return selected ? 'ring-2 ring-nppc-900 ring-inset bg-nppc-900/10' : 'hover:bg-slate-50/80';
 }
 
 function InlineEditable({
@@ -262,7 +262,7 @@ function InlineEditable({
         return (
             <input
                 ref={inputRef}
-                className={`w-full min-w-0 border border-[#1A3694] bg-white px-0.5 outline-none ${className ?? ''}`}
+                className={`w-full min-w-0 border border-nppc-900 bg-white px-0.5 outline-none ${className ?? ''}`}
                 style={style}
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}

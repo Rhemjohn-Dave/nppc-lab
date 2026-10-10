@@ -91,7 +91,7 @@ export default function AnalystJobPreviewCards({
                             <Link
                                 href={workspaceHref}
                                 className={cn(
-                                    'block transition hover:bg-[#f8fafc]',
+                                    'block transition hover:bg-nppc-page',
                                     compact ? 'px-3 py-2.5' : 'px-4 py-4',
                                 )}
                                 onClick={(event) => {
@@ -127,7 +127,7 @@ export default function AnalystJobPreviewCards({
                                                     <ChevronRight className="size-4" />
                                                 )}
                                             </button>
-                                            <span className="font-semibold text-[#1A3694]">
+                                            <span className="font-semibold text-nppc-900">
                                                 {job.reference_no}
                                             </span>
                                             <span className="text-xs text-muted-foreground">
@@ -178,7 +178,7 @@ export default function AnalystJobPreviewCards({
                                                     'h-full rounded-full',
                                                     progress.percent === 100
                                                         ? 'bg-emerald-500'
-                                                        : 'bg-[#1A3694]',
+                                                        : 'bg-nppc-900',
                                                 )}
                                                 style={{
                                                     width: `${progress.percent}%`,

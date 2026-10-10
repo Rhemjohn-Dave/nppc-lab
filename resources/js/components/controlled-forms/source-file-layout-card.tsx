@@ -24,7 +24,7 @@ export default function SourceFileLayoutCard({
     return (
         <section className="rounded-lg border bg-white px-3 py-2">
             <div className="mb-2 flex items-center justify-between gap-2 border-b pb-1.5">
-                <h2 className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
+                <h2 className="text-[11px] font-semibold tracking-wider text-nppc-900 uppercase">
                     Source document &amp; PDF blueprint
                 </h2>
                 {hasMapping ? (
@@ -48,7 +48,7 @@ export default function SourceFileLayoutCard({
                 {revision?.original_name || revision?.has_original ? (
                     <div className="flex flex-col gap-2 rounded-md border bg-slate-50/70 px-2.5 py-2 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex min-w-0 items-start gap-2">
-                            <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-[#1A3694]/20 bg-white text-[#1A3694]">
+                            <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-nppc-900/20 bg-white text-nppc-900">
                                 <FileText className="size-4" aria-hidden="true" />
                             </div>
                             <div className="min-w-0">
@@ -112,7 +112,7 @@ export default function SourceFileLayoutCard({
                     {designerHref ? (
                         <Button
                             size="sm"
-                            className="bg-[#1A3694] hover:bg-[#365BB0]"
+                            className="bg-nppc-900 hover:bg-nppc-700"
                             asChild
                         >
                             <Link href={designerHref}>Open Form Designer</Link>

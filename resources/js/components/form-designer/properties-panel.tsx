@@ -73,7 +73,7 @@ export default function PropertiesPanel({
         return (
             <aside className="flex h-full min-h-0 flex-col bg-white">
                 <div className="shrink-0 border-b px-3 py-3">
-                    <h2 className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
+                    <h2 className="text-[11px] font-semibold tracking-wider text-nppc-900 uppercase">
                         Field Properties
                     </h2>
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -185,7 +185,7 @@ export default function PropertiesPanel({
         return (
             <aside className="flex h-full min-h-0 flex-col bg-white">
                 <div className="shrink-0 border-b px-3 py-3">
-                    <h2 className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
+                    <h2 className="text-[11px] font-semibold tracking-wider text-nppc-900 uppercase">
                         Field Properties
                     </h2>
                 </div>
@@ -249,7 +249,7 @@ export default function PropertiesPanel({
     return (
         <aside className="flex h-full min-h-0 flex-col bg-white">
             <div className="border-b px-3 py-3">
-                <h2 className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
+                <h2 className="text-[11px] font-semibold tracking-wider text-nppc-900 uppercase">
                     Field Properties
                 </h2>
                 <p className="mt-1 truncate text-sm font-medium text-slate-900">{selected.label}</p>

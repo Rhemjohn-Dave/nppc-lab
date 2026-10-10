@@ -26,7 +26,7 @@ class JobOrderPendingJoApproval extends Notification
             'reference_no' => $this->jobOrder->reference_no,
             'customer_name' => $this->jobOrder->customer_name,
             'message' => "Job order {$this->jobOrder->reference_no} is ready for Head JO approval.",
-            'href' => "/head/{$this->jobOrder->id}",
+            'href' => "/head/{$this->jobOrder->id}?view=jo",
         ];
     }
 

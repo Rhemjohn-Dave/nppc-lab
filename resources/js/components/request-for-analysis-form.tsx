@@ -15,6 +15,8 @@ export type FormSample = {
 
 export type FormAnalysis = {
     id: number;
+    sample_id?: number | null;
+    control_number?: string | null;
     name: string;
     category?: string | null;
     category_label?: string | null;
@@ -28,6 +30,17 @@ export type FormAnalysis = {
     result_unit?: string | null;
     result_remarks?: string | null;
     analysis_type_id?: number | null;
+};
+
+export type FormPackage = {
+    id: number;
+    sample_id?: number | null;
+    analysis_package_id: number;
+    name: string;
+    code?: string | null;
+    default_price?: string | number | null;
+    selected_type_ids: number[];
+    member_names?: string[];
 };
 
 export type CatalogItem = {
@@ -68,6 +81,7 @@ export type RequestForAnalysisData = {
     reviewer_name?: string | null;
     samples: FormSample[];
     analyses: FormAnalysis[];
+    packages?: FormPackage[];
     catalog?: CatalogItem[];
     document_control: {
         lab?: string;

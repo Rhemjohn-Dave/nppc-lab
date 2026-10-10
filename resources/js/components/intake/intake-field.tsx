@@ -27,16 +27,27 @@ export default function IntakeField({
 }: Props) {
     return (
         <div className={cn('min-w-0', className)}>
-            <Label htmlFor={htmlFor}>
+            <Label
+                htmlFor={htmlFor}
+                className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase"
+            >
                 {label}
-                {required ? ' *' : null}
+                {required ? (
+                    <span className="text-nppc-700"> *</span>
+                ) : null}
                 {hint ? (
-                    <span className="font-normal text-slate-500"> {hint}</span>
+                    <span className="font-normal normal-case tracking-normal text-slate-500">
+                        {' '}
+                        {hint}
+                    </span>
                 ) : null}
             </Label>
-            <div className="mt-1">{children}</div>
+            <div className="mt-1.5">{children}</div>
             {error ? (
-                <p className="mt-1 text-sm text-red-600" role="alert">
+                <p
+                    className="mt-1 border-l-2 border-rose-300 pl-2 text-xs font-medium text-rose-700"
+                    role="alert"
+                >
                     {error}
                 </p>
             ) : null}

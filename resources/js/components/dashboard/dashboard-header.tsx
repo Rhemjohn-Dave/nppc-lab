@@ -1,5 +1,13 @@
 import { Link } from '@inertiajs/react';
 import type { LucideIcon } from 'lucide-react';
+import {
+    Activity,
+    Download,
+    FilePlus2,
+    FileText,
+    History,
+    Printer,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { DashboardLink } from './types';
@@ -21,6 +29,26 @@ function formatToday(): string {
         month: 'long',
         day: 'numeric',
     });
+}
+
+function secondaryLinkIcon(label: string): LucideIcon {
+    const lower = label.toLowerCase();
+    if (lower.includes('audit')) {
+        return Activity;
+    }
+    if (lower.includes('print')) {
+        return Printer;
+    }
+    if (lower.includes('export') || lower.includes('download')) {
+        return Download;
+    }
+    if (lower.includes('history')) {
+        return History;
+    }
+    if (lower.includes('form') || lower.includes('revision')) {
+        return FilePlus2;
+    }
+    return FileText;
 }
 
 type BaseProps = {
@@ -63,30 +91,32 @@ export default function DashboardHeader(props: Props) {
         return (
             <header
                 className={cn(
-                    'rounded-xl border border-slate-200/80 bg-white shadow-sm',
-                    compact ? 'p-4' : 'p-5 md:p-6',
+                    'relative overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm',
+                    compact ? 'p-5 md:p-6' : 'p-5 md:p-6',
                 )}
             >
-                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                <div className="relative z-10 flex flex-col justify-between gap-6 md:flex-row md:items-center">
+                    <div className="flex min-w-0 items-start gap-4">
                         {Icon && (
                             <div
                                 className={cn(
-                                    'flex shrink-0 items-center justify-center rounded-lg bg-[#eef3fb] text-[#1A3694]',
-                                    compact ? 'size-10' : 'size-12 rounded-xl',
+                                    'flex shrink-0 items-center justify-center border border-nppc-100 bg-nppc-50 text-nppc-900 shadow-inner',
+                                    compact
+                                        ? 'size-12 rounded-xl'
+                                        : 'size-12 rounded-xl',
                                 )}
                                 aria-hidden="true"
                             >
-                                <Icon className={compact ? 'size-5' : 'size-6'} />
+                                <Icon className="size-6" />
                             </div>
                         )}
                         <div className="min-w-0">
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-xs font-semibold tracking-wider text-nppc-900 uppercase">
                                 {greeting}
                             </p>
                             <h1
                                 className={cn(
-                                    'font-heading font-semibold text-[#1A3694]',
+                                    'mt-0.5 font-heading font-bold tracking-tight text-slate-900',
                                     compact
                                         ? 'text-xl sm:text-2xl'
                                         : 'text-2xl md:text-3xl',
@@ -94,7 +124,7 @@ export default function DashboardHeader(props: Props) {
                             >
                                 {title}
                             </h1>
-                            <p className="mt-0.5 text-sm text-muted-foreground">
+                            <p className="mt-1 text-sm text-slate-500">
                                 {subtitle}
                             </p>
                             {!compact && (
@@ -103,28 +133,43 @@ export default function DashboardHeader(props: Props) {
                                 </p>
                             )}
                             {secondaryLinks.length > 0 && (
-                                <p
+                                <div
                                     className={cn(
-                                        'text-sm text-[#365BB0]',
-                                        compact ? 'mt-1.5' : 'mt-3',
+                                        'flex flex-wrap items-center gap-3 text-xs text-slate-600',
+                                        compact ? 'mt-3' : 'mt-3',
                                     )}
                                 >
-                                    {secondaryLinks.map((link, index) => (
-                                        <span key={link.href}>
-                                            {index > 0 && (
-                                                <span className="text-slate-400">
-                                                    {' · '}
-                                                </span>
-                                            )}
-                                            <Link
-                                                href={link.href}
-                                                className="hover:underline"
+                                    {secondaryLinks.map((link, index) => {
+                                        const LinkIcon = secondaryLinkIcon(
+                                            link.label,
+                                        );
+                                        return (
+                                            <span
+                                                key={link.href}
+                                                className="inline-flex items-center gap-3"
                                             >
-                                                {link.label}
-                                            </Link>
-                                        </span>
-                                    ))}
-                                </p>
+                                                {index > 0 ? (
+                                                    <span
+                                                        className="text-slate-300"
+                                                        aria-hidden="true"
+                                                    >
+                                                        •
+                                                    </span>
+                                                ) : null}
+                                                <Link
+                                                    href={link.href}
+                                                    className="inline-flex items-center gap-1.5 font-medium transition-colors hover:text-nppc-900"
+                                                >
+                                                    <LinkIcon
+                                                        className="size-3.5 text-slate-400"
+                                                        aria-hidden="true"
+                                                    />
+                                                    {link.label}
+                                                </Link>
+                                            </span>
+                                        );
+                                    })}
+                                </div>
                             )}
                         </div>
                     </div>
@@ -132,9 +177,13 @@ export default function DashboardHeader(props: Props) {
                         <Button
                             asChild
                             size={compact ? 'default' : 'lg'}
-                            className="w-full shrink-0 bg-[#1A3694] hover:bg-[#365BB0] sm:w-auto"
+                            className="w-full shrink-0 gap-2 bg-nppc-900 text-xs font-semibold shadow-sm shadow-nppc-500/20 hover:bg-nppc-700 sm:w-auto"
                         >
                             <Link href={primaryAction.href}>
+                                <FilePlus2
+                                    className="size-4"
+                                    aria-hidden="true"
+                                />
                                 {primaryAction.label}
                             </Link>
                         </Button>
@@ -149,10 +198,10 @@ export default function DashboardHeader(props: Props) {
     return (
         <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
+                <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900">
                     {title}
                 </h1>
-                <p className="text-sm text-muted-foreground">{subtitle}</p>
+                <p className="text-sm text-slate-500">{subtitle}</p>
             </div>
             {actions}
         </div>

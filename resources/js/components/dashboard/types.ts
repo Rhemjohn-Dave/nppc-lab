@@ -5,6 +5,10 @@ export type DashboardKpi = {
     href: string | null;
     tone: 'default' | 'success' | 'warning' | 'info';
     hint?: string | null;
+    /** Short status chip next to the value (e.g. "100% Validated") */
+    badge?: string | null;
+    /** Footer label opposite the action link (e.g. "CLEARED", "SHA-256") */
+    footnote?: string | null;
 };
 
 export type DashboardAttentionItem = {
@@ -88,7 +92,7 @@ export type AnalystDashboardJobGroup = {
 };
 
 export type DashboardProps = {
-    role: 'admin' | 'receiving' | 'analyst' | 'head' | 'generic';
+    role: 'admin' | 'receiving' | 'analyst' | 'head' | 'accounting' | 'generic';
     header: DashboardHeaderData;
     kpis: DashboardKpi[];
     needsAttention: DashboardNeedsAttention;
@@ -106,4 +110,5 @@ export type DashboardRole =
     | 'receiving'
     | 'analyst'
     | 'head'
+    | 'accounting'
     | 'generic';

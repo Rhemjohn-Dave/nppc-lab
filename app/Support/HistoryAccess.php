@@ -15,6 +15,7 @@ class HistoryAccess
         'receiving',
         'analyst',
         'head_analysis',
+        'accounting',
     ];
 
     /** @var list<string> */
@@ -85,6 +86,7 @@ class HistoryAccess
             ['id' => 'receiving', 'label' => 'Receiving'],
             ['id' => 'analyst', 'label' => 'Analyst'],
             ['id' => 'head_analysis', 'label' => 'Head Analysis'],
+            ['id' => 'accounting', 'label' => 'Accounting'],
         ];
     }
 }

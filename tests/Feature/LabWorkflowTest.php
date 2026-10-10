@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\JobOrderAnalysisStatus;
 use App\Enums\JobOrderStatus;
+use App\Mail\RequestReceivedMail;
 use App\Mail\ResultsReadyMail;
 use App\Models\AnalysisPackage;
 use App\Models\AnalysisType;
@@ -40,6 +41,7 @@ class LabWorkflowTest extends TestCase
 
         $job = JobOrder::query()->firstOrFail();
         $this->assertSame(JobOrderStatus::DraftSubmitted, $job->status);
+        Mail::assertSent(RequestReceivedMail::class, fn ($mail) => $mail->hasTo('jane@example.com'));
 
         $line = $job->analyses()->firstOrFail();
 
@@ -77,6 +79,7 @@ class LabWorkflowTest extends TestCase
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/draft", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '12.4',
                 'result_unit' => '%',
             ])
@@ -88,6 +91,7 @@ class LabWorkflowTest extends TestCase
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '12.5',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',
@@ -100,15 +104,17 @@ class LabWorkflowTest extends TestCase
 
         $job->refresh();
         $this->assertSame(JobOrderStatus::InAnalysis, $job->status);
-        Mail::assertNothingSent();
+        Mail::assertNotSent(ResultsReadyMail::class);
 
         $this->actingAs($analyst)
-            ->post("/analyst/job-orders/{$job->id}/submit-for-review")
+            ->post("/analyst/job-orders/{$job->id}/submit-for-review", [
+                'signatories' => $this->resultSignatories(),
+            ])
             ->assertRedirect();
 
         $job->refresh();
         $this->assertSame(JobOrderStatus::PendingReview, $job->status);
-        Mail::assertNothingSent();
+        Mail::assertNotSent(ResultsReadyMail::class);
 
         $this->actingAs($head)
             ->get('/history')
@@ -165,6 +171,7 @@ class LabWorkflowTest extends TestCase
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '1.0',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',
@@ -355,6 +362,7 @@ class LabWorkflowTest extends TestCase
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '10',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',
@@ -368,6 +376,7 @@ class LabWorkflowTest extends TestCase
         $this->actingAs($analyst)
             ->from('/analyst')
             ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '99',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',
@@ -424,7 +433,9 @@ class LabWorkflowTest extends TestCase
             ->assertRedirect();
 
         $this->actingAs($analyst)
-            ->post("/analyst/job-orders/{$job->id}/submit-for-review")
+            ->post("/analyst/job-orders/{$job->id}/submit-for-review", [
+                'signatories' => $this->resultSignatories(),
+            ])
             ->assertRedirect();
 
         $job->refresh();
@@ -460,9 +471,11 @@ class LabWorkflowTest extends TestCase
             ->assertRedirect()
             ->assertSessionHasNoErrors();
 
-        $line->refresh();
+        $line->refresh()->loadMissing('analysisType');
         $this->assertSame('12', $line->result_value);
-        $this->assertSame('Failed', $line->result_pass_fail);
+        if ($line->analysisType?->requires_pass_fail) {
+            $this->assertSame('Failed', $line->result_pass_fail);
+        }
         $this->assertSame(JobOrderStatus::ReadyForPickup, $job->fresh()->status);
     }
 
@@ -572,6 +585,7 @@ class LabWorkflowTest extends TestCase
             $worker = $line->assignee ?? $analyst;
             $this->actingAs($worker)
                 ->post("/analyst/tasks/{$line->id}/complete", [
+                    'performed_at' => '2026-07-29T15:00',
                     'result_value' => 'ND',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method'
@@ -587,11 +601,26 @@ class LabWorkflowTest extends TestCase
             ->assertSessionHasErrors('job_order');
 
         $this->actingAs($analyst)
-            ->post("/analyst/job-orders/{$job->id}/submit-for-review")
+            ->post("/analyst/job-orders/{$job->id}/submit-for-review", [
+                'signatories' => $this->resultSignatories(),
+            ])
             ->assertRedirect();
 
         $job->refresh();
         $this->assertSame(JobOrderStatus::PendingReview, $job->status);
+    }
+
+    /**
+     * @return list<array{name: string, prc_id: string}>
+     */
+    private function resultSignatories(): array
+    {
+        return [
+            ['name' => 'Test Analyst', 'prc_id' => '445566'],
+            ['name' => 'Second Analyst', 'prc_id' => '778899'],
+            ['name' => 'Third Analyst', 'prc_id' => '112233'],
+            ['name' => 'Fourth Analyst', 'prc_id' => '334455'],
+        ];
     }
 
     private function createFinishedJob(string $customerName, string $email): JobOrder
@@ -629,6 +658,7 @@ class LabWorkflowTest extends TestCase
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '1.0',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',
@@ -636,7 +666,9 @@ class LabWorkflowTest extends TestCase
             ->assertRedirect();
 
         $this->actingAs($analyst)
-            ->post("/analyst/job-orders/{$job->id}/submit-for-review")
+            ->post("/analyst/job-orders/{$job->id}/submit-for-review", [
+                'signatories' => $this->resultSignatories(),
+            ])
             ->assertRedirect();
 
         $job->refresh();

@@ -22,7 +22,7 @@ class DatabaseSeeder extends Seeder
     {
         app()[PermissionRegistrar::class]->forgetCachedPermissions();
 
-        foreach (['admin', 'receiving', 'analyst', 'head_analysis'] as $role) {
+        foreach (['admin', 'receiving', 'analyst', 'head_analysis', 'accounting'] as $role) {
             Role::findOrCreate($role);
         }
 
@@ -43,6 +43,7 @@ class DatabaseSeeder extends Seeder
             ['name' => 'Lab Analyst', 'email' => 'analyst@nppc.local', 'role' => 'analyst'],
             ['name' => 'Lab Analyst 2', 'email' => 'analyst2@nppc.local', 'role' => 'analyst'],
             ['name' => 'Head Analysis', 'email' => 'head@nppc.local', 'role' => 'head_analysis'],
+            ['name' => 'Accounting', 'email' => 'accounting@nppc.local', 'role' => 'accounting'],
         ];
 
         foreach ($users as $data) {

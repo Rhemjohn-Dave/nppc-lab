@@ -71,7 +71,8 @@ export function HorizontalRuler({ widthPx, lengthMm, pxPerMm, cursorMm }: Horizo
                         y1={0}
                         x2={cursorPx}
                         y2={RULER_SIZE}
-                        stroke="#1A3694"
+                        className="text-nppc-900"
+                        stroke="currentColor"
                         strokeWidth={1}
                     />
                 ) : null}
@@ -131,7 +132,8 @@ export function VerticalRuler({ heightPx, lengthMm, pxPerMm, cursorMm }: Vertica
                         y1={cursorPx}
                         x2={RULER_SIZE}
                         y2={cursorPx}
-                        stroke="#1A3694"
+                        className="text-nppc-900"
+                        stroke="currentColor"
                         strokeWidth={1}
                     />
                 ) : null}

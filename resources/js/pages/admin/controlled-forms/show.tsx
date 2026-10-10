@@ -200,7 +200,7 @@ export default function ControlledFormShow({
                                     className={cn(
                                         'inline-flex items-center gap-1.5 border-b-2 py-2 text-xs font-semibold transition-colors',
                                         selected
-                                            ? 'border-[#1A3694] text-[#1A3694]'
+                                            ? 'border-nppc-900 text-nppc-900'
                                             : 'border-transparent text-muted-foreground hover:border-slate-300 hover:text-slate-700',
                                     )}
                                     aria-current={selected ? 'page' : undefined}
@@ -211,7 +211,7 @@ export default function ControlledFormShow({
                                             className={cn(
                                                 'rounded-full px-1.5 py-0.5 font-mono text-[10px]',
                                                 selected
-                                                    ? 'bg-[#eef3fb] text-[#1A3694]'
+                                                    ? 'bg-nppc-50 text-nppc-900'
                                                     : 'bg-slate-100 text-slate-600',
                                             )}
                                         >
@@ -471,7 +471,7 @@ export default function ControlledFormShow({
                             <Button
                                 type="submit"
                                 disabled={revisionForm.processing}
-                                className="bg-[#1A3694] hover:bg-[#365BB0]"
+                                className="bg-nppc-900 hover:bg-nppc-700"
                             >
                                 Create revision
                             </Button>

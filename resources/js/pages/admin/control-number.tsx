@@ -1,8 +1,12 @@
 import { Head, useForm } from '@inertiajs/react';
+import QueueKpi from '@/components/lims/queue-kpi';
 import LimsWorkspace from '@/components/lims/lims-workspace';
+import WorkspaceHeader from '@/components/workspace-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { limsPanel } from '@/lib/lims-page-shell';
+import { cn } from '@/lib/utils';
 
 type Counter = {
     year: string;
@@ -36,58 +40,39 @@ export default function ControlNumberAdmin({ counter }: Props) {
         <>
             <Head title="Control number" />
             <LimsWorkspace>
-                <div>
-                    <h1 className="font-heading text-2xl font-semibold text-[#1A3694]">
-                        Control number
-                    </h1>
-                    <p className="text-sm text-muted-foreground">
-                        Set where the next Request for Analysis control number
-                        starts. Numbers use year + sequence (e.g.{' '}
-                        {formatControl(counter.year, 1)}).
-                    </p>
-                </div>
+                <WorkspaceHeader
+                    title="Control number"
+                    description={`Set where the next Request for Analysis control number starts. Numbers use year + sequence (e.g. ${formatControl(counter.year, 1)}).`}
+                />
 
                 <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
-                        <p className="text-sm text-muted-foreground">Year</p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
-                            {counter.year_full}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                            Series prefix {counter.year}
-                        </p>
-                    </div>
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-[#e8eef8]/60 p-4">
-                        <p className="text-sm text-muted-foreground">
-                            Highest issued
-                        </p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-[#1A3694]">
-                            {counter.highest_issued > 0
+                    <QueueKpi
+                        label="Year"
+                        value={counter.year_full}
+                        hint={`prefix ${counter.year}`}
+                    />
+                    <QueueKpi
+                        label="Highest issued"
+                        value={
+                            counter.highest_issued > 0
                                 ? formatControl(
                                       counter.year,
                                       counter.highest_issued,
                                   )
-                                : '—'}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                            From existing job orders
-                        </p>
-                    </div>
-                    <div className="rounded-xl border bg-gradient-to-br from-white to-emerald-50/70 p-4">
-                        <p className="text-sm text-muted-foreground">
-                            Next to issue
-                        </p>
-                        <p className="mt-1 font-heading text-3xl font-semibold text-emerald-800">
-                            {counter.next_reference}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                            Assigned on new intake submissions
-                        </p>
-                    </div>
+                                : '—'
+                        }
+                        hint="from job orders"
+                    />
+                    <QueueKpi
+                        label="Next to issue"
+                        value={counter.next_reference}
+                        hint="on intake"
+                        tone="success"
+                    />
                 </div>
 
                 <form
-                    className="max-w-xl space-y-4 rounded-xl border bg-white p-5"
+                    className={cn('max-w-xl space-y-4 p-5', limsPanel)}
                     onSubmit={(e) => {
                         e.preventDefault();
                         form.put('/admin/control-number', {
@@ -117,7 +102,7 @@ export default function ControlNumberAdmin({ counter }: Props) {
                         <p className="mt-1 text-xs text-muted-foreground">
                             Minimum allowed: {counter.min_next}. Next control
                             number preview:{' '}
-                            <span className="font-semibold text-[#1A3694]">
+                            <span className="font-semibold text-nppc-900">
                                 {preview}
                             </span>
                         </p>
@@ -128,7 +113,7 @@ export default function ControlNumberAdmin({ counter }: Props) {
                         )}
                     </div>
 
-                    <div className="rounded-lg border border-[#c5d4f0] bg-[#eef3fb] px-3 py-2 text-xs text-[#1A3694]">
+                    <div className="rounded-lg border border-nppc-200 bg-nppc-50 px-3 py-2 text-xs text-nppc-900">
                         Example: set <strong>500</strong> to issue{' '}
                         <strong>
                             {formatControl(counter.year, 500)}
@@ -140,7 +125,7 @@ export default function ControlNumberAdmin({ counter }: Props) {
                     <Button
                         type="submit"
                         disabled={form.processing}
-                        className="bg-[#1A3694] hover:bg-[#365BB0]"
+                        className="bg-nppc-900 hover:bg-nppc-700"
                     >
                         {form.processing
                             ? 'Saving…'

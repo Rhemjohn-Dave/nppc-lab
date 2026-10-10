@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\JobOrderStatus;
+use App\Models\EmailLog;
 use App\Models\JobOrder;
 use App\Services\JobOrderService;
 use App\Support\JobOrderFormPresenter;
@@ -128,10 +129,17 @@ class ReceivingController extends Controller
 
     public function show(JobOrder $jobOrder): Response
     {
-        $jobOrder->load(['samples', 'analyses.analysisType', 'analyses.assignee', 'joApprover']);
+        $jobOrder->load([
+            'samples',
+            'analyses.analysisType',
+            'analyses.assignee',
+            'packageLinks.analysisPackage.analysisTypes',
+            'joApprover',
+        ]);
 
         return Inertia::render('receiving/show', [
             'jobOrder' => $this->transformJobOrder($jobOrder),
+            'emailLogs' => EmailLog::summariesFor($jobOrder),
         ]);
     }
 

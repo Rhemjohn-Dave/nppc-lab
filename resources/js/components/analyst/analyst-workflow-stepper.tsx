@@ -4,10 +4,90 @@ import { jobWorkflowSteps } from './types';
 
 type Props = {
     job: AnalystTask['job_order'];
+    /** Dense single-row strip for the encoding workbench header. */
+    compact?: boolean;
 };
 
-export default function AnalystWorkflowStepper({ job }: Props) {
+export default function AnalystWorkflowStepper({
+    job,
+    compact = false,
+}: Props) {
     const steps = jobWorkflowSteps(job);
+
+    if (compact) {
+        return (
+            <ol
+                className="flex max-w-3xl items-center gap-1 overflow-x-auto"
+                aria-label="Job order workflow"
+            >
+                {steps.map((step, index) => {
+                    const isLast = index === steps.length - 1;
+
+                    return (
+                        <li
+                            key={step.key}
+                            className="flex shrink-0 items-center gap-1"
+                        >
+                            <div
+                                className={cn(
+                                    'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5',
+                                    step.state === 'current' &&
+                                        'border border-nppc-200 bg-nppc-50 shadow-xs',
+                                )}
+                            >
+                                <span
+                                    className={cn(
+                                        'flex size-3.5 items-center justify-center rounded-full text-[9px] font-semibold',
+                                        step.state === 'done' &&
+                                            'bg-emerald-500 text-white',
+                                        step.state === 'current' &&
+                                            'bg-nppc-900 text-white',
+                                        step.state === 'upcoming' &&
+                                            'border border-slate-300 bg-white text-slate-400',
+                                    )}
+                                    aria-hidden="true"
+                                >
+                                    {step.state === 'done'
+                                        ? '✓'
+                                        : step.state === 'current'
+                                          ? '●'
+                                          : ''}
+                                </span>
+                                <span
+                                    className={cn(
+                                        'text-[11px] font-medium whitespace-nowrap',
+                                        step.state === 'upcoming'
+                                            ? 'text-slate-400'
+                                            : step.state === 'current'
+                                              ? 'font-semibold text-nppc-900'
+                                              : 'text-slate-700',
+                                    )}
+                                >
+                                    {step.label}
+                                </span>
+                                {step.state === 'current' ? (
+                                    <span className="rounded-full bg-nppc-100 px-1.5 py-px text-[9px] font-bold tracking-wide text-nppc-800 uppercase">
+                                        In progress
+                                    </span>
+                                ) : null}
+                            </div>
+                            {!isLast ? (
+                                <span
+                                    className={cn(
+                                        'mx-0.5 h-px w-4 shrink-0',
+                                        step.state === 'done'
+                                            ? 'bg-emerald-300'
+                                            : 'bg-slate-200',
+                                    )}
+                                    aria-hidden="true"
+                                />
+                            ) : null}
+                        </li>
+                    );
+                })}
+            </ol>
+        );
+    }
 
     return (
         <ol
@@ -37,7 +117,7 @@ export default function AnalystWorkflowStepper({ job }: Props) {
                                     step.state === 'done' &&
                                         'bg-emerald-100 text-emerald-800',
                                     step.state === 'current' &&
-                                        'bg-[#1A3694] text-white',
+                                        'bg-nppc-900 text-white',
                                     step.state === 'upcoming' &&
                                         'bg-slate-100 text-slate-400',
                                 )}
@@ -55,7 +135,7 @@ export default function AnalystWorkflowStepper({ job }: Props) {
                                     step.state === 'upcoming'
                                         ? 'text-slate-400'
                                         : 'text-slate-800',
-                                    step.state === 'current' && 'text-[#1A3694]',
+                                    step.state === 'current' && 'text-nppc-900',
                                 )}
                             >
                                 {step.label}

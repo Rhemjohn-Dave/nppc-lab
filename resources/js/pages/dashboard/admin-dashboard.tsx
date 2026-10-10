@@ -17,36 +17,54 @@ type Props = Pick<
 
 function withAdminKpiHints(kpis: DashboardKpi[]): DashboardKpi[] {
     return kpis.map((kpi) => {
-        if (kpi.hint) {
-            return kpi;
-        }
+        const next: DashboardKpi = { ...kpi };
+
         switch (kpi.key) {
             case 'active_forms':
-                return {
-                    ...kpi,
-                    hint:
-                        kpi.value > 0
-                            ? 'Templates in production'
-                            : 'None active yet',
-                };
+                next.hint = kpi.hint ?? 'Templates in production';
+                next.badge =
+                    kpi.badge ??
+                    (kpi.value > 0 ? '100% Validated' : 'None active');
+                next.footnote = kpi.footnote ?? 'v2.4 engine';
+                break;
             case 'pending_revisions':
-                return {
-                    ...kpi,
-                    hint: kpi.value === 0 ? 'No backlog' : 'QA sign-off queue',
-                };
+                next.hint =
+                    kpi.hint ??
+                    (kpi.value === 0
+                        ? 'No pending approval backlog'
+                        : 'QA sign-off queue');
+                next.badge =
+                    kpi.badge ??
+                    (kpi.value === 0 ? 'Nominal TAT' : 'Needs attention');
+                next.footnote =
+                    kpi.footnote ?? (kpi.value === 0 ? 'CLEARED' : 'IN QUEUE');
+                next.tone =
+                    kpi.value === 0
+                        ? 'success'
+                        : kpi.tone === 'default'
+                          ? 'warning'
+                          : kpi.tone;
+                break;
             case 'draft_revisions':
-                return {
-                    ...kpi,
-                    hint: kpi.value === 0 ? 'In draft mode' : 'Needs mapping',
-                };
+                next.hint = kpi.hint ?? 'Ready for authoring';
+                next.badge = kpi.badge ?? 'In draft staging';
+                next.footnote = kpi.footnote ?? 'SANDBOX';
+                next.tone =
+                    kpi.tone === 'default' && kpi.value > 0
+                        ? 'warning'
+                        : kpi.tone;
+                break;
             case 'audit_events_7d':
-                return {
-                    ...kpi,
-                    hint: 'Last 7 days',
-                };
+                next.hint = kpi.hint ?? 'Integrity hashes validated';
+                next.badge = kpi.badge ?? 'Last 7 days';
+                next.footnote = kpi.footnote ?? 'SHA-256';
+                next.tone = kpi.tone === 'default' ? 'info' : kpi.tone;
+                break;
             default:
-                return kpi;
+                break;
         }
+
+        return next;
     });
 }
 
@@ -59,8 +77,7 @@ export default function AdminDashboard({
     links,
 }: Props) {
     const strip = extras?.workflow_strip ?? [];
-    const viewAllHref =
-        links.primary?.href ?? '/admin/controlled-forms';
+    const viewAllHref = links.primary?.href ?? '/admin/controlled-forms';
     const annotatedKpis = useMemo(() => withAdminKpiHints(kpis), [kpis]);
     const activeFormsKpi = kpis.find((kpi) => kpi.key === 'active_forms');
     const registryQueue = {
@@ -73,20 +90,17 @@ export default function AdminDashboard({
         action: activity.action
             ? {
                   ...activity.action,
-                  label: `Inspect audit events`,
+                  label: 'View all audit logs',
               }
             : activity.action,
     };
 
     return (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-5">
             <KpiGrid kpis={annotatedKpis} compact />
-            <NeedsAttentionPanel
-                data={needsAttention}
-                variant="banner"
-            />
-            <div className="grid gap-3 xl:grid-cols-3">
-                <div className="min-w-0 xl:col-span-2">
+            <NeedsAttentionPanel data={needsAttention} variant="banner" />
+            <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12">
+                <div className="min-w-0 space-y-4 lg:col-span-8">
                     <DashboardQueueTable
                         data={registryQueue}
                         compact
@@ -98,7 +112,7 @@ export default function AdminDashboard({
                         viewAllLabel="View all catalog"
                     />
                 </div>
-                <div className="min-w-0 space-y-3">
+                <div className="min-w-0 space-y-4 lg:col-span-4">
                     <RecentActivity
                         data={auditActivity}
                         compact

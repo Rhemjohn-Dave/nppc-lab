@@ -143,8 +143,14 @@ class JobOrder extends Model
     {
         return $this->belongsToMany(AnalysisPackage::class, 'job_order_packages')
             ->using(JobOrderPackage::class)
-            ->withPivot(['selected_type_ids', 'waived_type_ids'])
+            ->withPivot(['id', 'sample_id', 'selected_type_ids', 'waived_type_ids'])
             ->withTimestamps();
+    }
+
+    /** @return HasMany<\App\Models\JobOrderPackage, $this> */
+    public function packageLinks(): HasMany
+    {
+        return $this->hasMany(JobOrderPackage::class);
     }
 
     /**

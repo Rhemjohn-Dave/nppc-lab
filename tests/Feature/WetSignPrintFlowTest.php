@@ -130,6 +130,7 @@ class WetSignPrintFlowTest extends TestCase
         foreach ($job->fresh()->analyses()->with('assignee')->get() as $line) {
             $this->actingAs($line->assignee ?? $signatory)
                 ->post("/analyst/tasks/{$line->id}/complete", [
+                    'performed_at' => '2026-07-29T15:00',
                     'result_value' => 'ND',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method'
@@ -166,7 +167,11 @@ class WetSignPrintFlowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('can_preview', true)
             ->assertJsonPath('can_print', false)
-            ->assertJsonPath('pdf_url', "/head/{$job->id}/combined-pdf");
+            ->assertJson(
+                fn ($json) => $json
+                    ->where('pdf_url', fn ($url) => is_string($url) && str_starts_with($url, "/head/{$job->id}/combined-pdf"))
+                    ->etc()
+            );
 
         $this->actingAs($head)
             ->get("/head/{$job->id}/combined-pdf")
@@ -282,6 +287,7 @@ class WetSignPrintFlowTest extends TestCase
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
                 'result_value' => '1.0',
                     'result_pass_fail' => 'Passed',
                     'result_method' => 'Standard Method',

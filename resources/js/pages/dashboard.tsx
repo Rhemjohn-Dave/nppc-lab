@@ -6,6 +6,7 @@ import NavigationLoadingShell from '@/components/loading/navigation-loading-shel
 import type { DashboardProps } from '@/components/dashboard/types';
 import { limsPageBackground, limsPageShellWide } from '@/lib/lims-page-shell';
 import AdminDashboard from '@/pages/dashboard/admin-dashboard';
+import AccountingDashboard from '@/pages/dashboard/accounting-dashboard';
 import AnalystDashboard from '@/pages/dashboard/analyst-dashboard';
 import HeadDashboard from '@/pages/dashboard/head-dashboard';
 import ReceivingDashboard from '@/pages/dashboard/receiving-dashboard';
@@ -37,7 +38,8 @@ export default function Dashboard(props: DashboardProps) {
                     layout={
                         role === 'receiving' ||
                         role === 'analyst' ||
-                        role === 'head'
+                        role === 'head' ||
+                        role === 'accounting'
                             ? 'fluid'
                             : role === 'admin'
                               ? 'wide'
@@ -47,7 +49,8 @@ export default function Dashboard(props: DashboardProps) {
                         role === 'receiving' ||
                         role === 'analyst' ||
                         role === 'head' ||
-                        role === 'admin'
+                        role === 'admin' ||
+                        role === 'accounting'
                             ? 'compact'
                             : 'default'
                     }
@@ -57,6 +60,9 @@ export default function Dashboard(props: DashboardProps) {
                         {role === 'receiving' && <ReceivingDashboard {...props} />}
                         {role === 'analyst' && <AnalystDashboard {...props} />}
                         {role === 'head' && <HeadDashboard {...props} />}
+                        {role === 'accounting' && (
+                            <AccountingDashboard {...props} />
+                        )}
                     </NavigationLoadingShell>
                 </DashboardShell>
             )}

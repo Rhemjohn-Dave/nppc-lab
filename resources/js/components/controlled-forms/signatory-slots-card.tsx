@@ -18,7 +18,7 @@ export default function SignatorySlotsCard({ slots, requirePrc, onEdit }: Props)
         <section className="rounded-lg border bg-white px-3 py-2">
             <div className="mb-1.5 flex items-center justify-between gap-2">
                 <div>
-                    <h2 className="text-[11px] font-semibold tracking-wider text-[#1A3694] uppercase">
+                    <h2 className="text-[11px] font-semibold tracking-wider text-nppc-900 uppercase">
                         Analyst signatory slots
                     </h2>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -30,7 +30,7 @@ export default function SignatorySlotsCard({ slots, requirePrc, onEdit }: Props)
                         type="button"
                         size="sm"
                         variant="ghost"
-                        className="h-7 px-2 text-xs text-[#1A3694]"
+                        className="h-7 px-2 text-xs text-nppc-900"
                         onClick={onEdit}
                     >
                         Edit
