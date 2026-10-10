@@ -66,7 +66,7 @@ class AnalysisResultReport
     }
 
     /**
-     * @return array{kind: string, title: string, message: string|null, can_preview: bool, can_print: bool, sample_id: int|null, control_number: string|null}
+     * @return array{kind: string, title: string, message: string|null, can_preview: bool, can_print: bool, sample_id: int|null, form_id: int|null, control_number: string|null}
      */
     public function summary(): array
     {
@@ -77,6 +77,7 @@ class AnalysisResultReport
             'can_preview' => $this->canPreview(),
             'can_print' => $this->canPrint(),
             'sample_id' => $this->sampleId,
+            'form_id' => $this->controlledForm?->id,
             'control_number' => $this->controlNumber,
         ];
     }
@@ -95,6 +96,7 @@ class AnalysisResultReport
             'can_preview' => $this->canPreview(),
             'can_print' => $this->canPrint(),
             'sample_id' => $this->sampleId,
+            'form_id' => $this->controlledForm?->id,
             'control_number' => $this->controlNumber,
             'template_url' => $templateUrl,
             'pdf_url' => $pdfUrl,

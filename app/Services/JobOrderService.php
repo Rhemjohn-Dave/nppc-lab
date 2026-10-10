@@ -20,6 +20,7 @@ use App\Notifications\JobOrderSubmitted;
 use App\Notifications\ResultsReleased;
 use App\Support\ResultSignatories;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -177,6 +178,8 @@ class JobOrderService
             $sampleTypesExplicit = $typesExplicitlyListed && $requestedTypeIds !== [];
             $analysisTypeIds = $requestedTypeIds;
             $waivedAll = [];
+            /** @var list<array{price: float, type_ids: list<int>}> $fullPackages */
+            $fullPackages = [];
 
             foreach ($packageIds as $packageId) {
                 $package = $packages->get($packageId);
@@ -208,6 +211,13 @@ class JobOrderService
                     'waived_type_ids' => $waived,
                 ]);
 
+                if ($waived === []) {
+                    $fullPackages[] = [
+                        'price' => (float) $package->default_price,
+                        'type_ids' => array_map('intval', $selected),
+                    ];
+                }
+
                 foreach ($selected as $typeId) {
                     $analysisTypeIds[] = $typeId;
                 }
@@ -231,6 +241,8 @@ class JobOrderService
                 ->get()
                 ->keyBy('id');
 
+            $packagePrices = $this->packageLinePrices($fullPackages, $types);
+
             foreach ($analysisTypeIds as $typeId) {
                 $type = $types->get($typeId);
                 if (! $type) {
@@ -238,6 +250,7 @@ class JobOrderService
                 }
 
                 $type->loadMissing('category');
+                $price = $packagePrices[(int) $type->id] ?? $type->default_price;
 
                 $jobOrder->analyses()->create([
                     'sample_id' => $sampleModel->id,
@@ -246,8 +259,8 @@ class JobOrderService
                     'category' => $type->category?->slug,
                     'category_label' => $type->category?->name,
                     'quantity' => 1,
-                    'unit_price' => $type->default_price,
-                    'total_cost' => $type->default_price,
+                    'unit_price' => $price,
+                    'total_cost' => $price,
                     'status' => JobOrderAnalysisStatus::Pending,
                 ]);
             }
@@ -269,6 +282,52 @@ class JobOrderService
                 'status' => JobOrderAnalysisStatus::Pending,
             ]);
         }
+    }
+
+    /**
+     * Split each fully-selected package's price across its member lines, weighted by
+     * test list price (same as Receiving's package price edit); last line takes the remainder.
+     *
+     * @param  list<array{price: float, type_ids: list<int>}>  $fullPackages
+     * @param  Collection<int, AnalysisType>  $types
+     * @return array<int, float>
+     */
+    private function packageLinePrices(array $fullPackages, Collection $types): array
+    {
+        $prices = [];
+
+        foreach ($fullPackages as $package) {
+            $memberIds = array_values(array_filter(
+                $package['type_ids'],
+                fn (int $id): bool => $types->has($id) && ! array_key_exists($id, $prices),
+            ));
+            if ($memberIds === []) {
+                continue;
+            }
+
+            $weights = array_map(function (int $id) use ($types): float {
+                $listPrice = (float) $types->get($id)->default_price;
+
+                return $listPrice > 0 ? $listPrice : 1.0;
+            }, $memberIds);
+            $weightSum = array_sum($weights);
+            $allocated = 0.0;
+            $last = count($memberIds) - 1;
+
+            foreach ($memberIds as $i => $id) {
+                if ($i === $last) {
+                    $prices[$id] = round($package['price'] - $allocated, 2);
+
+                    continue;
+                }
+
+                $share = round($package['price'] * $weights[$i] / $weightSum, 2);
+                $allocated += $share;
+                $prices[$id] = $share;
+            }
+        }
+
+        return $prices;
     }
 
     /**

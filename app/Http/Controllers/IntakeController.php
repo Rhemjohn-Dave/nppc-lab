@@ -5,22 +5,44 @@ namespace App\Http\Controllers;
 use App\Models\AnalysisCategory;
 use App\Models\AnalysisPackage;
 use App\Models\AnalysisType;
+use App\Models\ControlledForm;
 use App\Models\Customer;
 use App\Models\JobOrder;
 use App\Enums\AnalysisCategory as AnalysisCategoryEnum;
 use App\Enums\CatalogScope;
+use App\Enums\ControlledFormCategory;
 use App\Enums\PaymentMode;
 use App\Enums\PaymentTerms;
 use App\Services\JobOrderService;
 use App\Support\OfficialAnalysisCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class IntakeController extends Controller
 {
+    /**
+     * Fixed key/label/classifications for known result panels (order = intake order).
+     * Other active types-only result forms get generated values.
+     *
+     * @var array<string, array{key: string, label: string, classifications: list<string>}>
+     */
+    private const PRESET_META = [
+        'LSP-7.8-FO2' => ['key' => 'ww_physico_fo2', 'label' => 'Physico-Chemical (Wastewater)', 'classifications' => ['Wastewater']],
+        'LSP-7.8-F016-PROX' => ['key' => 'proximate_f016', 'label' => 'Proximate Analysis', 'classifications' => ['Proximate Analysis']],
+        'LSP-7.8-F016-MILK' => ['key' => 'milk_f016', 'label' => 'Milk Sample Analysis', 'classifications' => ['Other Food Analysis']],
+        'LSP-7.8-F016-WA' => ['key' => 'water_activity_f016', 'label' => 'Water Activity', 'classifications' => ['Other Food Analysis']],
+        'LSP-7.8-F016-CAP' => ['key' => 'chloramphenicol_f016', 'label' => 'Chloramphenicol', 'classifications' => ['Other Food Analysis', 'Aqua']],
+        'LSP-7.8-F016-NO2' => ['key' => 'nitrite_f016', 'label' => 'Nitrite Content', 'classifications' => ['Other Food Analysis']],
+        'LSP-7.8-FO26' => ['key' => 'food_micro_fo26', 'label' => 'Microbiological Examination — Food', 'classifications' => ['Food Products - Microbiological Test']],
+        'LSP-7.8-FO27' => ['key' => 'food_micro_sugar_fo27', 'label' => 'Microbiological Examination — Sugar', 'classifications' => ['Food Products - Microbiological Test']],
+        'LSP-7.8-FO3' => ['key' => 'dw_physico_old_fo3', 'label' => 'Physico-Chemical (Drinking Water — Old Mandatory)', 'classifications' => ['Potability']],
+        'LSP-7.8-FO5' => ['key' => 'dw_micro_fo5', 'label' => 'Microbiological Examination — Drinking Water', 'classifications' => ['Potability']],
+    ];
+
     public function __construct(private readonly JobOrderService $jobOrders) {}
 
     public function index(): Response
@@ -134,113 +156,63 @@ class IntakeController extends Controller
      */
     private function typePresets(): array
     {
-        $presets = [];
+        $meta = self::PRESET_META;
+        $metaOrder = array_flip(array_keys($meta));
 
-        $fo2Tests = $this->kioskTestsForCodes(OfficialAnalysisCatalog::wastewaterPhysicoIssue18TypeCodes());
-        if ($fo2Tests !== []) {
-            $presets[] = [
-                'key' => 'ww_physico_fo2',
-                'label' => 'Physico-Chemical (Wastewater)',
-                'description' => 'LSP 7.8 FO2 Issue 18 panel — individual pay, not a package.',
-                'form_code' => 'LSP-7.8-FO2',
-                'classifications' => ['Wastewater'],
-                'analysis_type_ids' => array_column($fo2Tests, 'id'),
-                'tests' => $fo2Tests,
-            ];
-        }
+        return ControlledForm::query()
+            ->where('category', ControlledFormCategory::AnalysisResult)
+            ->whereNull('analysis_package_id')
+            ->with(['currentRevision', 'analysisTypes.category'])
+            ->get()
+            ->filter(fn (ControlledForm $form): bool => $form->activeRevision() !== null)
+            ->map(function (ControlledForm $form) use ($meta): ?array {
+                $types = $form->analysisTypes
+                    ->filter(fn (AnalysisType $type): bool => $type->is_active && $type->show_on_kiosk)
+                    ->sortBy(fn (AnalysisType $type): int => (int) ($type->pivot->slot ?? 0))
+                    ->values();
+                if ($types->isEmpty()) {
+                    return null;
+                }
 
-        $proximateTests = $this->kioskTestsForCodes(OfficialAnalysisCatalog::proximateAnalysisTypeCodes());
-        if ($proximateTests !== []) {
-            $presets[] = [
-                'key' => 'proximate_f016',
-                'label' => 'Proximate Analysis',
-                'description' => 'LSP 7.8 F016-PROX panel — individual pay, not a package.',
-                'form_code' => 'LSP-7.8-F016-PROX',
-                'classifications' => ['Proximate Analysis'],
-                'analysis_type_ids' => array_column($proximateTests, 'id'),
-                'tests' => $proximateTests,
-            ];
-        }
+                $tests = $types->map(fn (AnalysisType $type): array => [
+                    'id' => (int) $type->id,
+                    'code' => (string) $type->code,
+                    'name' => (string) $type->name,
+                    'default_price' => $type->default_price,
+                    'catalog_scope' => $type->catalog_scope ?: 'non_aqua',
+                ])->all();
 
-        $milkTests = $this->kioskTestsForCodes(OfficialAnalysisCatalog::milkAnalysisTypeCodes());
-        if ($milkTests !== []) {
-            $presets[] = [
-                'key' => 'milk_f016',
-                'label' => 'Milk Sample Analysis',
-                'description' => 'LSP 7.8 F016-MILK panel — individual pay, not a package.',
-                'form_code' => 'LSP-7.8-F016-MILK',
-                'classifications' => ['Other Food Analysis'],
-                'analysis_type_ids' => array_column($milkTests, 'id'),
-                'tests' => $milkTests,
-            ];
-        }
+                $code = (string) $form->form_code;
+                $known = $meta[$code] ?? null;
 
-        $waterActivityTests = $this->kioskTestsForCodes(OfficialAnalysisCatalog::waterActivityTypeCodes());
-        if ($waterActivityTests !== []) {
-            $presets[] = [
-                'key' => 'water_activity_f016',
-                'label' => 'Water Activity',
-                'description' => 'LSP 7.8 F016-WA panel — individual pay, not a package.',
-                'form_code' => 'LSP-7.8-F016-WA',
-                'classifications' => ['Other Food Analysis'],
-                'analysis_type_ids' => array_column($waterActivityTests, 'id'),
-                'tests' => $waterActivityTests,
-            ];
-        }
+                return [
+                    'key' => $known['key'] ?? Str::slug($code, '_'),
+                    'label' => $known['label'] ?? $this->presetLabelFromFormName((string) $form->name),
+                    'description' => "{$code} panel — individual pay, not a package.",
+                    'form_code' => $code,
+                    'classifications' => $known['classifications'] ?? $types
+                        ->map(fn (AnalysisType $type): ?string => $type->category?->name)
+                        ->filter()
+                        ->unique()
+                        ->values()
+                        ->all(),
+                    'analysis_type_ids' => array_column($tests, 'id'),
+                    'tests' => $tests,
+                ];
+            })
+            ->filter()
+            ->sortBy(fn (array $preset): string => isset($metaOrder[$preset['form_code']])
+                ? sprintf('0_%03d', $metaOrder[$preset['form_code']])
+                : '1_'.$preset['form_code'])
+            ->values()
+            ->all();
+    }
 
-        $chloramphenicolTests = $this->kioskTestsForCodes(OfficialAnalysisCatalog::chloramphenicolTypeCodes());
-        if ($chloramphenicolTests !== []) {
-            $presets[] = [
-                'key' => 'chloramphenicol_f016',
-                'label' => 'Chloramphenicol',
-                'description' => 'LSP 7.8 F016-CAP panel — individual pay, not a package.',
-                'form_code' => 'LSP-7.8-F016-CAP',
-                'classifications' => ['Other Food Analysis', 'Aqua'],
-                'analysis_type_ids' => array_column($chloramphenicolTests, 'id'),
-                'tests' => $chloramphenicolTests,
-            ];
-        }
+    private function presetLabelFromFormName(string $name): string
+    {
+        $label = trim((string) preg_replace('/\s*(Test\s+)?Result\s+Form$/i', '', $name));
 
-        $nitriteTests = $this->kioskTestsForCodes(OfficialAnalysisCatalog::nitriteTypeCodes());
-        if ($nitriteTests !== []) {
-            $presets[] = [
-                'key' => 'nitrite_f016',
-                'label' => 'Nitrite Content',
-                'description' => 'LSP 7.8 F016-NO2 panel — individual pay, not a package.',
-                'form_code' => 'LSP-7.8-F016-NO2',
-                'classifications' => ['Other Food Analysis'],
-                'analysis_type_ids' => array_column($nitriteTests, 'id'),
-                'tests' => $nitriteTests,
-            ];
-        }
-
-        $fo26Tests = $this->kioskTestsForCodes(OfficialAnalysisCatalog::foodMicroFo26TypeCodes());
-        if ($fo26Tests !== []) {
-            $presets[] = [
-                'key' => 'food_micro_fo26',
-                'label' => 'Microbiological Examination — Food',
-                'description' => 'LSP 7.8 FO26 Issue 4 panel — individual pay, not a package.',
-                'form_code' => 'LSP-7.8-FO26',
-                'classifications' => ['Food Products - Microbiological Test'],
-                'analysis_type_ids' => array_column($fo26Tests, 'id'),
-                'tests' => $fo26Tests,
-            ];
-        }
-
-        $fo27Tests = $this->kioskTestsForCodes(OfficialAnalysisCatalog::foodMicroSugarTypeCodes());
-        if ($fo27Tests !== []) {
-            $presets[] = [
-                'key' => 'food_micro_sugar_fo27',
-                'label' => 'Microbiological Examination — Sugar',
-                'description' => 'LSP 7.8 FO27 Issue 4 panel — individual pay, not a package.',
-                'form_code' => 'LSP-7.8-FO27',
-                'classifications' => ['Food Products - Microbiological Test'],
-                'analysis_type_ids' => array_column($fo27Tests, 'id'),
-                'tests' => $fo27Tests,
-            ];
-        }
-
-        return $presets;
+        return $label !== '' ? $label : $name;
     }
 
     /**
@@ -293,39 +265,6 @@ class IntakeController extends Controller
                     'catalog_scope' => $type->catalog_scope ?: 'non_aqua',
                 ])->values(),
             ])
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @param  list<string>  $codes
-     * @return list<array{id: int, code: string, name: string, default_price: mixed, catalog_scope: string}>
-     */
-    private function kioskTestsForCodes(array $codes): array
-    {
-        $byCode = AnalysisType::query()
-            ->whereIn('code', $codes)
-            ->where('is_active', true)
-            ->where('show_on_kiosk', true)
-            ->get()
-            ->keyBy('code');
-
-        return collect($codes)
-            ->map(function (string $code) use ($byCode): ?array {
-                $type = $byCode->get($code);
-                if (! $type instanceof AnalysisType) {
-                    return null;
-                }
-
-                return [
-                    'id' => (int) $type->id,
-                    'code' => (string) $type->code,
-                    'name' => (string) $type->name,
-                    'default_price' => $type->default_price,
-                    'catalog_scope' => $type->catalog_scope ?: 'non_aqua',
-                ];
-            })
-            ->filter()
             ->values()
             ->all();
     }

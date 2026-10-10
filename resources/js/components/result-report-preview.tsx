@@ -15,6 +15,7 @@ export type ResultReportTab = {
     report_url: string;
     title?: string;
     sample_id?: number | null;
+    form_id?: number | null;
     control_number?: string | null;
     can_preview?: boolean;
 };
@@ -27,6 +28,7 @@ type Manifest = {
     can_preview: boolean;
     can_print?: boolean;
     sample_id?: number | null;
+    form_id?: number | null;
     control_number?: string | null;
     values?: Record<string, string | boolean | null | undefined>;
     template_url?: string | null;
@@ -39,6 +41,7 @@ type LoadedReport = PdfPreviewSource & {
     signatory?: ResultSignatoryConfig | null;
     reports?: ResultReportTab[];
     sample_id?: number | null;
+    form_id?: number | null;
     control_number?: string | null;
 };
 
@@ -70,12 +73,19 @@ export async function loadResultReport(reportUrl: string): Promise<LoadedReport>
     }
 
     const manifest = (await response.json()) as Manifest;
-    const reports = (manifest.reports ?? [])
+    const labeled = (manifest.reports ?? [])
         .filter((report) => Boolean(report.report_url) && report.can_preview !== false)
         .map((report) => ({
             ...report,
             label: tabLabel(report),
         }));
+    // Several forms on one sample share a control number; name the form to tell them apart.
+    const reports = labeled.map((report) =>
+        report.title?.trim() &&
+        labeled.filter((other) => other.label === report.label).length > 1
+            ? { ...report, label: `${report.label} · ${report.title.trim()}` }
+            : report,
+    );
 
     if (!manifest.can_preview) {
         throw new Error(
@@ -101,6 +111,7 @@ export async function loadResultReport(reportUrl: string): Promise<LoadedReport>
                 signatory: manifest.signatory ?? null,
                 reports,
                 sample_id: manifest.sample_id ?? null,
+                form_id: manifest.form_id ?? null,
                 control_number: manifest.control_number ?? null,
             };
         }
@@ -130,6 +141,7 @@ export async function loadResultReport(reportUrl: string): Promise<LoadedReport>
             signatory: manifest.signatory ?? null,
             reports,
             sample_id: manifest.sample_id ?? null,
+            form_id: manifest.form_id ?? null,
             control_number: manifest.control_number ?? null,
         };
     }
@@ -154,6 +166,7 @@ export async function loadResultReport(reportUrl: string): Promise<LoadedReport>
         signatory: manifest.signatory ?? null,
         reports,
         sample_id: manifest.sample_id ?? null,
+        form_id: manifest.form_id ?? null,
         control_number: manifest.control_number ?? null,
     };
 }
@@ -181,6 +194,7 @@ export default function ResultReportPreview({
     const [tabs, setTabs] = useState<ResultReportTab[]>([]);
     const [selectedTabUrl, setSelectedTabUrl] = useState<string | null>(null);
     const [activeSampleId, setActiveSampleId] = useState<number | null>(null);
+    const [activeFormId, setActiveFormId] = useState<number | null>(null);
     const pendingActionRef = useRef<'download' | 'print' | 'reload' | null>(null);
     const reloadPreviewRef = useRef<(() => Promise<void>) | null>(null);
     const runExportRef = useRef<((action: 'download' | 'print') => void) | null>(null);
@@ -202,6 +216,9 @@ export default function ResultReportPreview({
         setActiveSampleId(
             typeof source.sample_id === 'number' ? source.sample_id : null,
         );
+        setActiveFormId(
+            typeof source.form_id === 'number' ? source.form_id : null,
+        );
         // Signatories are required at Send to Head; preview does not auto-prompt.
         setSignatoryOpen(false);
 
@@ -217,6 +234,7 @@ export default function ResultReportPreview({
     useEffect(() => {
         setSelectedTabUrl(null);
         setActiveSampleId(null);
+        setActiveFormId(null);
     }, [reportUrl]);
 
     useEffect(() => {
@@ -228,6 +246,7 @@ export default function ResultReportPreview({
             setTabs([]);
             setSelectedTabUrl(null);
             setActiveSampleId(null);
+            setActiveFormId(null);
             pendingActionRef.current = null;
         }
     }, [open]);
@@ -343,11 +362,17 @@ export default function ResultReportPreview({
                         aria-label="Sample reports"
                     >
                         {tabs.map((tab) => {
+                            const loadedTab = tabs.find(
+                                (candidate) =>
+                                    activeSampleId !== null &&
+                                    candidate.sample_id === activeSampleId &&
+                                    (activeFormId === null ||
+                                        candidate.form_id === activeFormId),
+                            );
                             const active = selectedTabUrl
                                 ? tab.report_url === selectedTabUrl
-                                : activeSampleId !== null
-                                  ? tab.sample_id === activeSampleId
-                                  : tab.report_url === tabs[0]?.report_url;
+                                : tab.report_url ===
+                                  (loadedTab ?? tabs[0])?.report_url;
 
                             return (
                                 <button

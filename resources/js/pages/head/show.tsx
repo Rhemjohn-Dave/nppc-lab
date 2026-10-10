@@ -6,6 +6,7 @@ import ConfirmDialog from '@/components/confirm-dialog';
 import type { RequestForAnalysisData } from '@/components/request-for-analysis-form';
 import ResultReportPreview, {
     loadResultReport,
+    type ResultReportTab,
 } from '@/components/result-report-preview';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -65,6 +66,13 @@ export default function HeadShow({ jobOrder, viewMode }: Props) {
     const isSigned = Boolean(jobOrder.is_signed || jobOrder.reviewed_at);
     const rfaPdfUrl = `/head/${jobOrder.id}/pdf?inline=1&results=0`;
     const resultReportUrl = `/head/${jobOrder.id}/result-report`;
+    const [selectedResultUrl, setSelectedResultUrl] = useState(resultReportUrl);
+    const [resultTabs, setResultTabs] = useState<ResultReportTab[]>([]);
+
+    useEffect(() => {
+        setSelectedResultUrl(resultReportUrl);
+        setResultTabs([]);
+    }, [resultReportUrl]);
     const resultsWithValues = jobOrder.analyses.filter(
         (line) =>
             line.result_value != null && String(line.result_value).trim() !== '',
@@ -103,7 +111,7 @@ export default function HeadShow({ jobOrder, viewMode }: Props) {
 
                     createdUrl = URL.createObjectURL(blob);
                 } else {
-                    const report = await loadResultReport(resultReportUrl);
+                    const report = await loadResultReport(selectedResultUrl);
 
                     if (cancelled) {
                         return;
@@ -111,6 +119,11 @@ export default function HeadShow({ jobOrder, viewMode }: Props) {
 
                     createdUrl = URL.createObjectURL(report.blob);
                     setResultFormTitle(report.title);
+                    setResultTabs(
+                        (report.reports?.length ?? 0) > 1
+                            ? (report.reports ?? [])
+                            : [],
+                    );
                 }
 
                 if (cancelled) {
@@ -148,7 +161,7 @@ export default function HeadShow({ jobOrder, viewMode }: Props) {
                 URL.revokeObjectURL(createdUrl);
             }
         };
-    }, [showJoForm, rfaPdfUrl, resultReportUrl]);
+    }, [showJoForm, rfaPdfUrl, selectedResultUrl]);
 
     function toggle(id: number) {
         setSelectedIds((current) =>
@@ -440,6 +453,43 @@ export default function HeadShow({ jobOrder, viewMode }: Props) {
                         ? 'Official Job Order / RFA'
                         : resultFormTitle || 'Official analysis result form'}
                 </h2>
+                {!showJoForm && resultTabs.length > 1 ? (
+                    <div
+                        className="mt-1.5 flex flex-wrap gap-1"
+                        role="tablist"
+                        aria-label="Result reports"
+                    >
+                        {resultTabs.map((tab, index) => {
+                            const active =
+                                selectedResultUrl === resultReportUrl
+                                    ? index === 0
+                                    : tab.report_url === selectedResultUrl;
+
+                            return (
+                                <button
+                                    key={tab.report_url}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={active}
+                                    disabled={formLoading}
+                                    className={cn(
+                                        'rounded-md px-2.5 py-1 text-xs transition',
+                                        active
+                                            ? 'bg-nppc-900 text-white'
+                                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200',
+                                    )}
+                                    onClick={() => {
+                                        if (!active) {
+                                            setSelectedResultUrl(tab.report_url);
+                                        }
+                                    }}
+                                >
+                                    {tab.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                ) : null}
             </div>
             <div className="min-h-0 flex-1 bg-slate-100 p-1.5 max-lg:min-h-[50vh]">
                 {formLoading && (

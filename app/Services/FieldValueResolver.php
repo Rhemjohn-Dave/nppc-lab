@@ -154,6 +154,14 @@ class FieldValueResolver
                     continue;
                 }
 
+                // FO3 Old Mandatory: 2+ requested tests print the full official list, others dashed.
+                $isDwOldFo3 = $formCode === 'LSP-7.8-FO3' || $field->name === 'dw_old_fo3_matrix';
+                if ($isDwOldFo3 && $form !== null && $ordered->count() >= 2) {
+                    $bag[$field->name] = DynamicTestMatrix::fullFormRowsWithDashes($ordered, $form);
+
+                    continue;
+                }
+
                 // F016-WA / F016-CAP: Control Number | Sample Description | result — body cells.
                 if (
                     in_array($formCode, ['LSP-7.8-F016-WA', 'LSP-7.8-F016-CAP'], true)
@@ -765,7 +773,7 @@ class FieldValueResolver
             'result_unit' => $showResults ? $line->result_unit : null,
         ])->all();
 
-        $billingLines = $this->collapsedBillingLines($analyses);
+        $billingLines = $this->collapsedBillingLines($analyses, $jobOrder);
         for ($i = 1; $i <= self::RFA_BILLING_TOTAL_SLOTS; $i++) {
             $line = $billingLines[$i - 1] ?? null;
             if ($line === null) {
@@ -792,19 +800,73 @@ class FieldValueResolver
     }
 
     /**
-     * Collapse per-sample analysis lines into unique tests for the RFA billing block.
-     * One row per analysis_type_id (or name for free-text “other” lines); line total =
+     * Collapse per-sample analysis lines for the RFA billing block. Each sample's package
+     * prints as one row (package name, sum of its member lines); same package and amount
+     * across samples collapse with a quantity. Remaining lines collapse per test:
+     * one row per analysis_type_id (or name for free-text “other” lines), line total =
      * unit_price × how many samples include that test.
      *
      * @param  Collection<int, JobOrderAnalysis>  $analyses
      * @return list<array{name: string, unit_price: float, quantity: int, line_total: float, result_value: string|null, result_unit: string|null}>
      */
-    private function collapsedBillingLines(Collection $analyses): array
+    private function collapsedBillingLines(Collection $analyses, ?JobOrder $jobOrder = null): array
     {
+        /** @var array<string, array{name: string, unit_price: float, quantity: int, line_total: float, result_value: string|null, result_unit: string|null}> $packageGroups */
+        $packageGroups = [];
+        /** @var array<int, true> $packagedLineIds */
+        $packagedLineIds = [];
+
+        foreach ($jobOrder?->packages ?? [] as $package) {
+            $selectedIds = $package->pivot->selected_type_ids;
+            if (! is_array($selectedIds)) {
+                $selectedIds = array_values(array_diff(
+                    $package->orderedTypeIds(),
+                    array_map('intval', (array) ($package->pivot->waived_type_ids ?? [])),
+                ));
+            }
+            $selectedIds = array_map('intval', $selectedIds);
+            $sampleId = $package->pivot->sample_id;
+
+            $members = $analyses->filter(fn (JobOrderAnalysis $line): bool => ! isset($packagedLineIds[$line->id])
+                && $line->analysis_type_id !== null
+                && in_array((int) $line->analysis_type_id, $selectedIds, true)
+                && ($sampleId === null || (int) $line->sample_id === (int) $sampleId));
+            if ($members->isEmpty()) {
+                continue;
+            }
+
+            foreach ($members as $member) {
+                $packagedLineIds[$member->id] = true;
+            }
+
+            $amount = round((float) $members->sum(fn (JobOrderAnalysis $line): float => (float) $line->total_cost), 2);
+            $key = 'package:'.$package->id.':'.number_format($amount, 2, '.', '');
+
+            if (! isset($packageGroups[$key])) {
+                $packageGroups[$key] = [
+                    'name' => (string) $package->name,
+                    'unit_price' => $amount,
+                    'quantity' => 1,
+                    'line_total' => $amount,
+                    'result_value' => null,
+                    'result_unit' => null,
+                ];
+
+                continue;
+            }
+
+            $packageGroups[$key]['quantity']++;
+            $packageGroups[$key]['line_total'] = $amount * $packageGroups[$key]['quantity'];
+        }
+
         /** @var array<string, array{name: string, unit_price: float, quantity: int, line_total: float, result_value: string|null, result_unit: string|null}> $groups */
         $groups = [];
 
         foreach ($analyses as $line) {
+            if (isset($packagedLineIds[$line->id])) {
+                continue;
+            }
+
             $key = $line->analysis_type_id !== null
                 ? 'type:'.(int) $line->analysis_type_id
                 : 'name:'.mb_strtolower(trim((string) $line->name));
@@ -827,7 +889,7 @@ class FieldValueResolver
             $groups[$key]['line_total'] = $groups[$key]['unit_price'] * $groups[$key]['quantity'];
         }
 
-        return array_values($groups);
+        return [...array_values($packageGroups), ...array_values($groups)];
     }
 
     /**

@@ -582,6 +582,10 @@ class DynamicTestMatrix
                     $line->result_unit,
                     $passFail,
                 );
+                $measuredOnly = self::formatPrintedResult(
+                    $line->result_value,
+                    $line->result_unit,
+                );
                 $method = filled($line->result_method)
                     ? (string) $line->result_method
                     : self::methodForAnalysisType($line->analysisType);
@@ -594,6 +598,7 @@ class DynamicTestMatrix
                     'method' => $method,
                     'acceptable_values' => $acceptable,
                     'result' => $value,
+                    'result_value' => $measuredOnly,
                     'pass_fail' => $passFail,
                     'sample_1' => $value,
                     'sample_2' => null,
@@ -601,6 +606,88 @@ class DynamicTestMatrix
                 ];
             })
             ->all();
+    }
+
+    /**
+     * Sheets with a Remarks column print Pass/Fail there instead of after the Result value.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @param  list<array<string, mixed>>  $columns
+     * @return list<array<string, mixed>>
+     */
+    public static function placeOutcomeForColumns(array $rows, array $columns): array
+    {
+        $hasRemarks = false;
+        foreach ($columns as $column) {
+            if (is_array($column) && ($column['key'] ?? null) === 'remarks') {
+                $hasRemarks = true;
+                break;
+            }
+        }
+
+        if (! $hasRemarks) {
+            return $rows;
+        }
+
+        return array_map(function ($row) {
+            if (! is_array($row)) {
+                return $row;
+            }
+
+            $outcome = trim((string) ($row['pass_fail'] ?? ''));
+            if ($outcome === '' || ! array_key_exists('result_value', $row)) {
+                return $row;
+            }
+
+            if (($row['sample_1'] ?? null) === ($row['result'] ?? null)) {
+                $row['sample_1'] = $row['result_value'];
+            }
+            $row['result'] = $row['result_value'];
+
+            $existing = trim((string) ($row['remarks'] ?? ''));
+            $row['remarks'] = $existing !== '' ? $outcome.'; '.$existing : $outcome;
+
+            return $row;
+        }, $rows);
+    }
+
+    /**
+     * Every bound form test in slot order: requested lines print results, the rest print "-".
+     *
+     * @param  Collection<int, JobOrderAnalysis>  $ordered
+     * @return list<array<string, mixed>>
+     */
+    public static function fullFormRowsWithDashes(Collection $ordered, ControlledForm $form): array
+    {
+        $form->loadMissing('analysisTypes');
+        $typeIds = $form->orderedTypeIds();
+        $catalogRows = self::previewRowsForTypeIds($typeIds, $form->analysisTypes);
+        $byType = $ordered->keyBy(fn (JobOrderAnalysis $line): int => (int) $line->analysis_type_id);
+
+        $rows = [];
+        foreach ($typeIds as $index => $typeId) {
+            $line = $byType->get($typeId);
+            if ($line instanceof JobOrderAnalysis) {
+                $rows[] = self::buildRows(collect([$line]))[0];
+
+                continue;
+            }
+
+            $catalog = $catalogRows[$index] ?? null;
+            if (! is_array($catalog)) {
+                continue;
+            }
+
+            $rows[] = array_merge($catalog, [
+                'result' => '-',
+                'result_value' => '-',
+                'pass_fail' => null,
+                'sample_1' => '-',
+                'remarks' => '-',
+            ]);
+        }
+
+        return $rows;
     }
 
     /**

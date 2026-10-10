@@ -323,6 +323,7 @@ class DynamicTestMatrixReportTest extends TestCase
         $color = AnalysisType::query()->where('code', 'DW-01')->firstOrFail();
         $ph = AnalysisType::query()->where('code', 'DW-02')->firstOrFail();
         $tds = AnalysisType::query()->where('code', 'DW-03')->firstOrFail();
+        AnalysisType::query()->whereKey([$color->id, $ph->id, $tds->id])->update(['requires_pass_fail' => true]);
 
         $this->actingAs($receiving)
             ->post('/intake/job-orders', [
@@ -361,7 +362,7 @@ class DynamicTestMatrixReportTest extends TestCase
             $value = match ((int) $line->analysis_type_id) {
                 $color->id => '5',
                 $ph->id => '7.1',
-                $tds->id => '120',
+                $tds->id => '231245.678912',
                 default => '1',
             };
 
@@ -400,6 +401,11 @@ class DynamicTestMatrixReportTest extends TestCase
         // Issue 7 package order: Color, TDS, Turbidity, pH — selected subset keeps package order.
         $this->assertSame('Total Dissolved Solids (mg/L)', $values['dw_physico_matrix'][1]['test']);
         $this->assertSame('pH', $values['dw_physico_matrix'][2]['test']);
+        $this->assertSame('5', $values['dw_physico_matrix'][0]['result_value']);
+
+        // Long values wrap and ×10 exponents print as raised text instead of "??".
+        $job->analyses->firstWhere('analysis_type_id', $ph->id)?->update(['result_value' => '4×10⁻⁴']);
+        $job = $job->fresh(['analyses.analysisType', 'analyses.assignee', 'packages']);
 
         $report = app(AnalysisResultReportResolver::class)->forJobOrder($job, $admin);
         $this->assertSame('combined', $report->kind);
@@ -637,6 +643,7 @@ class DynamicTestMatrixReportTest extends TestCase
         $color = AnalysisType::query()->where('code', 'DW-01')->firstOrFail();
         $chloride = AnalysisType::query()->where('code', 'DW-14')->firstOrFail();
         $iron = AnalysisType::query()->where('code', 'DW-18')->firstOrFail();
+        AnalysisType::query()->whereKey([$color->id, $chloride->id, $iron->id])->update(['requires_pass_fail' => true]);
 
         $this->actingAs($receiving)
             ->post('/intake/job-orders', [
@@ -711,17 +718,36 @@ class DynamicTestMatrixReportTest extends TestCase
             $form->fresh(['analysisPackage', 'analysisTypes']),
         );
 
-        $this->assertIsArray($values['dw_old_fo3_matrix']);
-        $this->assertCount(3, $values['dw_old_fo3_matrix']);
-        // Issue 11 form order: Color … Chloride … Iron — selected subset keeps form member order.
-        $this->assertSame('Color (Apparent Color)', $values['dw_old_fo3_matrix'][0]['test']);
-        $this->assertSame('Colorimetric Method (2120 B)', $values['dw_old_fo3_matrix'][0]['method']);
-        $this->assertSame('10 color units', $values['dw_old_fo3_matrix'][0]['acceptable_values']);
-        $this->assertSame('3 (Passed)', $values['dw_old_fo3_matrix'][0]['result']);
-        $this->assertSame('Chloride (mg/L)', $values['dw_old_fo3_matrix'][1]['test']);
-        $this->assertSame('Argentometric Method'."\n".'4500-Cl- B', $values['dw_old_fo3_matrix'][1]['method']);
-        $this->assertSame('250 mg/L', $values['dw_old_fo3_matrix'][1]['acceptable_values']);
-        $this->assertSame('Iron (mg/L)', $values['dw_old_fo3_matrix'][2]['test']);
+        // 2+ requested: full Issue 11 list in form order; unrequested rows are dashed.
+        $rows = $values['dw_old_fo3_matrix'];
+        $this->assertIsArray($rows);
+        $this->assertCount(count(\App\Support\OfficialAnalysisCatalog::drinkingWaterOldIssue11TypeCodes()), $rows);
+        $this->assertSame('Color (Apparent Color)', $rows[0]['test']);
+        $this->assertSame('Colorimetric Method (2120 B)', $rows[0]['method']);
+        $this->assertSame('10 color units', $rows[0]['acceptable_values']);
+        $this->assertSame('3 (Passed)', $rows[0]['result']);
+        $this->assertSame('3', $rows[0]['result_value']);
+        $this->assertSame('Passed', $rows[0]['pass_fail']);
+        $this->assertSame('Chloride (mg/L)', $rows[5]['test']);
+        $this->assertSame('40 (Passed)', $rows[5]['result']);
+        $this->assertSame('Argentometric Method'."\n".'4500-Cl- B', $rows[5]['method']);
+        $this->assertSame('250 mg/L', $rows[5]['acceptable_values']);
+        $this->assertSame('Iron (mg/L)', $rows[10]['test']);
+        $this->assertSame('0.2 (Passed)', $rows[10]['result']);
+
+        $this->assertSame('Electrical Conductivity (µS/cm)', $rows[2]['test']);
+        $this->assertSame('-', $rows[2]['result']);
+        $this->assertSame('-', $rows[2]['remarks']);
+        $this->assertNull($rows[2]['pass_fail']);
+        $this->assertNotEmpty($rows[2]['method']);
+
+        $placed = \App\Support\DynamicTestMatrix::placeOutcomeForColumns(
+            $rows,
+            $revision->fields->firstWhere('name', 'dw_old_fo3_matrix')->table_config['columns'],
+        );
+        $this->assertSame('3', $placed[0]['result']);
+        $this->assertSame('Passed; Pass', $placed[0]['remarks']);
+        $this->assertSame('-', $placed[2]['remarks']);
 
         $report = app(AnalysisResultReportResolver::class)->forJobOrder($job, $admin);
         $this->assertSame('combined', $report->kind);
@@ -736,6 +762,40 @@ class DynamicTestMatrixReportTest extends TestCase
 
         $this->assertStringStartsWith('%PDF', $pdf);
         $this->assertGreaterThan(10_000, strlen($pdf));
+    }
+
+    public function test_dw_old_fo3_single_requested_test_prints_only_that_row(): void
+    {
+        $this->seed();
+
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO3')->firstOrFail();
+        $chloride = AnalysisType::query()->where('code', 'DW-14')->firstOrFail();
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'DW OLD Single Customer',
+            'customer_email' => 'dw-single@example.com',
+            'classification' => 'Potability',
+            'samples' => [
+                ['description' => 'Well water', 'matrix' => 'Liquid'],
+            ],
+            'package_ids' => [],
+            'analysis_type_ids' => [$chloride->id],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail()
+            ->load(['analyses.analysisType', 'analyses.assignee', 'packages']);
+        $revision = $form->fresh()->activeRevision();
+        $this->assertNotNull($revision);
+
+        $values = app(FieldValueResolver::class)->forResult(
+            $revision->load('fields'),
+            $job,
+            null,
+            $form->fresh(['analysisPackage', 'analysisTypes']),
+        );
+
+        $this->assertCount(1, $values['dw_old_fo3_matrix']);
+        $this->assertSame('Chloride (mg/L)', $values['dw_old_fo3_matrix'][0]['test']);
     }
 
     public function test_dw_physico_package_still_resolves_fo37_not_fo3(): void

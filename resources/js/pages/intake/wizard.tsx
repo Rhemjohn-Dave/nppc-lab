@@ -45,6 +45,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { samplePackagePricing } from '@/lib/package-pricing';
 import { cn } from '@/lib/utils';
 
 type CategoryGroup = {
@@ -470,10 +471,11 @@ export default function IntakeWizard({
     const sampleSelectionSummaries = useMemo(
         () =>
             samples.map((sample, index) => {
-                const subtotal = sample.analysis_type_ids.reduce(
-                    (sum, id) =>
-                        sum + Number(typePriceMap.get(id)?.price || 0),
-                    0,
+                const { subtotal } = samplePackagePricing(
+                    sample.package_ids,
+                    sample.analysis_type_ids,
+                    packages,
+                    (id) => Number(typePriceMap.get(id)?.price || 0),
                 );
 
                 return {
@@ -843,6 +845,22 @@ export default function IntakeWizard({
         return keep;
     }
 
+    function packageOwnedTypes(sample: SampleDraft): Map<number, string> {
+        const owned = new Map<number, string>();
+
+        packages
+            .filter((item) => sample.package_ids.includes(item.id))
+            .forEach((item) =>
+                item.analysis_type_ids.forEach((id) => {
+                    if (!owned.has(id)) {
+                        owned.set(id, item.name);
+                    }
+                }),
+            );
+
+        return owned;
+    }
+
     function toggleType(sampleIndex: number, id: number) {
         setActiveTestSample(sampleIndex);
         setSamples((current) =>
@@ -1022,7 +1040,15 @@ export default function IntakeWizard({
                 return current;
             }
 
-            const memberIds = preset.analysis_type_ids;
+            // Tests owned by a selected package stay with the package.
+            const owned = packageOwnedTypes(sample);
+            if (owned.has(typeId)) {
+                return current;
+            }
+
+            const memberIds = preset.analysis_type_ids.filter(
+                (id) => !owned.has(id),
+            );
             const currentlyOn = sample.analysis_type_ids.includes(typeId);
             const selectedMembers = memberIds.filter((id) =>
                 currentlyOn
@@ -1135,6 +1161,7 @@ export default function IntakeWizard({
                 preset={preset}
                 selected={sample.preset_keys.includes(preset.key)}
                 selectedTypes={sample.analysis_type_ids}
+                lockedTypes={packageOwnedTypes(sample)}
                 estimatedPrice={presetEstimatedPrice(preset)}
                 onTogglePreset={() => toggleTypePreset(sampleIndex, preset)}
                 onToggleMember={(typeId) =>

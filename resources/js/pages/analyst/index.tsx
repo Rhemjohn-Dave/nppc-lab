@@ -802,6 +802,23 @@ export default function AnalystIndex({
                 setSampleCompletePending(null);
                 setSampleCompleteFallback(false);
                 setSavedJustNow(true);
+                // Completed lines leave open tabs; follow the JO so Send to Head stays reachable.
+                if (filters.status !== 'completed') {
+                    router.get(
+                        '/analyst',
+                        {
+                            q: query,
+                            status: 'completed',
+                            sort: filters.sort ?? 'needs_action',
+                            job: jobId,
+                        },
+                        {
+                            preserveState: true,
+                            preserveScroll: true,
+                            replace: true,
+                        },
+                    );
+                }
             },
             onError: (errs) => {
                 const first =

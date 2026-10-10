@@ -65,6 +65,21 @@ class DynamicTestMatrixStretchHeightTest extends TestCase
         );
     }
 
+    public function test_fo3_blueprint_matrix_disables_body_stretch(): void
+    {
+        $fo3 = collect(config('result_dw_old_fo3_form_fields.fields', []))
+            ->first(fn ($field): bool => is_array($field) && ($field['name'] ?? '') === 'dw_old_fo3_matrix');
+
+        $this->assertIsArray($fo3);
+        $this->assertFalse($fo3['table_config']['stretch_body'] ?? true);
+
+        $milk = collect(config('result_milk_form_fields.fields', []))
+            ->first(fn ($field): bool => is_array($field) && ($field['name'] ?? '') === 'milk_f016_matrix');
+
+        $this->assertIsArray($milk);
+        $this->assertNotFalse($milk['table_config']['stretch_body'] ?? true);
+    }
+
     public function test_milk_blueprint_matrix_box_height_reaches_notes_band(): void
     {
         $matrix = collect(config('result_milk_form_fields.fields', []))

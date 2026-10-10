@@ -22,6 +22,8 @@ type Props = {
     preset: IntakeTypePreset;
     selected: boolean;
     selectedTypes: number[];
+    /** Test id → name of the selected package that already includes it. */
+    lockedTypes?: Map<number, string>;
     estimatedPrice: number;
     onTogglePreset: () => void;
     onToggleMember: (typeId: number) => void;
@@ -35,14 +37,18 @@ export default function IntakeTypePresetRow({
     preset,
     selected,
     selectedTypes,
+    lockedTypes,
     estimatedPrice,
     onTogglePreset,
     onToggleMember,
 }: Props) {
     const [detailsOpen, setDetailsOpen] = useState(false);
 
-    const selectedMemberCount = preset.analysis_type_ids.filter((id) =>
-        selectedTypes.includes(id),
+    const selectedMemberCount = preset.analysis_type_ids.filter(
+        (id) => selectedTypes.includes(id) && !lockedTypes?.has(id),
+    ).length;
+    const lockedMemberCount = preset.analysis_type_ids.filter((id) =>
+        lockedTypes?.has(id),
     ).length;
 
     const detailsId = `preset-details-${preset.key}`;
@@ -67,6 +73,9 @@ export default function IntakeTypePresetRow({
                         {estimatedPrice.toFixed(2)}
                         {selected
                             ? ` · ${selectedMemberCount} included`
+                            : ''}
+                        {selected && lockedMemberCount > 0
+                            ? ` · ${lockedMemberCount} in package`
                             : ''}
                     </p>
                 </div>
@@ -133,24 +142,40 @@ export default function IntakeTypePresetRow({
                                 are billed individually.
                             </p>
                             <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-                                {preset.tests.map((test) => (
-                                    <label
-                                        key={test.id}
-                                        className="flex items-center gap-2 text-sm text-slate-700"
-                                    >
-                                        <Checkbox
-                                            checked={selectedTypes.includes(
-                                                test.id,
+                                {preset.tests.map((test) => {
+                                    const lockedBy = lockedTypes?.get(test.id);
+
+                                    return (
+                                        <label
+                                            key={test.id}
+                                            className={cn(
+                                                'flex items-center gap-2 text-sm text-slate-700',
+                                                lockedBy && 'text-slate-500',
                                             )}
-                                            onCheckedChange={() =>
-                                                onToggleMember(test.id)
-                                            }
-                                        />
-                                        <span className="min-w-0 truncate">
-                                            {test.name}
-                                        </span>
-                                    </label>
-                                ))}
+                                        >
+                                            <Checkbox
+                                                checked={
+                                                    lockedBy !== undefined ||
+                                                    selectedTypes.includes(
+                                                        test.id,
+                                                    )
+                                                }
+                                                disabled={lockedBy !== undefined}
+                                                onCheckedChange={() =>
+                                                    onToggleMember(test.id)
+                                                }
+                                            />
+                                            <span className="min-w-0 truncate">
+                                                {test.name}
+                                                {lockedBy ? (
+                                                    <span className="ml-1 text-[11px] text-muted-foreground">
+                                                        In {lockedBy}
+                                                    </span>
+                                                ) : null}
+                                            </span>
+                                        </label>
+                                    );
+                                })}
                             </div>
                         </>
                     ) : (

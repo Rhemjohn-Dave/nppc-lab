@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AnalysisPackage;
 use App\Models\AnalysisType;
 use App\Models\ControlledForm;
 use App\Models\JobOrder;
@@ -71,6 +72,23 @@ class IntakeTypePresetTest extends TestCase
                 'classifications' => ['Food Products - Microbiological Test'],
                 'codes' => OfficialAnalysisCatalog::foodMicroSugarTypeCodes(),
             ],
+            [
+                'key' => 'dw_physico_old_fo3',
+                'form_code' => 'LSP-7.8-FO3',
+                'classifications' => ['Potability'],
+                'codes' => OfficialAnalysisCatalog::drinkingWaterOldIssue11TypeCodes(),
+            ],
+            [
+                'key' => 'dw_micro_fo5',
+                'form_code' => 'LSP-7.8-FO5',
+                'classifications' => ['Potability'],
+                'codes' => ControlledForm::query()
+                    ->where('form_code', 'LSP-7.8-FO5')
+                    ->firstOrFail()
+                    ->analysisTypes
+                    ->pluck('code')
+                    ->all(),
+            ],
         ];
 
         $assert = $this->actingAs($receiving)
@@ -78,11 +96,18 @@ class IntakeTypePresetTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('intake/wizard')
-                ->has('type_presets', count($expected)));
+                ->has('type_presets', count($expected))
+                ->where('type_presets', fn ($presets): bool => collect($presets)
+                    ->pluck('form_code')
+                    ->doesntContain('LSP-7.8-F016-PHYTO')));
 
         foreach ($expected as $index => $preset) {
             $ids = collect($preset['codes'])
-                ->map(fn (string $code) => AnalysisType::query()->where('code', $code)->value('id'))
+                ->map(fn (string $code) => AnalysisType::query()
+                    ->where('code', $code)
+                    ->where('is_active', true)
+                    ->where('show_on_kiosk', true)
+                    ->value('id'))
                 ->filter()
                 ->map(fn ($id): int => (int) $id)
                 ->values()
@@ -95,6 +120,167 @@ class IntakeTypePresetTest extends TestCase
                 ->where("type_presets.{$index}.analysis_type_ids", $ids)
                 ->has("type_presets.{$index}.tests", count($ids)));
         }
+    }
+
+    public function test_active_types_only_result_form_becomes_intake_preset(): void
+    {
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $source = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2')->firstOrFail();
+        $this->assertNotNull($source->activeRevision());
+
+        $types = AnalysisType::query()
+            ->whereIn('code', OfficialAnalysisCatalog::proximateAnalysisTypeCodes())
+            ->orderBy('id')
+            ->take(2)
+            ->get();
+        $this->assertCount(2, $types);
+
+        $form = $source->replicate(['combination_key']);
+        $form->form_code = 'LSP-TEST-PANEL';
+        $form->name = 'Custom Panel Test Result Form';
+        $form->save();
+        $form->analysisTypes()->attach([
+            $types[1]->id => ['slot' => 1],
+            $types[0]->id => ['slot' => 2],
+        ]);
+
+        $findPreset = fn ($presets) => collect($presets)->firstWhere('form_code', 'LSP-TEST-PANEL');
+
+        $this->actingAs($receiving)
+            ->get('/intake/create')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('type_presets', function ($presets) use ($findPreset, $types): bool {
+                    $preset = $findPreset($presets);
+
+                    return $preset !== null
+                        && $preset['key'] === 'lsp_test_panel'
+                        && $preset['label'] === 'Custom Panel'
+                        && $preset['analysis_type_ids'] === [(int) $types[1]->id, (int) $types[0]->id];
+                }));
+
+        AnalysisType::query()->whereKey($types->pluck('id'))->update(['show_on_kiosk' => false]);
+
+        $this->actingAs($receiving)
+            ->get('/intake/create')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('type_presets', fn ($presets): bool => $findPreset($presets) === null));
+    }
+
+    public function test_seeded_fo3_matrix_keeps_natural_row_heights(): void
+    {
+        $this->seed();
+
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO3')->firstOrFail();
+        $matrix = $form->activeRevision()?->fields()->where('name', 'dw_old_fo3_matrix')->first();
+
+        $this->assertNotNull($matrix);
+        $this->assertFalse($matrix->table_config['stretch_body'] ?? true);
+    }
+
+    public function test_fo3_preset_type_ids_resolve_fo3(): void
+    {
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO3')->firstOrFail();
+        $this->assertNotNull($form->activeRevision());
+
+        $codes = OfficialAnalysisCatalog::drinkingWaterOldIssue11TypeCodes();
+        $typeIds = AnalysisType::query()
+            ->whereIn('code', $codes)
+            ->get()
+            ->sortBy(fn (AnalysisType $type) => array_search($type->code, $codes, true))
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+        $this->assertNotEmpty($typeIds);
+
+        $this->actingAs($receiving)
+            ->post('/intake/job-orders', [
+                'customer_name' => 'FO3 Preset Customer',
+                'customer_email' => 'fo3-preset@example.com',
+                'classification' => 'Potability',
+                'samples' => [
+                    ['description' => 'Tap water', 'matrix' => 'Liquid'],
+                ],
+                'package_ids' => [],
+                'analysis_type_ids' => $typeIds,
+            ])
+            ->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $this->assertTrue($job->packages()->doesntExist());
+        $this->assertCount(count($typeIds), $job->analyses);
+
+        $resolved = app(AnalysisResultReportResolver::class)->forJobOrder($job, $receiving);
+        $this->assertSame('LSP-7.8-FO3', $resolved->controlledForm?->form_code);
+    }
+
+    public function test_new_mandatory_package_plus_sulfate_gives_fo37_and_fo3_sulfate_only(): void
+    {
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $package = AnalysisPackage::query()->where('code', 'PKG-DW-PHYSICO')->firstOrFail();
+        $memberIds = $package->orderedTypeIds();
+        $sulfate = AnalysisType::query()->where('code', 'DW-20')->firstOrFail();
+        $this->assertNotContains((int) $sulfate->id, $memberIds);
+
+        $this->actingAs($receiving)
+            ->post('/intake/job-orders', [
+                'customer_name' => 'Overlap Customer',
+                'customer_email' => 'overlap@example.com',
+                'classification' => 'Potability',
+                'samples' => [
+                    [
+                        'description' => 'Tap water',
+                        'matrix' => 'Liquid',
+                        'package_ids' => [$package->id],
+                        'analysis_type_ids' => [...$memberIds, (int) $sulfate->id],
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $this->assertCount(count($memberIds) + 1, $job->analyses);
+
+        $reports = app(AnalysisResultReportResolver::class)->reportsForJobOrder($job, $receiving, withValues: false);
+        $this->assertSame(
+            ['LSP-7.8-FO37', 'LSP-7.8-FO3'],
+            $reports->map(fn ($report) => $report->controlledForm?->form_code)->all(),
+        );
+
+        $fo3 = $reports->first(fn ($report) => $report->controlledForm?->form_code === 'LSP-7.8-FO3');
+        $this->assertSame(
+            [(int) $sulfate->id],
+            $fo3->analyses->pluck('analysis_type_id')->map(fn ($id): int => (int) $id)->values()->all(),
+        );
+
+        $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
+        $manifest = $this->actingAs($admin)
+            ->getJson("/analyst/job-orders/{$job->id}/result-report")
+            ->assertOk()
+            ->json();
+
+        $tabFormIds = collect($manifest['reports'])->pluck('form_id')->all();
+        $this->assertCount(2, $tabFormIds);
+        $this->assertSame(
+            [$reports[0]->controlledForm->id, $fo3->controlledForm->id],
+            $tabFormIds,
+        );
+        $this->assertSame($reports[0]->controlledForm->id, $manifest['form_id']);
+
+        $fo3Tab = collect($manifest['reports'])->firstWhere('form_id', $fo3->controlledForm->id);
+        $this->actingAs($admin)
+            ->getJson($fo3Tab['report_url'])
+            ->assertOk()
+            ->assertJsonPath('form_id', $fo3->controlledForm->id);
     }
 
     public function test_fo2_preset_type_ids_create_individual_lines_and_resolve_fo2(): void

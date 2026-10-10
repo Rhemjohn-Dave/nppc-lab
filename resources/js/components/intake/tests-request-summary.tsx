@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { IntakePackageRowPackage } from '@/components/intake/intake-package-row';
+import { samplePackagePricing } from '@/lib/package-pricing';
 
 type CatalogItem = {
     id: number;
@@ -42,39 +43,28 @@ function buildSampleGroups(
     packages: IntakePackageRowPackage[],
     typeMap: Map<number, { name: string; price: string }>,
 ) {
-    const packageGroups: Array<{
-        id: number;
-        name: string;
-        price: string | number;
-        members: Array<{ id: number; name: string }>;
-    }> = [];
+    const { packageLines, coveredIds: coveredByPackage } = samplePackagePricing(
+        sample.package_ids,
+        sample.analysis_type_ids,
+        packages,
+        (id) => Number(typeMap.get(id)?.price || 0),
+    );
 
-    const coveredByPackage = new Set<number>();
+    const packageGroups = packageLines.map((line) => {
+        const pkg = packages.find((p) => p.id === line.id);
 
-    sample.package_ids.forEach((pkgId) => {
-        const pkg = packages.find((p) => p.id === pkgId);
-        if (!pkg) {
-            return;
-        }
-
-        const members = pkg.analysis_type_ids
-            .filter((id) => sample.analysis_type_ids.includes(id))
-            .map((id) => {
-                coveredByPackage.add(id);
-                const fromPkg = pkg.tests.find((t) => t.id === id);
-                const fromMap = typeMap.get(id);
-                return {
-                    id,
-                    name: fromPkg?.name ?? fromMap?.name ?? `Test #${id}`,
-                };
-            });
-
-        packageGroups.push({
-            id: pkg.id,
-            name: pkg.name,
-            price: pkg.default_price,
-            members,
-        });
+        return {
+            id: line.id,
+            name: line.name,
+            price: line.price,
+            members: line.memberIds.map((id) => ({
+                id,
+                name:
+                    pkg?.tests.find((t) => t.id === id)?.name ??
+                    typeMap.get(id)?.name ??
+                    `Test #${id}`,
+            })),
+        };
     });
 
     const individualLines = sample.analysis_type_ids

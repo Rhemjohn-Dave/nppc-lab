@@ -222,6 +222,7 @@ return array (
           ),
         ),
         'row_height_mm' => 5,
+        'stretch_body' => false,
         'header_row_height_mm' => 6,
         'header_row' => true,
         'border' => true,
