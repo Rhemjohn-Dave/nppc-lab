@@ -14,6 +14,7 @@ import WorkspaceHeader from '@/components/workspace-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useInertiaNavigation } from '@/hooks/use-inertia-navigation';
+import { filenameFromResponse } from '@/lib/response-filename';
 import { cn } from '@/lib/utils';
 
 type Order = {
@@ -433,7 +434,10 @@ export default function HistoryIndex({
 
                     return {
                         blob,
-                        filename: `${order?.reference_no ?? 'job-order'}-jo.pdf`,
+                        filename: filenameFromResponse(
+                            response,
+                            `JO_${order?.reference_no ?? 'job-order'}.pdf`,
+                        ),
                         title: order
                             ? `JO ${order.reference_no}`
                             : 'Job order',

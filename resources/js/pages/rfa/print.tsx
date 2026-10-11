@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import LoadingState from '@/components/ui/loading-state';
 import { markPrintedThisSession } from '@/lib/receiving-workflow';
+import { filenameFromResponse } from '@/lib/response-filename';
 
 type Props = {
     jobOrder: {
@@ -25,6 +26,9 @@ export default function RfaPrint({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [objectUrl, setObjectUrl] = useState<string | null>(null);
+    const [filename, setFilename] = useState(
+        `JO_${jobOrder.reference_no}.pdf`,
+    );
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
     useEffect(() => {
@@ -56,6 +60,12 @@ export default function RfaPrint({
                     return;
                 }
 
+                setFilename(
+                    filenameFromResponse(
+                        response,
+                        `JO_${jobOrder.reference_no}.pdf`,
+                    ),
+                );
                 createdUrl = URL.createObjectURL(blob);
 
                 if (cancelled) {
@@ -110,7 +120,7 @@ export default function RfaPrint({
 
         const link = document.createElement('a');
         link.href = objectUrl;
-        link.download = `RFA-${jobOrder.reference_no}.pdf`;
+        link.download = filename;
         link.click();
     }
 

@@ -20,6 +20,9 @@ import {
 import type { DesignerField } from '@/lib/controlled-forms';
 import { cssFontFamily } from '@/components/form-designer/utils';
 
+// Mirrors ControlledPdfFiller::matrixDetailFontSize (Time/Date of Analysis line).
+const MATRIX_DETAIL_MAX_FONT_PT = 5.5;
+
 type Props = {
     field: DesignerField;
     widthPx: number;
@@ -73,6 +76,10 @@ export default function DynamicTestMatrixPreview({
         : naturalHeightsMm;
     const defaultFontSize = Math.max(6, Math.min(11, baseFontSize * pxPerMm * 0.35));
     const methodSize = Math.max(5, matrixMethodFontSize(baseFontSize, config) * pxPerMm * 0.35);
+    const detailSize = Math.max(
+        4,
+        Math.min(matrixMethodFontSize(baseFontSize, config), MATRIX_DETAIL_MAX_FONT_PT) * pxPerMm * 0.35,
+    );
     const textColor = field.font_color?.startsWith('#') ? field.font_color : '#000000';
     const headerBold = config.header_bold !== false;
     const testNameBold = config.test_name_bold !== false;
@@ -165,6 +172,7 @@ export default function DynamicTestMatrixPreview({
                                             defaultFontSize={defaultFontSize}
                                             pxPerMm={pxPerMm}
                                             methodSize={methodSize}
+                                            detailSize={detailSize}
                                             testNameBold={testNameBold}
                                             rowHeightPx={stretchBody ? undefined : rowHeightPx}
                                             canEdit={canEdit}
@@ -443,6 +451,7 @@ function MatrixBodyCell({
     defaultFontSize,
     pxPerMm,
     methodSize,
+    detailSize,
     testNameBold,
     rowHeightPx,
     canEdit,
@@ -461,6 +470,7 @@ function MatrixBodyCell({
     defaultFontSize: number;
     pxPerMm: number;
     methodSize: number;
+    detailSize: number;
     testNameBold: boolean;
     rowHeightPx?: number;
     canEdit: boolean;
@@ -513,10 +523,17 @@ function MatrixBodyCell({
             part: 'test_method',
         };
 
+        const detail = row.test_detail ?? '';
+
         return (
             <td
                 className={`align-top ${align} ${showBorder ? 'border border-black' : ''}`}
-                style={{ width: `${widthPct}%`, padding: '2px 4px', ...cellHeightStyle }}
+                style={{
+                    width: `${widthPct}%`,
+                    padding: detail ? '1px 4px' : '2px 4px',
+                    lineHeight: detail ? 1.05 : undefined,
+                    ...cellHeightStyle,
+                }}
             >
                 <InlineEditable
                     value={row.test ?? ''}
@@ -528,6 +545,14 @@ function MatrixBodyCell({
                     onSelect={() => onSelectCell(nameTarget)}
                     onCommit={(text) => commitPreview('test', text)}
                 />
+                {detail ? (
+                    <span
+                        className="block whitespace-pre-line"
+                        style={{ fontSize: detailSize }}
+                    >
+                        {detail}
+                    </span>
+                ) : null}
                 {nestMethod ? (
                     <InlineEditable
                         value={row.test_method ?? ''}

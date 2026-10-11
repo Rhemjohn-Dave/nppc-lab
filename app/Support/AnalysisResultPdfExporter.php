@@ -5,17 +5,17 @@ namespace App\Support;
 use App\Models\JobOrderAnalysis;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Response as HttpResponse;
-use Illuminate\Support\Str;
 
 class AnalysisResultPdfExporter
 {
     public static function download(JobOrderAnalysis $analysis, bool $inline = false): HttpResponse
     {
-        $analysis->loadMissing(['jobOrder.samples', 'analysisType', 'assignee']);
+        $analysis->loadMissing(['jobOrder.samples', 'analysisType.category', 'assignee']);
 
         $job = $analysis->jobOrder;
-        $slug = Str::slug($analysis->analysisType?->code ?: $analysis->name) ?: 'result';
-        $filename = "Result-{$job->reference_no}-{$slug}.pdf";
+        $sampleIndex = $job->samples->search(fn ($sample): bool => $sample->id === $analysis->sample_id);
+        $controlNumber = $sampleIndex === false ? null : SampleControlNumber::forJobOrder($job, (int) $sampleIndex);
+        $filename = ResultPdfFilename::for($job, collect([$analysis]), $controlNumber);
 
         $pdf = Pdf::loadView('pdf.analysis-result', [
             'analysis' => $analysis,

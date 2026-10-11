@@ -262,6 +262,11 @@ class IntakeTypePresetTest extends TestCase
             $fo3->analyses->pluck('analysis_type_id')->map(fn ($id): int => (int) $id)->values()->all(),
         );
 
+        $control = preg_replace('/^\d{2}-/', '', (string) $job->reference_no);
+        $base = "Result_DW_{$job->reference_no}_{$control}_OverlapCustomer_{$job->created_at->format('m-d-y')}";
+        $this->assertSame("{$base}_FO37.pdf", $reports[0]->filename);
+        $this->assertSame("{$base}_FO3.pdf", $fo3->filename);
+
         $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
         $manifest = $this->actingAs($admin)
             ->getJson("/analyst/job-orders/{$job->id}/result-report")

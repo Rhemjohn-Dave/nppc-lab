@@ -43,6 +43,10 @@ type Props = {
     onQueryChange: (value: string) => void;
     sort: string;
     onSortChange: (sort: string) => void;
+    day: string;
+    today: string;
+    yesterday: string;
+    onDayChange: (day: string) => void;
     onSelectJob: (jobId: number) => void;
     pagination: {
         from: number | null;
@@ -125,9 +129,18 @@ export default function AnalystQueuePanel({
     onQueryChange,
     sort,
     onSortChange,
+    day,
+    today,
+    yesterday,
+    onDayChange,
     onSelectJob,
     pagination,
 }: Props) {
+    const dayPresets = [
+        { id: today, label: 'Today' },
+        { id: yesterday, label: 'Yesterday' },
+        { id: '', label: 'All days' },
+    ];
     const summaryCards = kpis.map((kpi) => ({
         id: kpi.id,
         label: kpi.label,
@@ -146,9 +159,9 @@ export default function AnalystQueuePanel({
                 onSelect={onSelectStatus}
             />
 
-            <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-xs md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-xs xl:flex-row xl:items-center xl:justify-between">
                     <div
-                        className="flex items-center gap-1 overflow-x-auto pb-1 text-xs md:pb-0"
+                        className="flex flex-wrap items-center gap-1 text-xs"
                         role="tablist"
                     >
                         <button
@@ -202,8 +215,8 @@ export default function AnalystQueuePanel({
                         })}
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-3">
-                        <div className="relative min-w-[200px] flex-1 md:w-72 md:flex-none">
+                    <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                        <div className="relative min-w-[200px] flex-1 xl:w-64 xl:flex-none">
                             <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-slate-400" />
                             <input
                                 className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pr-3 pl-9 text-xs placeholder-slate-400 transition focus:border-nppc-500 focus:bg-white focus:ring-2 focus:ring-nppc-500/30 focus:outline-none"
@@ -214,7 +227,7 @@ export default function AnalystQueuePanel({
                                 }
                             />
                         </div>
-                        <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 shadow-xs">
+                        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 shadow-xs">
                             <span className="text-slate-400">Sort:</span>
                             <select
                                 className="cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-slate-800 focus:ring-0"
@@ -227,6 +240,36 @@ export default function AnalystQueuePanel({
                                 <option value="newest">Newest First</option>
                                 <option value="oldest">Oldest First</option>
                             </select>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 shadow-xs">
+                            <span className="pl-0.5 text-slate-400">
+                                {activeStatus === 'completed'
+                                    ? 'Completed:'
+                                    : 'Received:'}
+                            </span>
+                            {dayPresets.map((preset) => (
+                                <button
+                                    key={preset.label}
+                                    type="button"
+                                    onClick={() => onDayChange(preset.id)}
+                                    className={cn(
+                                        'rounded-md px-2 py-0.5 transition',
+                                        day === preset.id
+                                            ? 'bg-nppc-50 font-semibold text-nppc-900'
+                                            : 'text-slate-600 hover:bg-slate-100',
+                                    )}
+                                >
+                                    {preset.label}
+                                </button>
+                            ))}
+                            <input
+                                type="date"
+                                aria-label="Filter by day"
+                                value={day}
+                                max={today}
+                                onChange={(e) => onDayChange(e.target.value)}
+                                className="rounded-md border-0 bg-transparent px-1 py-0.5 text-xs font-medium text-slate-800 focus:ring-0"
+                            />
                         </div>
                     </div>
                 </div>

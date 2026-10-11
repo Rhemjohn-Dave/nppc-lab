@@ -13,6 +13,7 @@ use App\Models\Sample;
 use App\Models\User;
 use App\Support\AnalysisResultReport;
 use App\Support\DynamicTestMatrix;
+use App\Support\ResultPdfFilename;
 use App\Support\SampleControlNumber;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -88,7 +89,7 @@ class AnalysisResultReportResolver
         if ($reports->isEmpty()) {
             $reports->push(new AnalysisResultReport(
                 kind: AnalysisResultReport::KIND_UNAVAILABLE,
-                filename: "Result-{$jobOrder->reference_no}.pdf",
+                filename: ResultPdfFilename::for($jobOrder, $allAnalyses, null),
                 title: 'Analysis result',
                 message: 'No combined result form is configured for this exact set of tests. Create and activate a controlled form in the Form Designer to enable combined PDF generation.',
                 jobOrder: $jobOrder,
@@ -266,7 +267,7 @@ class AnalysisResultReportResolver
             }
         }
 
-        return $reports;
+        return $this->disambiguateFilenames($reports);
     }
 
     /**
@@ -287,7 +288,7 @@ class AnalysisResultReportResolver
 
         return $reports->first() ?? new AnalysisResultReport(
             kind: AnalysisResultReport::KIND_UNAVAILABLE,
-            filename: "Result-{$jobOrder->reference_no}.pdf",
+            filename: ResultPdfFilename::for($jobOrder, $jobOrder->analyses, null),
             title: 'Analysis result',
             message: 'No combined result form is configured for this exact set of tests.',
             jobOrder: $jobOrder,
@@ -536,13 +537,44 @@ class AnalysisResultReportResolver
             ->values();
     }
 
+    private function controlNumberForSample(JobOrder $jobOrder, ?int $sampleId): ?string
+    {
+        $jobOrder->loadMissing('samples');
+        $index = $jobOrder->samples->search(fn (Sample $sample): bool => $sample->id === $sampleId);
+
+        return $index === false ? null : SampleControlNumber::forJobOrder($jobOrder, (int) $index);
+    }
+
+    /**
+     * Same sample + same name (e.g. FO37 and FO3 subset) → append the form code to each.
+     *
+     * @param  list<AnalysisResultReport>  $reports
+     * @return list<AnalysisResultReport>
+     */
+    private function disambiguateFilenames(array $reports): array
+    {
+        $counts = array_count_values(array_map(fn (AnalysisResultReport $report): string => $report->filename, $reports));
+
+        return array_map(function (AnalysisResultReport $report) use ($counts): AnalysisResultReport {
+            if (($counts[$report->filename] ?? 0) < 2 || ! $report->controlledForm) {
+                return $report;
+            }
+
+            return $report->withFilename(ResultPdfFilename::for(
+                $report->jobOrder,
+                $report->analyses,
+                $report->controlNumber,
+                $report->controlledForm->form_code,
+                withFormCode: true,
+            ));
+        }, $reports);
+    }
+
     private function individual(JobOrder $jobOrder, JobOrderAnalysis $analysis): AnalysisResultReport
     {
-        $slug = AnalysisResultReport::slugFor($jobOrder, null, $analysis);
-
         return new AnalysisResultReport(
             kind: AnalysisResultReport::KIND_INDIVIDUAL,
-            filename: "Result-{$jobOrder->reference_no}-{$slug}.pdf",
+            filename: ResultPdfFilename::for($jobOrder, collect([$analysis]), $this->controlNumberForSample($jobOrder, $analysis->sample_id)),
             title: $analysis->name,
             message: null,
             jobOrder: $jobOrder,
@@ -551,13 +583,6 @@ class AnalysisResultReportResolver
             analysis: $analysis,
             sampleId: $analysis->sample_id,
         );
-    }
-
-    private function combinedFilenameFor(JobOrder $jobOrder, string $name, ?string $controlNumber = null): string
-    {
-        $slug = AnalysisResultReport::slugFor($jobOrder, $name, null, $controlNumber);
-
-        return "Result-{$jobOrder->reference_no}-{$slug}.pdf";
     }
 
     /**
@@ -601,7 +626,7 @@ class AnalysisResultReportResolver
             $ordered = $this->orderedAnalysesForIds($jobOrder, $typeIds, $sampleId);
         }
 
-        $filename = $this->combinedFilenameFor($jobOrder, $form->name, $controlNumber);
+        $filename = ResultPdfFilename::for($jobOrder, $ordered, $controlNumber, $form->form_code);
         $title = $controlNumber
             ? "{$form->name} ({$controlNumber})"
             : $form->name;

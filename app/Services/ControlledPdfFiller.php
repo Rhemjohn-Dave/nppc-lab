@@ -590,13 +590,13 @@ class ControlledPdfFiller
                 $method = $nestMethod ? (string) ($row['test_method'] ?? '') : '';
                 $detail = (string) ($row['test_detail'] ?? '');
                 $innerWidth = max(1.0, $colWidth - 1.6);
-                $padding = 1.0;
-                $gap = 0.35;
+                [$padding, $gap] = $this->matrixTestCellSpacing($detail);
+                $detailFontSize = $this->matrixDetailFontSize($methodFontSize);
                 $textY = $y + $padding;
 
                 if ($name !== '') {
                     $this->applyTcpdfFont($pdf, $requestedFamily, $testNameBold ? 'B' : '', $colFontSize);
-                    $nameLineHeight = $this->matrixLineHeight($colFontSize);
+                    $nameLineHeight = $this->matrixTestCellLineHeight($colFontSize, $detail);
                     if ($this->matrixTextOverflows($pdf, $pdf->GetStringWidth($name), $innerWidth)) {
                         $pdf->MultiCell(
                             $innerWidth,
@@ -623,22 +623,27 @@ class ControlledPdfFiller
                         $textY += $gap;
                     }
 
-                    $this->applyTcpdfFont($pdf, $requestedFamily, '', $methodFontSize);
-                    $detailLineHeight = $this->matrixLineHeight($methodFontSize);
+                    $this->applyTcpdfFont($pdf, $requestedFamily, '', $detailFontSize);
                     $pdf->SetXY($cursorX + 0.8, $textY);
-                    $pdf->MultiCell(
-                        $innerWidth,
-                        $detailLineHeight,
-                        $detail,
-                        0,
-                        $align,
-                        false,
-                        1,
-                        $cursorX + 0.8,
-                        $textY,
-                        true,
-                    );
-                    $textY += $pdf->getLastH();
+                    if ($this->matrixTextOverflows($pdf, $pdf->GetStringWidth($detail), $innerWidth)) {
+                        $pdf->MultiCell(
+                            $innerWidth,
+                            $this->matrixLineHeight($detailFontSize),
+                            $detail,
+                            0,
+                            $align,
+                            false,
+                            1,
+                            $cursorX + 0.8,
+                            $textY,
+                            true,
+                        );
+                        $textY += $pdf->getLastH();
+                    } else {
+                        $detailLineHeight = $this->matrixTestCellLineHeight($detailFontSize, $detail);
+                        $pdf->Cell($innerWidth, $detailLineHeight, $detail, 0, 0, $align);
+                        $textY += $detailLineHeight;
+                    }
                 }
 
                 if ($method !== '') {
@@ -813,8 +818,6 @@ class ControlledPdfFiller
         string $requestedFamily,
         bool $testNameBold,
     ): float {
-        $padding = 1.0;
-        $gap = 0.35;
         $maxHeight = $baseRowHeight;
         $separateMethodColumn = $this->matrixHasColumnKey($columns, 'method');
 
@@ -829,18 +832,19 @@ class ControlledPdfFiller
                 ? (float) $column['font_size']
                 : $fontSize;
             $innerWidth = max(1.0, $colWidth - 1.6);
+            $detail = $key === 'test' ? (string) ($row['test_detail'] ?? '') : '';
+            [$padding, $gap] = $this->matrixTestCellSpacing($detail);
             $height = $padding;
 
             if ($key === 'test') {
                 $name = (string) ($row['test'] ?? '');
                 $method = $separateMethodColumn ? '' : (string) ($row['test_method'] ?? '');
-                $detail = (string) ($row['test_detail'] ?? '');
 
                 if ($name !== '') {
                     $this->applyTcpdfFont($pdf, $requestedFamily, $testNameBold ? 'B' : '', $colFontSize);
                     $height += $this->matrixTextOverflows($pdf, $pdf->GetStringWidth($name), $innerWidth)
                         ? $pdf->getStringHeight($innerWidth, $name)
-                        : $this->matrixLineHeight($colFontSize);
+                        : $this->matrixTestCellLineHeight($colFontSize, $detail);
                 }
 
                 if ($detail !== '') {
@@ -848,8 +852,11 @@ class ControlledPdfFiller
                         $height += $gap;
                     }
 
-                    $this->applyTcpdfFont($pdf, $requestedFamily, '', $methodFontSize);
-                    $height += $pdf->getStringHeight($innerWidth, $detail);
+                    $detailFontSize = $this->matrixDetailFontSize($methodFontSize);
+                    $this->applyTcpdfFont($pdf, $requestedFamily, '', $detailFontSize);
+                    $height += $this->matrixTextOverflows($pdf, $pdf->GetStringWidth($detail), $innerWidth)
+                        ? $pdf->getStringHeight($innerWidth, $detail)
+                        : $this->matrixTestCellLineHeight($detailFontSize, $detail);
                 }
 
                 if ($method !== '') {
@@ -909,6 +916,68 @@ class ControlledPdfFiller
         bool $testNameBold,
         float $availableHeight,
     ): array {
+        $minimum = 6.0;
+        $measureTotal = function (array $cols, float $bodySize, float $methodSize) use ($pdf, $rows, $totalWidth, $rowHeight, $family, $testNameBold): float {
+            $total = 0.0;
+            foreach ($rows as $row) {
+                if (is_array($row)) {
+                    $total += $this->measureMatrixBodyRowHeight(
+                        $pdf,
+                        $row,
+                        $cols,
+                        $totalWidth,
+                        $rowHeight,
+                        $bodySize,
+                        $methodSize,
+                        $family,
+                        $testNameBold,
+                    );
+                }
+            }
+
+            return $total;
+        };
+
+        if ($measureTotal($columns, $fontSize, $methodFontSize) <= $availableHeight + 0.01) {
+            return [$columns, $fontSize, $methodFontSize];
+        }
+
+        // Stage 1: long method text gives way first so test names / results keep designer sizes.
+        $methodIndex = null;
+        $methodColumnSize = null;
+        foreach ($columns as $index => $column) {
+            if (is_array($column) && ($column['key'] ?? null) === 'method') {
+                $methodIndex = $index;
+                $methodColumnSize = isset($column['font_size']) && is_numeric($column['font_size'])
+                    ? (float) $column['font_size']
+                    : $fontSize;
+            }
+        }
+
+        $shrinkMethodColumn = $methodIndex !== null;
+        $nestedMethodSize = $methodFontSize;
+        $columnSize = $methodColumnSize ?? 0.0;
+
+        while (true) {
+            $nextColumnSize = $shrinkMethodColumn && $columnSize - 0.5 >= $minimum ? $columnSize - 0.5 : $columnSize;
+            $nextNestedSize = $nestedMethodSize - 0.5 >= $minimum ? $nestedMethodSize - 0.5 : $nestedMethodSize;
+            if ($nextColumnSize === $columnSize && $nextNestedSize === $nestedMethodSize) {
+                break;
+            }
+
+            $columnSize = $nextColumnSize;
+            $nestedMethodSize = $nextNestedSize;
+            $candidate = $columns;
+            if ($shrinkMethodColumn) {
+                $candidate[$methodIndex]['font_size'] = $columnSize;
+            }
+
+            if ($measureTotal($candidate, $fontSize, $nestedMethodSize) <= $availableHeight + 0.01) {
+                return [$candidate, $fontSize, $nestedMethodSize];
+            }
+        }
+
+        // Stage 2: still too tall — shrink every body column together.
         $reference = max($fontSize, $methodFontSize);
         foreach ($columns as $column) {
             if (is_array($column) && isset($column['font_size']) && is_numeric($column['font_size'])) {
@@ -916,27 +985,13 @@ class ControlledPdfFiller
             }
         }
 
-        $minimum = 6.0;
+        // Lower floor than stage 1: smaller text beats silently dropping test rows.
+        $minimum = 5.0;
         $scale = 1.0;
         $scaledColumns = $columns;
 
         for ($step = 1; ; $step++) {
-            $total = 0.0;
-            foreach ($rows as $row) {
-                if (is_array($row)) {
-                    $total += $this->measureMatrixBodyRowHeight(
-                        $pdf,
-                        $row,
-                        $scaledColumns,
-                        $totalWidth,
-                        $rowHeight,
-                        $fontSize * $scale,
-                        $methodFontSize * $scale,
-                        $family,
-                        $testNameBold,
-                    );
-                }
-            }
+            $total = $measureTotal($scaledColumns, $fontSize * $scale, $methodFontSize * $scale);
 
             $nextReference = $reference - (0.5 * $step);
             if ($total <= $availableHeight + 0.01 || $nextReference < $minimum) {
@@ -1049,9 +1104,33 @@ class ControlledPdfFiller
         $pdf->setCellPaddings($paddings['L'], $paddings['T'], $paddings['R'], $paddings['B']);
     }
 
+    /**
+     * Rows with a Time/Date line (FO2) use tighter spacing so a full list fits the box.
+     *
+     * @return array{0: float, 1: float}
+     */
+    private function matrixTestCellSpacing(string $detail): array
+    {
+        return $detail !== '' ? [0.4, 0.1] : [1.0, 0.35];
+    }
+
+    private function matrixDetailFontSize(float $methodFontSize): float
+    {
+        return min($methodFontSize, 5.5);
+    }
+
     private function matrixLineHeight(float $fontSizePt): float
     {
         return max(2.5, $fontSizePt * 0.352778 * 1.2);
+    }
+
+    /**
+     * Single-line height inside test cells that carry a Time/Date line, so 17 FO2 rows
+     * fit the box at the designer font size.
+     */
+    private function matrixTestCellLineHeight(float $fontSizePt, string $detail): float
+    {
+        return $detail !== '' ? $fontSizePt * 0.352778 * 1.05 : $this->matrixLineHeight($fontSizePt);
     }
 
     /**
@@ -1118,6 +1197,12 @@ class ControlledPdfFiller
     private function applyTcpdfFont(Fpdi $pdf, string $family, string $style, float $size): void
     {
         $resolved = $this->tcpdfFamily($family);
+
+        if ($resolved === TcpdfCalibriFont::FAMILY && str_contains($style, 'B') && TcpdfCalibriFont::ensureBold()) {
+            $pdf->SetFont(TcpdfCalibriFont::BOLD_FAMILY, str_replace('B', '', $style), $size, TcpdfCalibriFont::boldPhpPath());
+
+            return;
+        }
 
         if ($resolved === TcpdfCalibriFont::FAMILY && TcpdfCalibriFont::ensure()) {
             $pdf->SetFont(TcpdfCalibriFont::FAMILY, $style, $size, TcpdfCalibriFont::phpPath());

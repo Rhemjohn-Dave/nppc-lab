@@ -19,6 +19,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -39,6 +40,16 @@ class AnalystController extends Controller
         $allowedSorts = ['needs_action', 'newest', 'oldest'];
         if (! in_array($sort, $allowedSorts, true)) {
             $sort = 'needs_action';
+        }
+
+        $day = $request->string('day')->toString();
+        $dayRange = null;
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $day) && checkdate((int) substr($day, 5, 2), (int) substr($day, 8, 2), (int) substr($day, 0, 4))) {
+            $labStart = Carbon::createFromFormat('Y-m-d', $day, (string) config('app.lab_timezone', 'Asia/Manila'))->startOfDay();
+            $appTz = (string) config('app.timezone', 'UTC');
+            $dayRange = [$labStart->copy()->timezone($appTz), $labStart->copy()->endOfDay()->timezone($appTz)];
+        } else {
+            $day = '';
         }
 
         $openStatuses = [
@@ -78,6 +89,11 @@ class AnalystController extends Controller
                     $query->orWhereIn('analysis_type_id', $qualifiedTypeIds);
                 }
             });
+        }
+
+        if ($dayRange !== null) {
+            $openQuery->whereHas('jobOrder', fn ($query) => $query->whereBetween('received_at', $dayRange));
+            $completedQuery->whereBetween('completed_at', $dayRange);
         }
 
         $showingCompleted = $statusFilter === JobOrderAnalysisStatus::Completed->value;
@@ -304,6 +320,7 @@ class AnalystController extends Controller
                 'q' => $search,
                 'status' => $statusFilter,
                 'sort' => $sort,
+                'day' => $day,
             ],
         ]);
     }

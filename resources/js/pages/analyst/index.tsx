@@ -54,13 +54,46 @@ type Props = {
         q: string;
         status: string;
         sort?: string;
+        day?: string;
     };
 };
+
+const LAB_TIMEZONE = 'Asia/Manila';
+
+function labDate(offsetDays = 0): string {
+    const date = new Date(Date.now() + offsetDays * 86_400_000);
+
+    return new Intl.DateTimeFormat('en-CA', {
+        timeZone: LAB_TIMEZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).format(date);
+}
+
+function formatDay(day: string): string {
+    const [year, month, date] = day.split('-').map(Number);
+
+    return new Date(year, month - 1, date).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+    });
+}
 
 function emptyMessage(filters: Props['filters']): {
     title: string;
     body: string;
 } {
+    if (filters.day) {
+        const verb = filters.status === 'completed' ? 'completed' : 'received';
+
+        return {
+            title: `No tests ${verb} on ${formatDay(filters.day)}`,
+            body: 'Pick another day or choose All days.',
+        };
+    }
+
     if (filters.q) {
         return {
             title: 'No matching laboratory tests found',
@@ -330,13 +363,17 @@ export default function AnalystIndex({
         q?: string;
         status?: string;
         sort?: string;
+        day?: string;
     }) {
+        const day = next.day ?? filters.day ?? '';
+
         router.get(
             '/analyst',
             {
                 q: next.q ?? query,
                 status: next.status ?? filters.status,
                 sort: next.sort ?? filters.sort ?? 'needs_action',
+                ...(day ? { day } : {}),
             },
             {
                 preserveState: true,
@@ -810,6 +847,8 @@ export default function AnalystIndex({
                             q: query,
                             status: 'completed',
                             sort: filters.sort ?? 'needs_action',
+                            // Completed tab matches completed_at, which is today.
+                            ...(filters.day ? { day: labDate() } : {}),
                             job: jobId,
                         },
                         {
@@ -1146,6 +1185,10 @@ export default function AnalystIndex({
                             onSortChange={(next) =>
                                 applyFilters({ sort: next })
                             }
+                            day={filters.day ?? ''}
+                            today={labDate()}
+                            yesterday={labDate(-1)}
+                            onDayChange={(next) => applyFilters({ day: next })}
                             onSelectJob={selectJob}
                             pagination={jobs}
                         />

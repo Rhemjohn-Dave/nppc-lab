@@ -177,6 +177,7 @@ Scheduler crontab (as root or the deploy user):
 - Log in as admin; open Controlled Forms; upload/preview a PDF
 - Confirm Redis is up (`redis-cli ping`) and Supervisor workers are `RUNNING`
 - Confirm `storage/app/private` is writable by `www-data`
+- Confirm `calibri.ttf` and `calibrib.ttf` are in `storage/app/fonts/` (see [Controlled forms / PDFs](#controlled-forms--pdfs)), then print a result and check that the table headers and test names are bold
 
 ## First install
 
@@ -196,9 +197,9 @@ php artisan migrate --force --seed
 php artisan nppc:production-check
 npm ci
 npm run build
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
+sudo php artisan config:cache
+sudo php artisan route:cache
+sudo php artisan view:cache
 sudo chown -R www-data:www-data storage bootstrap/cache
 ```
 
@@ -236,10 +237,10 @@ composer install --no-dev --optimize-autoloader
 php artisan migrate --force
 npm ci
 npm run build
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
-php artisan queue:restart
+sudo php artisan config:cache
+sudo php artisan route:cache
+sudo php artisan view:cache
+sudo php artisan queue:restart
 ```
 
 Do not pass `--seed`. Do not run `migrate:fresh` or `db:wipe` on production.
@@ -414,6 +415,13 @@ Locally, `composer dev` starts Reverb with the app server, queue listener, and V
 - Canonical PDFs are stored on the `local` disk (`storage/app/private`). Include that path in backups.
 - Optional LibreOffice Headless enables DOCX uploads. Without it, admins should upload PDF. Set `LIBREOFFICE_PATH` if `soffice` is not on `PATH`.
 - Job-order PDFs: `/receiving/{id}/pdf`, `/head/{id}/pdf`. Combined result overlays use the active controlled-form revision.
+- **Calibri fonts.** PDF overlays use Calibri, which Linux does not ship. Copy both `calibri.ttf` (regular) and `calibrib.ttf` (bold) from a Windows machine (`C:\Windows\Fonts`) into `storage/app/fonts/` or `resources/fonts/` on the server. If `calibri.ttf` is missing, the overlays fall back to Helvetica. If `calibrib.ttf` is missing, bold text such as result-table headers and test names prints as regular Calibri. On first use the app converts each font into `storage/app/tcpdf-fonts/`, which must be writable by `www-data`. If you add `calibrib.ttf` after that folder already exists, nothing extra is needed. Bold is generated on its own the next time a PDF is printed.
+
+```bash
+sudo mkdir -p /var/www/nppc-lab/storage/app/fonts
+sudo cp calibri.ttf calibrib.ttf /var/www/nppc-lab/storage/app/fonts/
+sudo chown -R www-data:www-data /var/www/nppc-lab/storage/app/fonts
+```
 
 ## Backups
 

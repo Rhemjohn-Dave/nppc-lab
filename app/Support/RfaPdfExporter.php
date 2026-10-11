@@ -18,7 +18,7 @@ class RfaPdfExporter
         ?string $filename = null,
         bool $inline = false,
     ): HttpResponse {
-        $filename ??= ($showResults ? "RFA-Results-{$jobOrder->reference_no}.pdf" : "RFA-{$jobOrder->reference_no}.pdf");
+        $filename ??= ResultPdfFilename::forJobOrder($jobOrder);
 
         $form = ControlledForm::jobOrderFormFor($jobOrder);
         $revision = $form?->activeRevision();

@@ -6,7 +6,6 @@ use App\Models\ControlledFormRevision;
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
 
 class AnalysisResultReport
 {
@@ -107,22 +106,21 @@ class AnalysisResultReport
         ];
     }
 
-    public static function slugFor(JobOrder $jobOrder, ?string $formName = null, ?JobOrderAnalysis $analysis = null, ?string $controlNumber = null): string
+    public function withFilename(string $filename): self
     {
-        $parts = [];
-
-        if ($controlNumber) {
-            $parts[] = Str::slug($controlNumber) ?: 'sample';
-        }
-
-        if ($formName) {
-            $parts[] = Str::slug($formName) ?: 'combined';
-        } elseif ($analysis) {
-            $parts[] = Str::slug($analysis->name) ?: 'result';
-        } else {
-            $parts[] = 'result';
-        }
-
-        return implode('-', $parts);
+        return new self(
+            kind: $this->kind,
+            filename: $filename,
+            title: $this->title,
+            message: $this->message,
+            jobOrder: $this->jobOrder,
+            analyses: $this->analyses,
+            values: $this->values,
+            analysis: $this->analysis,
+            controlledForm: $this->controlledForm,
+            controlledRevision: $this->controlledRevision,
+            sampleId: $this->sampleId,
+            controlNumber: $this->controlNumber,
+        );
     }
 }
