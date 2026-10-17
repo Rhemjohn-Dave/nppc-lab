@@ -10,6 +10,7 @@ use App\Models\ControlledForm;
 use App\Models\ControlledFormRevision;
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 class DynamicTestMatrix
@@ -329,7 +330,7 @@ class DynamicTestMatrix
 
         return collect($form->orderedTypeIds())
             ->map(fn (int $typeId) => $byType->get($typeId))
-            ->filter(fn ($line): bool => $line instanceof JobOrderAnalysis)
+            ->filter(fn ($line): bool => $line instanceof JobOrderAnalysis && ! $line->isSamplePreparation())
             ->values();
     }
 
@@ -347,7 +348,7 @@ class DynamicTestMatrix
         $rows = collect($orderedTypeIds)
             ->map(function (int $typeId) use ($byId): ?array {
                 $type = $byId->get($typeId);
-                if (! $type instanceof AnalysisType) {
+                if (! $type instanceof AnalysisType || $type->isSamplePreparation()) {
                     return null;
                 }
 
@@ -370,6 +371,84 @@ class DynamicTestMatrix
             ->all();
 
         return $rows !== [] ? $rows : self::sampleRows();
+    }
+
+    /**
+     * Key under which a body row's height override is stored in table_config.row_heights_mm.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    public static function rowHeightKey(array $row): string
+    {
+        return mb_strtolower(trim((string) ($row['test'] ?? '')));
+    }
+
+    /**
+     * Minimum height for one body row: a designer per-row override when set, else the table row height.
+     * Text that needs more room still grows the row.
+     *
+     * @param  array<string, mixed>  $config
+     * @param  array<string, mixed>  $row
+     */
+    public static function rowMinHeightMm(array $config, array $row, float $base): float
+    {
+        $overrides = $config['row_heights_mm'] ?? null;
+        $key = self::rowHeightKey($row);
+        if (! is_array($overrides) || $key === '' || ! isset($overrides[$key]) || ! is_numeric($overrides[$key])) {
+            return $base;
+        }
+
+        return max(1.0, (float) $overrides[$key]);
+    }
+
+    /**
+     * Apply text edited on the designer canvas (`preview_data`) to printed rows, matched by test name.
+     * Only descriptive columns are replaced; job data such as results is never overridden.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @param  array<string, mixed>  $config
+     * @return list<array<string, mixed>>
+     */
+    public static function applyDesignerTextEdits(array $rows, array $config): array
+    {
+        $edits = [];
+        foreach (is_array($config['preview_data'] ?? null) ? $config['preview_data'] : [] as $edit) {
+            if (is_array($edit) && ($key = self::rowHeightKey($edit)) !== '') {
+                $edits[$key] ??= $edit;
+            }
+        }
+
+        if ($edits === []) {
+            return $rows;
+        }
+
+        return array_map(function ($row) use ($edits) {
+            if (! is_array($row) || ! isset($edits[self::rowHeightKey($row)])) {
+                return $row;
+            }
+
+            $edit = $edits[self::rowHeightKey($row)];
+            foreach (['test_method', 'method', 'acceptable_values', 'test_detail'] as $column) {
+                $value = $edit[$column] ?? null;
+                if (is_string($value) && trim($value) !== '') {
+                    $row[$column] = $value;
+                }
+            }
+
+            return $row;
+        }, $rows);
+    }
+
+    /**
+     * Extra spacing (mm) added to every body row (designer "drag the table's last line").
+     *
+     * @param  array<string, mixed>  $config
+     */
+    public static function rowExtraMm(array $config): float
+    {
+        $extra = $config['row_extra_mm'] ?? 0;
+
+        return is_numeric($extra) ? max(0.0, (float) $extra) : 0.0;
     }
 
     /**
@@ -520,7 +599,7 @@ class DynamicTestMatrix
 
         return collect($package->orderedTypeIds())
             ->map(fn (int $typeId) => $byType->get($typeId))
-            ->filter(fn ($line): bool => $line instanceof JobOrderAnalysis)
+            ->filter(fn ($line): bool => $line instanceof JobOrderAnalysis && ! $line->isSamplePreparation())
             ->values();
     }
 
@@ -660,7 +739,11 @@ class DynamicTestMatrix
     public static function fullFormRowsWithDashes(Collection $ordered, ControlledForm $form): array
     {
         $form->loadMissing('analysisTypes');
-        $typeIds = $form->orderedTypeIds();
+        $prepTypeIds = $form->analysisTypes
+            ->filter(fn (AnalysisType $type): bool => $type->isSamplePreparation())
+            ->map(fn (AnalysisType $type): int => (int) $type->id)
+            ->all();
+        $typeIds = array_values(array_diff($form->orderedTypeIds(), $prepTypeIds));
         $catalogRows = self::previewRowsForTypeIds($typeIds, $form->analysisTypes);
         $byType = $ordered->keyBy(fn (JobOrderAnalysis $line): int => (int) $line->analysis_type_id);
 
@@ -773,9 +856,9 @@ class DynamicTestMatrix
             return null;
         }
 
-        $carbon = $completedAt instanceof \Illuminate\Support\Carbon
+        $carbon = $completedAt instanceof Carbon
             ? $completedAt
-            : \Illuminate\Support\Carbon::parse($completedAt);
+            : Carbon::parse($completedAt);
 
         $carbon = $carbon->timezone(config('app.lab_timezone', config('app.timezone', 'Asia/Manila')));
 
@@ -820,7 +903,7 @@ class DynamicTestMatrix
         $rows = collect($package->orderedTypeIds())
             ->map(function (int $typeId) use ($byId): ?array {
                 $type = $byId->get($typeId);
-                if (! $type instanceof AnalysisType) {
+                if (! $type instanceof AnalysisType || $type->isSamplePreparation()) {
                     return null;
                 }
 

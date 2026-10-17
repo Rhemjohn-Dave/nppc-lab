@@ -86,9 +86,12 @@ type Props = {
     matrix_default_config?: MatrixTableConfig | null;
 };
 
+/** `resize-x` / `resize-left` / `resize-y` are the matrix box's right, left and bottom edge handles. */
+type DragMode = 'move' | 'resize' | 'resize-x' | 'resize-left' | 'resize-y';
+
 type DragState = {
     id: string;
-    mode: 'move' | 'resize';
+    mode: DragMode;
     startX: number;
     startY: number;
     origX: number;
@@ -152,6 +155,8 @@ export default function FormDesigner({
     const [savedFields, setSavedFields] = useState<DesignerField[]>(() => cloneFields(initialFields));
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [matrixCellSelection, setMatrixCellSelection] = useState<MatrixCellSelection | null>(null);
+    /** Drawn table height (mm) per natural-height matrix, keyed by client id. */
+    const [matrixContentMm, setMatrixContentMm] = useState<Record<string, number | null>>({});
     const [pendingSource, setPendingSource] = useState<DataSource | null>(null);
     const [page, setPage] = useState(1);
     const [zoom, setZoom] = useState(0.75);
@@ -259,35 +264,33 @@ export default function FormDesigner({
             return;
         }
 
-        setFields((current) => {
-            const next = current.map((field, index) => {
-                const id = clientId(field, index);
+        // Built outside a setFields updater: React may run updaters twice, which would
+        // record two history entries per edit (Undo then needs two clicks).
+        const next = fieldsRef.current.map((field, index) => {
+            const id = clientId(field, index);
 
-                if (!ids.has(id)) {
-                    return field;
-                }
-
-                // Renaming only applies to the primary (last) selection.
-                if (patch.name !== undefined && id !== selectedIdsRef.current.at(-1)) {
-                    const { name: _ignored, ...rest } = patch;
-
-                    return Object.keys(rest).length > 0 ? { ...field, ...rest } : field;
-                }
-
-                return { ...field, ...patch };
-            });
-
-            fieldsRef.current = next;
-
-            if (recordHistory) {
-                setHistory((items) => [...items.slice(0, historyIndex + 1), cloneFields(next)].slice(-50));
-                setHistoryIndex((value) => value + 1);
+            if (!ids.has(id)) {
+                return field;
             }
 
-            setJustSaved(false);
+            // Renaming only applies to the primary (last) selection.
+            if (patch.name !== undefined && id !== selectedIdsRef.current.at(-1)) {
+                const { name: _ignored, ...rest } = patch;
 
-            return next;
+                return Object.keys(rest).length > 0 ? { ...field, ...rest } : field;
+            }
+
+            return { ...field, ...patch };
         });
+
+        fieldsRef.current = next;
+        setFields(next);
+        setJustSaved(false);
+
+        if (recordHistory) {
+            setHistory((items) => [...items.slice(0, historyIndex + 1), cloneFields(next)].slice(-50));
+            setHistoryIndex((value) => value + 1);
+        }
 
         if (patch.name) {
             const primaryId = selectedIdsRef.current.at(-1);
@@ -300,8 +303,21 @@ export default function FormDesigner({
         }
     }
 
-    function updateMatrixTableConfig(config: MatrixTableConfig, recordHistory = false) {
-        updateSelected({ table_config: config }, recordHistory);
+    function updateMatrixTableConfig(
+        config: MatrixTableConfig,
+        recordHistory = false,
+        extra?: { height?: number },
+    ) {
+        updateSelected(
+            { table_config: config, ...(extra?.height !== undefined ? { height: extra.height } : {}) },
+            recordHistory,
+        );
+    }
+
+    function reportMatrixContentHeight(id: string, heightMm: number | null) {
+        setMatrixContentMm((current) =>
+            current[id] === heightMm ? current : { ...current, [id]: heightMm },
+        );
     }
 
     useEffect(() => {
@@ -733,7 +749,7 @@ export default function FormDesigner({
         event: React.PointerEvent,
         field: DesignerField,
         index: number,
-        mode: 'move' | 'resize',
+        mode: DragMode,
     ) {
         event.preventDefault();
         event.stopPropagation();
@@ -890,12 +906,27 @@ export default function FormDesigner({
                         : field;
                 }),
             );
+        } else if (drag.mode === 'resize-left') {
+            const appliedDx = Math.min(Math.max(dx, -drag.origX), drag.origW - 5);
+
+            setGuides({ vertical: [], horizontal: [] });
+            setFields((current) =>
+                current.map((field, index) =>
+                    clientId(field, index) === drag.id
+                        ? {
+                              ...field,
+                              x: Number((drag.origX + appliedDx).toFixed(3)),
+                              width: Number((drag.origW - appliedDx).toFixed(3)),
+                          }
+                        : field,
+                ),
+            );
         } else {
             const proposed = {
                 x: drag.origX,
                 y: drag.origY,
-                width: Math.max(1, drag.origW + dx),
-                height: Math.max(1, drag.origH + dy),
+                width: Math.max(1, drag.origW + (drag.mode === 'resize-y' ? 0 : dx)),
+                height: Math.max(1, drag.origH + (drag.mode === 'resize-x' ? 0 : dy)),
             };
             const snapped = shouldSnap
                 ? snapResize(proposed, others, pageSize.widthMm, pageSize.heightMm, threshold)
@@ -1213,6 +1244,9 @@ export default function FormDesigner({
                                         const isPrimary = id === primaryId;
                                         const isTable = field.field_type === 'table';
                                         const isMatrix = field.field_type === 'dynamic_test_matrix';
+                                        // Natural-height tables: the box ends at the last row (field height stays as print capacity).
+                                        const contentMm = isMatrix ? (matrixContentMm[id] ?? null) : null;
+                                        const endsAtLastRow = contentMm !== null && contentMm > 0;
 
                                         return (
                                             <div
@@ -1225,7 +1259,7 @@ export default function FormDesigner({
                                                     left: px(field.x),
                                                     top: px(field.y),
                                                     width: px(field.width),
-                                                    height: px(field.height),
+                                                    height: px(endsAtLastRow ? Math.min(contentMm, field.height) : field.height),
                                                 }}
                                                 onClick={(event) => {
                                                     event.stopPropagation();
@@ -1245,16 +1279,23 @@ export default function FormDesigner({
                                                 }}
                                             >
                                                 <div
-                                                    className={`relative h-full w-full overflow-hidden ${
-                                                        active
-                                                            ? isMatrix
-                                                                ? 'ring-2 ring-nppc-900 ring-inset'
-                                                                : 'bg-nppc-900/8'
-                                                            : isMatrix
-                                                              ? 'bg-white'
-                                                              : 'bg-emerald-500/8'
+                                                    className={`relative h-full w-full ${
+                                                        isMatrix
+                                                            ? 'overflow-visible'
+                                                            : active
+                                                              ? 'overflow-hidden bg-nppc-900/8'
+                                                              : 'overflow-hidden bg-emerald-500/8'
                                                     }`}
                                                 >
+                                                    {isMatrix && (
+                                                        <div
+                                                            className={`pointer-events-none absolute inset-0 z-[4] ${
+                                                                active
+                                                                    ? 'ring-2 ring-nppc-900 ring-inset'
+                                                                    : 'outline outline-1 outline-dashed outline-slate-300'
+                                                            }`}
+                                                        />
+                                                    )}
                                                     {!isMatrix && (
                                                         <div
                                                             className={`pointer-events-none absolute inset-0 ${
@@ -1268,8 +1309,8 @@ export default function FormDesigner({
                                                         <DynamicTestMatrixPreview
                                                             field={field}
                                                             widthPx={px(field.width)}
-                                                            heightPx={px(field.height)}
                                                             canEdit={canEdit}
+                                                            active={active}
                                                             selection={
                                                                 active ? matrixCellSelection : null
                                                             }
@@ -1280,8 +1321,11 @@ export default function FormDesigner({
                                                                 setPendingSource(null);
                                                                 setMobilePropertiesOpen(true);
                                                             }}
-                                                            onUpdateTableConfig={(config, record) =>
-                                                                updateMatrixTableConfig(config, record)
+                                                            onUpdateTableConfig={(config, record, extra) =>
+                                                                updateMatrixTableConfig(config, record, extra)
+                                                            }
+                                                            onContentHeightMm={(heightMm) =>
+                                                                reportMatrixContentHeight(id, heightMm)
                                                             }
                                                         />
                                                     ) : (
@@ -1302,10 +1346,41 @@ export default function FormDesigner({
                                                 </div>
                                                 {isPrimary && canEdit && (
                                                     <>
-                                                        <span className="pointer-events-none absolute -top-5 left-0 rounded bg-nppc-900 px-1 py-0.5 text-[9px] text-white shadow-sm">
+                                                        <span
+                                                            className={`pointer-events-none absolute ${
+                                                                isMatrix ? '-top-9' : '-top-5'
+                                                            } left-0 rounded bg-nppc-900 px-1 py-0.5 text-[9px] text-white shadow-sm`}
+                                                        >
                                                             {field.data_source_key ?? field.name}
                                                         </span>
-                                                        {selectedIds.length === 1 && (
+                                                        {selectedIds.length === 1 && isMatrix && (
+                                                            <>
+                                                                <span
+                                                                    className="absolute top-1/2 right-0 z-20 h-6 w-1.5 translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm border border-white bg-nppc-900 shadow-sm"
+                                                                    title="Drag to change the table box width"
+                                                                    onPointerDown={(event) =>
+                                                                        onPointerDown(event, field, index, 'resize-x')
+                                                                    }
+                                                                />
+                                                                <span
+                                                                    className="absolute top-1/2 left-0 z-20 h-6 w-1.5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm border border-white bg-nppc-900 shadow-sm"
+                                                                    title="Drag to change the table width from the left"
+                                                                    onPointerDown={(event) =>
+                                                                        onPointerDown(event, field, index, 'resize-left')
+                                                                    }
+                                                                />
+                                                                {!endsAtLastRow && (
+                                                                    <span
+                                                                        className="absolute bottom-0 left-1/2 z-20 h-1.5 w-6 -translate-x-1/2 translate-y-1/2 cursor-ns-resize rounded-sm border border-white bg-nppc-900 shadow-sm"
+                                                                        title="Drag to change the table box height"
+                                                                        onPointerDown={(event) =>
+                                                                            onPointerDown(event, field, index, 'resize-y')
+                                                                        }
+                                                                    />
+                                                                )}
+                                                            </>
+                                                        )}
+                                                        {selectedIds.length === 1 && !endsAtLastRow && (
                                                             <span
                                                                 className="absolute right-0 bottom-0 z-20 size-3 translate-x-1/3 translate-y-1/3 cursor-se-resize rounded-sm border border-white bg-nppc-900 shadow-sm"
                                                                 onPointerDown={(event) =>

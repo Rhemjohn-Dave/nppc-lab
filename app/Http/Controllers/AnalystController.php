@@ -270,6 +270,7 @@ class AnalystController extends Controller
                 'procedure_method' => DynamicTestMatrix::methodForAnalysisType($task->analysisType),
                 'result_mode' => $task->analysisType?->isPassFail() ? 'pass_fail' : 'value',
                 'requires_pass_fail' => (bool) ($task->analysisType?->requires_pass_fail),
+                'is_sample_preparation' => $task->isSamplePreparation(),
                 'updated_at' => $task->updated_at?->toIso8601String(),
                 'assigned_to' => $task->assigned_to,
                 'assignee_name' => $task->assignee?->name,
@@ -347,10 +348,11 @@ class AnalystController extends Controller
     {
         $analysis->loadMissing(['jobOrder.packages', 'jobOrder.analyses', 'analysisType']);
         $requiresPassFail = (bool) ($analysis->analysisType?->requires_pass_fail);
+        $isPrep = $analysis->isSamplePreparation();
 
         $data = $request->validate([
-            'performed_at' => ['required', 'date'],
-            'result_value' => ['required', 'string', 'max:255'],
+            'performed_at' => [$isPrep ? 'nullable' : 'required', 'date'],
+            'result_value' => [$isPrep ? 'nullable' : 'required', 'string', 'max:255'],
             'result_pass_fail' => [$requiresPassFail ? 'required' : 'nullable', 'string', 'max:20'],
             'result_measurement' => ['nullable', 'string', 'max:80'],
             'result_unit' => ['nullable', 'string', 'max:50'],

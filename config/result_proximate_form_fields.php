@@ -2,7 +2,7 @@
 
 /**
  * Field blueprint for LSP-7.8-F016-PROX.
- * Captured from Form Designer ACTIVE revision 07
+ * Captured from Form Designer ACTIVE revision 1
  * via `php artisan controlled-forms:export-blueprints`.
  */
 

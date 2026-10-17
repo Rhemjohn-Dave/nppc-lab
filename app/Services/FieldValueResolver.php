@@ -68,6 +68,9 @@ class FieldValueResolver
         } else {
             $ordered = $jobOrder->analyses->values();
         }
+        $ordered = $ordered
+            ->reject(fn (JobOrderAnalysis $line): bool => $line->isSamplePreparation())
+            ->values();
 
         if ($focusSample !== null) {
             $sampleIndex = $jobOrder->samples->search(
@@ -218,6 +221,10 @@ class FieldValueResolver
                 $typeId = (int) $typeId;
                 $typeMeta = $form?->analysisTypes->firstWhere('id', $typeId)
                     ?? $form?->analysisPackage?->analysisTypes->firstWhere('id', $typeId);
+
+                if ($typeMeta?->isSamplePreparation()) {
+                    continue;
+                }
 
                 if (in_array($typeId, $waived, true) || ! $byType->has($typeId)) {
                     $bag["test_{$slot}_name"] = $typeMeta?->name;
@@ -1254,6 +1261,9 @@ class FieldValueResolver
             }
 
             $line = $byType->get($typeId);
+            if ($line->isSamplePreparation()) {
+                continue;
+            }
             $name = trim((string) ($line->name ?: $typesById->get($typeId)?->name ?: ''));
             if ($name !== '') {
                 $names[] = $name;
@@ -1342,7 +1352,7 @@ class FieldValueResolver
 
         $lines = [];
         foreach ($types as $type) {
-            if (! $type instanceof AnalysisType) {
+            if (! $type instanceof AnalysisType || $type->isSamplePreparation()) {
                 continue;
             }
 

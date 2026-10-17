@@ -2,7 +2,7 @@
 
 /**
  * Field blueprint for NPPC-LAB-FRM-001.
- * Captured from Form Designer ACTIVE revision 04
+ * Captured from Form Designer ACTIVE revision 1
  * via `php artisan controlled-forms:export-blueprints`.
  */
 

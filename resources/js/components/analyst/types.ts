@@ -34,6 +34,8 @@ export type AnalystTask = {
     procedure_method?: string | null;
     result_mode?: 'value' | 'pass_fail';
     requires_pass_fail?: boolean;
+    /** Billable JO line only: no result is encoded or printed. */
+    is_sample_preparation?: boolean;
     updated_at?: string | null;
     assigned_to?: number | null;
     assignee_name?: string | null;
@@ -175,7 +177,7 @@ export function encodedResultLabel(task: {
 
 /** True when the analyst has saved a draft/complete quantitative result. */
 export function hasEncodedResult(task: AnalystTask): boolean {
-    return Boolean(task.result_value?.trim());
+    return task.is_sample_preparation === true || Boolean(task.result_value?.trim());
 }
 
 export function taskActionLabel(task: AnalystTask): string {

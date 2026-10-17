@@ -219,6 +219,8 @@
                 <p class="result-value">
                     @if($resultDisplay)
                         {{ $resultDisplay }}
+                    @elseif($analysis->isSamplePreparation())
+                        <span class="empty">Not applicable (sample preparation)</span>
                     @else
                         <span class="empty">Pending</span>
                     @endif

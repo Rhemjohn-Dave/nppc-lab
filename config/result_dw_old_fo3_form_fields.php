@@ -2,7 +2,7 @@
 
 /**
  * Field blueprint for LSP-7.8-FO3.
- * Captured from Form Designer ACTIVE revision 01
+ * Captured from Form Designer ACTIVE revision 1
  * via `php artisan controlled-forms:export-blueprints`.
  */
 
@@ -101,8 +101,8 @@ return array (
       'label' => 'Date/Time of Collection',
       'type' => 'text',
       'page' => 1,
-      'x' => 160.0,
-      'y' => 33.0,
+      'x' => 165.464,
+      'y' => 32.8,
       'w' => 42.0,
       'h' => 4.2,
       'font_size' => 8.0,
@@ -117,7 +117,7 @@ return array (
       'label' => 'Date/Time Submitted',
       'type' => 'text',
       'page' => 1,
-      'x' => 155.0,
+      'x' => 155.5,
       'y' => 37.0,
       'w' => 47.0,
       'h' => 4.2,
@@ -133,7 +133,7 @@ return array (
       'label' => 'Date/Time Analyzed',
       'type' => 'text',
       'page' => 1,
-      'x' => 154.0,
+      'x' => 155.0,
       'y' => 41.0,
       'w' => 48.0,
       'h' => 4.2,
@@ -165,12 +165,12 @@ return array (
       'label' => 'Dynamic test matrix',
       'type' => 'dynamic_test_matrix',
       'page' => 1,
-      'x' => 21.896,
-      'y' => 53.4,
-      'w' => 172.659,
-      'h' => 134.94,
-      'font_size' => 6.5,
-      'font_family' => 'times',
+      'x' => 25.146,
+      'y' => 53.858,
+      'w' => 171.568,
+      'h' => 181.0,
+      'font_size' => 8.0,
+      'font_family' => 'calibri',
       'font_color' => '#000000',
       'align' => 'L',
       'table_config' => 
@@ -210,7 +210,7 @@ return array (
             'width_pct' => 23,
             'align' => 'C',
             'header_align' => 'C',
-            'font_size' => 8,
+            'font_size' => 7.5,
           ),
           4 => 
           array (
@@ -221,16 +221,216 @@ return array (
             'header_align' => 'C',
           ),
         ),
-        'row_height_mm' => 5,
-        'stretch_body' => false,
-        'header_row_height_mm' => 6,
+        'row_height_mm' => 0,
+        'header_row_height_mm' => 0,
         'header_row' => true,
         'border' => true,
         'preview_rows' => 15,
         'test_name_bold' => true,
         'header_bold' => true,
-        'method_font_size' => 9,
-        'header_font_size' => 8,
+        'method_font_size' => 5,
+        'header_font_size' => 9,
+        'preview_data' => 
+        array (
+          0 => 
+          array (
+            'test' => 'Color (Apparent Color)',
+            'test_method' => 'Colorimetric Method (2120 B)',
+            'test_detail' => NULL,
+            'method' => 'Colorimetric Method (2120 B)',
+            'acceptable_values' => '10 color units',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+          1 => 
+          array (
+            'test' => 'Total Dissolved Solids (mg/L)',
+            'test_method' => 'Total Dissolved Solids Dried at 180°C
+(2540D)',
+            'test_detail' => NULL,
+            'method' => 'Total Dissolved Solids Dried at 180°C
+(2540D)',
+            'acceptable_values' => '600 for product that has not undergone reverse osmosis / distillation process
+<10 for product that undergone reverse osmosis/distillation process',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+          2 => 
+          array (
+            'test' => 'Electrical Conductivity (µS/cm)',
+            'test_method' => 'EC Meter (2510 B)',
+            'test_detail' => NULL,
+            'method' => 'EC Meter (2510 B)',
+            'acceptable_values' => NULL,
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+          3 => 
+          array (
+            'test' => 'Turbidity (NTU)',
+            'test_method' => 'In-House Laboratory Method (Turbidimetry)',
+            'test_detail' => NULL,
+            'method' => 'In-House Laboratory Method (Turbidimetry)',
+            'acceptable_values' => '5 NTU',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+          4 => 
+          array (
+            'test' => 'pH',
+            'test_method' => 'Electrometric Method (4500-H+ B)',
+            'test_detail' => NULL,
+            'method' => 'Electrometric Method (4500-H+ B)',
+            'acceptable_values' => '6.5-8.5
+5-7 for product water that undergone reverse osmosis/distillation process',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+          5 => 
+          array (
+            'test' => 'Chloride (mg/L)',
+            'test_method' => 'Argentometric Method
+4500-Cl- B',
+            'test_detail' => NULL,
+            'method' => 'Argentometric Method 4500-Cl- B',
+            'acceptable_values' => '250 mg/L',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+          6 => 
+          array (
+            'test' => 'Residual Chlorine (mg/L)',
+            'test_method' => 'DPD Colorimetric Method',
+            'test_detail' => NULL,
+            'method' => 'DPD Colorimetric Method',
+            'acceptable_values' => '<1.0 mg/L for RO water
+0.3 - 1.5 mg/L for chlorinated drinking water
+Not applicable to Raw Water',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+          7 => 
+          array (
+            'test' => 'Total Hardness (mg/L)',
+            'test_method' => 'Titrimetric Method (2340 C)',
+            'test_detail' => NULL,
+            'method' => 'Titrimetric Method (2340 C)',
+            'acceptable_values' => '300 mg/L as CaCO3',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+          8 => 
+          array (
+            'test' => 'Calcium Hardness (mg/L)',
+            'test_method' => 'Titrimetric Method (2340 C)',
+            'test_detail' => NULL,
+            'method' => 'Titrimetric Method (2340 C)',
+            'acceptable_values' => NULL,
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+          9 => 
+          array (
+            'test' => 'Magnesium Hardness (mg/L)',
+            'test_method' => 'Titrimetric Method (2340 C)',
+            'test_detail' => NULL,
+            'method' => 'Titrimetric Method (2340 C)',
+            'acceptable_values' => NULL,
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+          10 => 
+          array (
+            'test' => 'Iron (mg/L)',
+            'test_method' => 'Phenanthroline Method
+3500 - Fe B',
+            'test_detail' => NULL,
+            'method' => 'Phenanthroline Method
+3500 - Fe B',
+            'acceptable_values' => '1.0 mg/L',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+          11 => 
+          array (
+            'test' => 'Nitrate (mg/L)',
+            'test_method' => 'Nitrate Electrode Method (4500-NO3-D)',
+            'test_detail' => NULL,
+            'method' => 'Nitrate Electrode Method (4500-NO3-D)',
+            'acceptable_values' => '50 mg/L',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+          12 => 
+          array (
+            'test' => 'Nitrite (mg/L)',
+            'test_method' => 'Diazotization Method',
+            'test_detail' => NULL,
+            'method' => 'Diazotization Method',
+            'acceptable_values' => '3 mg/L',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+          13 => 
+          array (
+            'test' => 'Sulfate (mg/L)',
+            'test_method' => 'Turbidimetric Method
+4500 - SO4-2 E',
+            'test_detail' => NULL,
+            'method' => 'Turbidimetric Method 4500 - SO4-2 E',
+            'acceptable_values' => '250 mg/L',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+          14 => 
+          array (
+            'test' => 'Odor',
+            'test_method' => 'Threshold Odor Test
+(Sensory Evaluation Technique, 2150 B)',
+            'test_detail' => NULL,
+            'method' => 'Threshold Odor Test
+(Sensory Evaluation Technique, 2150 B)',
+            'acceptable_values' => 'No objectionable odor',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+          ),
+        ),
+        'stretch_body' => false,
+        'row_heights_mm' => 
+        array (
+          'total dissolved solids (mg/l)' => 20,
+          'chloride (mg/l)' => 3,
+        ),
       ),
     ),
     10 => 

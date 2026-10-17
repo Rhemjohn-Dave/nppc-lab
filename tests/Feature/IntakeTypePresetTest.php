@@ -181,6 +181,17 @@ class IntakeTypePresetTest extends TestCase
         $this->assertFalse($matrix->table_config['stretch_body'] ?? true);
     }
 
+    public function test_seeded_fo26_matrix_keeps_natural_row_heights(): void
+    {
+        $this->seed();
+
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO26')->firstOrFail();
+        $matrix = $form->activeRevision()?->fields()->where('name', 'food_micro_fo26_matrix')->first();
+
+        $this->assertNotNull($matrix);
+        $this->assertFalse($matrix->table_config['stretch_body'] ?? true);
+    }
+
     public function test_fo3_preset_type_ids_resolve_fo3(): void
     {
         $this->seed();

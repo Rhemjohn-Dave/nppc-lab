@@ -59,6 +59,19 @@ class AnalysisType extends Model
         return $this->result_mode === self::RESULT_MODE_PASS_FAIL;
     }
 
+    /**
+     * Sample Preparation is a billable JO line only: no analyst result, never printed on result sheets.
+     */
+    public function isSamplePreparation(): bool
+    {
+        return self::isSamplePreparationName($this->name);
+    }
+
+    public static function isSamplePreparationName(?string $name): bool
+    {
+        return mb_strtolower(trim((string) $name)) === 'sample preparation';
+    }
+
     /** @return BelongsTo<AnalysisCategory, $this> */
     public function category(): BelongsTo
     {

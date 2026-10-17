@@ -44,6 +44,20 @@ export default function EncodingAssayForm({
     const resultFilled = formData.result_value.trim().length > 0;
     const remarksLen = formData.result_remarks.length;
 
+    if (task.is_sample_preparation === true) {
+        return (
+            <div className="space-y-2.5">
+                {(analysisError || formErrors.analysis) && (
+                    <InputError message={analysisError || formErrors.analysis} />
+                )}
+                <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    No result needed (sample preparation). This line is billed
+                    on the job order and is not printed on the result sheet.
+                </p>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-2.5">
             {(analysisError || formErrors.analysis) && (

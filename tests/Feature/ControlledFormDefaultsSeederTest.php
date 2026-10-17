@@ -65,7 +65,7 @@ class ControlledFormDefaultsSeederTest extends TestCase
         $this->assertSame(ControlledFormRevisionStatus::Active, $form->revisions()->first()?->status);
     }
 
-    public function test_defaults_seeder_does_not_overwrite_milk_designer_canonical_pdf(): void
+    public function test_defaults_seeder_restores_milk_seed_pdf_over_designer_upload(): void
     {
         $this->seed();
 
@@ -73,23 +73,17 @@ class ControlledFormDefaultsSeederTest extends TestCase
         $revision = $form->revisions()->firstOrFail();
         $this->assertTrue($revision->hasCanonicalPdf());
 
-        $pathBefore = $revision->canonical_pdf_path;
-        $shaBefore = $revision->sha256;
-        $this->assertNotEmpty($pathBefore);
+        $seedPdf = resource_path('forms/official/'.ExportControlledFormBlueprintsCommand::TARGETS['LSP-7.8-F016-MILK']['pdf']);
+        $this->assertSame(md5_file($seedPdf), md5_file($revision->canonicalAbsolutePath()));
 
-        // Simulate a distinct Designer upload fingerprint.
-        $revision->notes = 'designer-upload-marker';
-        $revision->sha256 = 'designer-fake-sha-should-survive-seed';
+        $revision->sha256 = 'designer-fake-sha';
         $revision->save();
 
         $this->seed(ControlledFormDefaultsSeeder::class);
 
-        $revision->refresh();
-        $this->assertSame($pathBefore, $revision->canonical_pdf_path);
-        $this->assertSame('designer-fake-sha-should-survive-seed', $revision->sha256);
-        $this->assertSame('designer-upload-marker', $revision->notes);
-        $this->assertNotSame($shaBefore, $revision->sha256);
-        $this->assertTrue($revision->hasCanonicalPdf());
+        $revision = $form->fresh()->revisions()->firstOrFail();
+        $this->assertNotSame('designer-fake-sha', $revision->sha256);
+        $this->assertSame(md5_file($seedPdf), md5_file($revision->canonicalAbsolutePath()));
         $this->assertSame(ControlledFormRevisionStatus::Active, $revision->status);
     }
 }

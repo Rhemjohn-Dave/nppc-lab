@@ -2,7 +2,7 @@
 
 /**
  * Field blueprint for LSP-7.8-FO26.
- * Captured from Form Designer ACTIVE revision 03
+ * Captured from Form Designer ACTIVE revision 1
  * via `php artisan controlled-forms:export-blueprints`.
  */
 
@@ -152,7 +152,7 @@ return array (
       'x' => 20.0,
       'y' => 75.072,
       'w' => 174.5,
-      'h' => 105.289,
+      'h' => 105.944,
       'font_size' => 8.0,
       'font_family' => 'calibri',
       'font_color' => '#000000',
@@ -165,7 +165,7 @@ return array (
           array (
             'key' => 'test',
             'label' => 'TEST',
-            'width_pct' => 55,
+            'width_pct' => 54.5,
             'align' => 'L',
             'header_align' => 'C',
             'header_font_size' => 11,
@@ -179,7 +179,7 @@ return array (
             'sublabel' => 'Sample Description',
             'sublabel_data_source' => 'results.sample_description',
             'sublabel_align' => 'C',
-            'width_pct' => 45,
+            'width_pct' => 45.5,
             'align' => 'C',
             'header_align' => 'C',
             'header_font_size' => 9,
@@ -187,7 +187,7 @@ return array (
             'font_size' => 9,
           ),
         ),
-        'row_height_mm' => 8.5,
+        'row_height_mm' => 3.5,
         'header_row_height_mm' => 8,
         'header_row' => true,
         'border' => true,
@@ -196,29 +196,10 @@ return array (
         'header_bold' => true,
         'method_font_size' => 9,
         'header_font_size' => 8,
+        'stretch_body' => false,
       ),
     ),
     9 => 
-    array (
-      'name' => 'results.test_methods_references',
-      'label' => 'Test Methods and References',
-      'type' => 'multiline',
-      'page' => 1,
-      'x' => 20.0,
-      'y' => 185.0,
-      'w' => 174.5,
-      'h' => 52.0,
-      'font_size' => 8.0,
-      'font_family' => 'calibri',
-      'font_color' => '#000000',
-      'align' => 'L',
-      'data_source_key' => 'results.test_methods_references',
-      'options' => 
-      array (
-        'cover' => true,
-      ),
-    ),
-    10 => 
     array (
       'name' => 'results.analyst_name',
       'label' => 'Analyzed by',

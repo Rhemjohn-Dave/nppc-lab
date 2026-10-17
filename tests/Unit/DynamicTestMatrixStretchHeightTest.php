@@ -80,6 +80,15 @@ class DynamicTestMatrixStretchHeightTest extends TestCase
         $this->assertNotFalse($milk['table_config']['stretch_body'] ?? true);
     }
 
+    public function test_fo26_blueprint_matrix_disables_body_stretch(): void
+    {
+        $fo26 = collect(config('result_fo26_form_fields.fields', []))
+            ->first(fn ($field): bool => is_array($field) && ($field['name'] ?? '') === 'food_micro_fo26_matrix');
+
+        $this->assertIsArray($fo26);
+        $this->assertFalse($fo26['table_config']['stretch_body'] ?? true);
+    }
+
     public function test_milk_blueprint_matrix_box_height_reaches_notes_band(): void
     {
         $matrix = collect(config('result_milk_form_fields.fields', []))

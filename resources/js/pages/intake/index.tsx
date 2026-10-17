@@ -117,13 +117,13 @@ export default function IntakeIndex({ packages }: Props) {
                                 Receiving counter open
                             </span>
                             <h1 className="mt-6 font-heading text-3xl font-semibold tracking-tight xl:text-4xl">
-                                Advancing science,
-                                <span className="mt-1 block font-normal text-white/85">
-                                    supporting industries.
-                                </span>
+                            Advancing science,
+                            <span className="mt-1 block font-normal text-white/85">
+                                supporting industries.
+                            </span>
                             </h1>
-                            <p className="mt-4 max-w-md text-sm leading-relaxed text-white/75">
-                                Trusted laboratory testing for agriculture,
+                        <p className="mt-4 max-w-md text-sm leading-relaxed text-white/75">
+                            Trusted laboratory testing for agriculture,
                                 aquaculture, and industrial partners across
                                 Negros.
                             </p>
@@ -158,7 +158,7 @@ export default function IntakeIndex({ packages }: Props) {
                                 </span>
                                 <div className="mt-4 flex size-10 items-center justify-center rounded-full bg-nppc-900 text-white">
                                     <UserPlus className="size-5" />
-                                </div>
+                            </div>
                                 <h3 className="mt-3 font-heading text-lg font-semibold text-nppc-900">
                                     New customer
                                 </h3>
@@ -185,7 +185,7 @@ export default function IntakeIndex({ packages }: Props) {
                                         <ArrowRight className="size-4" />
                                     </Link>
                                 </Button>
-                            </div>
+                        </div>
 
                             <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-5">
                                 <span className="inline-flex w-fit items-center rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
@@ -193,7 +193,7 @@ export default function IntakeIndex({ packages }: Props) {
                                 </span>
                                 <div className="mt-4 flex size-10 items-center justify-center rounded-full bg-nppc-700 text-white">
                                     <RotateCcw className="size-5" />
-                                </div>
+                    </div>
                                 <h3 className="mt-3 font-heading text-lg font-semibold text-nppc-900">
                                     Returning customer
                                 </h3>
@@ -207,63 +207,63 @@ export default function IntakeIndex({ packages }: Props) {
                                     className="mt-auto h-10 gap-2 border-nppc-900/25 text-nppc-900 hover:bg-nppc-50"
                                     onClick={() => setMode('returning')}
                                 >
-                                    Find my details
+                                        Find my details
                                     <ArrowRight className="size-4" />
                                 </Button>
                             </div>
-                        </div>
-                    ) : (
+                            </div>
+                        ) : (
                         <div className="mt-6 max-w-md rounded-xl border border-slate-200 bg-slate-50/50 p-5">
-                            <button
-                                type="button"
-                                onClick={() => setMode('choose')}
-                                className="text-sm font-medium text-nppc-700 hover:text-nppc-900"
-                            >
-                                ← Back to options
-                            </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setMode('choose')}
+                                    className="text-sm font-medium text-nppc-700 hover:text-nppc-900"
+                                >
+                                    ← Back to options
+                                </button>
                             <h3 className="mt-3 font-heading text-xl font-semibold text-nppc-900">
-                                Returning customer
+                                    Returning customer
                             </h3>
                             <p className="mt-1 text-sm text-slate-600">
-                                Enter any detail from a previous visit.
-                            </p>
-                            <Form
-                                action="/intake/lookup"
-                                method="post"
+                                    Enter any detail from a previous visit.
+                                </p>
+                                <Form
+                                    action="/intake/lookup"
+                                    method="post"
                                 className="mt-4 space-y-4"
-                            >
-                                {({ processing }) => (
-                                    <>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="query">
-                                                Email, contact, or name
-                                            </Label>
-                                            <Input
-                                                id="query"
-                                                name="query"
-                                                required
-                                                autoFocus
+                                >
+                                    {({ processing }) => (
+                                        <>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="query">
+                                                    Email, contact, or name
+                                                </Label>
+                                                <Input
+                                                    id="query"
+                                                    name="query"
+                                                    required
+                                                    autoFocus
                                                 className="h-11 text-base"
-                                                placeholder="e.g. 0917… or name@email.com"
-                                            />
-                                            <InputError
-                                                message={errors?.query}
-                                            />
-                                        </div>
-                                        <Button
-                                            type="submit"
-                                            disabled={processing}
+                                                    placeholder="e.g. 0917… or name@email.com"
+                                                />
+                                                <InputError
+                                                    message={errors?.query}
+                                                />
+                                            </div>
+                                            <Button
+                                                type="submit"
+                                                disabled={processing}
                                             className="h-11 w-full gap-2 bg-nppc-900 text-base hover:bg-nppc-700"
-                                        >
-                                            Continue with my details
+                                            >
+                                                Continue with my details
                                             <ArrowRight className="size-4" />
-                                        </Button>
-                                    </>
-                                )}
-                            </Form>
-                        </div>
-                    )}
-                </div>
+                                            </Button>
+                                        </>
+                                    )}
+                                </Form>
+                            </div>
+                        )}
+                    </div>
             </section>
 
             {/* Drop-off procedure */}
@@ -513,7 +513,7 @@ export default function IntakeIndex({ packages }: Props) {
                             Secure SSL Encrypted
                         </p>
                     </div>
-                </div>
+            </div>
             </section>
         </div>
     );

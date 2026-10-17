@@ -8,6 +8,7 @@ import type { DataSource, DesignerField } from '@/lib/controlled-forms';
 import { defaultTableColumns } from '@/components/form-designer/utils';
 import MatrixCellProperties from '@/components/form-designer/matrix-cell-properties';
 import type { MatrixCellSelection, MatrixColumnConfig, MatrixTableConfig } from '@/lib/dynamic-test-matrix';
+import { matrixConfig } from '@/lib/dynamic-test-matrix';
 
 type Props = {
     selected: DesignerField | null;
@@ -552,7 +553,7 @@ export default function PropertiesPanel({
                                         disabled={!canEdit}
                                         value={
                                             (tableConfig as MatrixTableConfig).method_font_size ??
-                                            Math.max(5, selected.font_size - 1)
+                                            Math.max(6, selected.font_size - 1)
                                         }
                                         onChange={(event) => {
                                             const next = Number(event.target.value);
@@ -563,7 +564,7 @@ export default function PropertiesPanel({
                                                         Number.isFinite(next) && next > 0
                                                             ? next
                                                             : Math.max(
-                                                                  5,
+                                                                  6,
                                                                   selected.font_size - 1,
                                                               ),
                                                 },
@@ -677,12 +678,36 @@ export default function PropertiesPanel({
                                         type="number"
                                         step="0.1"
                                         disabled={!canEdit}
-                                        value={tableConfig.row_height_mm ?? 5}
+                                        value={tableConfig.row_height_mm ?? 7}
                                         onChange={(event) =>
                                             onUpdate({
                                                 table_config: {
                                                     ...tableConfig,
                                                     row_height_mm: Number(event.target.value),
+                                                },
+                                            })
+                                        }
+                                        onBlur={() => onUpdate({}, true)}
+                                    />
+                                </div>
+                                <div>
+                                    <Label htmlFor="prop-matrix-row-extra">Row spacing (mm)</Label>
+                                    <Input
+                                        id="prop-matrix-row-extra"
+                                        type="number"
+                                        step="0.1"
+                                        min={0}
+                                        disabled={!canEdit}
+                                        placeholder="0"
+                                        value={(tableConfig as MatrixTableConfig).row_extra_mm ?? ''}
+                                        onChange={(event) =>
+                                            onUpdate({
+                                                table_config: {
+                                                    ...tableConfig,
+                                                    row_extra_mm:
+                                                        event.target.value === '' || Number(event.target.value) <= 0
+                                                            ? undefined
+                                                            : Number(event.target.value),
                                                 },
                                             })
                                         }
@@ -720,6 +745,127 @@ export default function PropertiesPanel({
                             <p className="text-[10px] text-muted-foreground">
                                 Header height auto-expands for sublabels (e.g. SS: 18g). Set a
                                 minimum here if needed.
+                            </p>
+                            <div>
+                                <Label htmlFor="prop-matrix-rows">Rows</Label>
+                                <select
+                                    id="prop-matrix-rows"
+                                    className="h-9 w-full rounded-md border bg-white px-2 text-sm"
+                                    disabled={!canEdit}
+                                    value={matrixConfig(selected).stretch_body === false ? 'natural' : 'stretch'}
+                                    onChange={(event) =>
+                                        onUpdate(
+                                            {
+                                                table_config: {
+                                                    ...tableConfig,
+                                                    stretch_body: event.target.value !== 'natural',
+                                                },
+                                            },
+                                            true,
+                                        )
+                                    }
+                                >
+                                    <option value="stretch">Stretch to fill box</option>
+                                    <option value="natural">Natural height (table ends after last test)</option>
+                                </select>
+                                {matrixConfig(selected).stretch_body === false && (
+                                    <p className="mt-1 text-[10px] text-muted-foreground">
+                                        Drag the table&apos;s last line to make the whole table taller or
+                                        shorter; spacing is shared by every row.
+                                    </p>
+                                )}
+                            </div>
+                            {Object.keys((tableConfig as MatrixTableConfig).row_heights_mm ?? {}).length > 0 && (
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                        <Label>Custom row heights (mm)</Label>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-6 px-2 text-xs"
+                                            disabled={!canEdit}
+                                            onClick={() =>
+                                                onUpdate(
+                                                    { table_config: { ...tableConfig, row_heights_mm: undefined } },
+                                                    true,
+                                                )
+                                            }
+                                        >
+                                            Reset row heights
+                                        </Button>
+                                    </div>
+                                    {Object.entries((tableConfig as MatrixTableConfig).row_heights_mm ?? {}).map(
+                                        ([rowKey, heightMm]) => (
+                                            <div key={rowKey} className="flex items-center gap-2">
+                                                <span className="min-w-0 flex-1 truncate text-xs" title={rowKey}>
+                                                    {rowKey}
+                                                </span>
+                                                <Input
+                                                    type="number"
+                                                    step="0.5"
+                                                    min={3}
+                                                    max={60}
+                                                    className="h-7 w-20"
+                                                    disabled={!canEdit}
+                                                    value={heightMm}
+                                                    aria-label={`Row height for ${rowKey}`}
+                                                    onChange={(event) =>
+                                                        onUpdate({
+                                                            table_config: {
+                                                                ...tableConfig,
+                                                                row_heights_mm: {
+                                                                    ...(tableConfig as MatrixTableConfig).row_heights_mm,
+                                                                    [rowKey]: Number(event.target.value),
+                                                                },
+                                                            },
+                                                        })
+                                                    }
+                                                    onBlur={() => onUpdate({}, true)}
+                                                />
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-7 px-2 text-xs"
+                                                    disabled={!canEdit}
+                                                    onClick={() => {
+                                                        const remaining = Object.fromEntries(
+                                                            Object.entries(
+                                                                (tableConfig as MatrixTableConfig).row_heights_mm ?? {},
+                                                            ).filter(([key]) => key !== rowKey),
+                                                        );
+                                                        onUpdate(
+                                                            {
+                                                                table_config: {
+                                                                    ...tableConfig,
+                                                                    row_heights_mm:
+                                                                        Object.keys(remaining).length > 0
+                                                                            ? remaining
+                                                                            : undefined,
+                                                                },
+                                                            },
+                                                            true,
+                                                        );
+                                                    }}
+                                                >
+                                                    Remove
+                                                </Button>
+                                            </div>
+                                        ),
+                                    )}
+                                </div>
+                            )}
+                            <p className="text-[10px] text-muted-foreground">
+                                On the canvas, select the table and drag like in Word: column
+                                borders change widths, the header&apos;s bottom edge changes header
+                                height, and each row&apos;s bottom edge changes that row&apos;s height
+                                (Shift+drag changes all rows; double-click resets a row). With
+                                natural-height rows, the table&apos;s last line adds even spacing to
+                                every row. Rows still
+                                grow when text wraps. The side and bottom handles resize the whole
+                                table box. The canvas uses the same layout as Preview and the
+                                generated PDF.
                             </p>
                             <label className="flex items-center gap-2 text-xs">
                                 <Checkbox

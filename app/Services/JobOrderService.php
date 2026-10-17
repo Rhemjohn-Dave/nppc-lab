@@ -643,11 +643,12 @@ class JobOrderService
         $method = $this->optionalText($data['result_method'] ?? null);
         $performedAt = $this->parsePerformedAt($data['performed_at'] ?? null);
 
+        $isPrep = $analysis->isSamplePreparation();
         $errors = [];
-        if ($performedAt === null) {
+        if ($performedAt === null && ! $isPrep) {
             $errors['performed_at'] = 'Enter the date and time this test was performed.';
         }
-        if (blank($value)) {
+        if (blank($value) && ! $isPrep) {
             $errors['result_value'] = 'A result value is required to complete this analysis.';
         }
         if ($requiresPassFail && $passFail === null) {
@@ -729,6 +730,10 @@ class JobOrderService
         foreach ($lines as $line) {
             $this->assertAnalystCanWorkOn($line, $analyst);
 
+            if ($line->isSamplePreparation()) {
+                continue;
+            }
+
             if (blank($line->result_value)) {
                 $missing[] = $line->name;
                 continue;
@@ -790,6 +795,19 @@ class JobOrderService
     }
 
     /**
+     * Ready for Head: completed with a result, or a Sample Preparation line (no result is encoded).
+     */
+    private function lineHasResult(JobOrderAnalysis $line): bool
+    {
+        if ($line->isSamplePreparation()) {
+            return true;
+        }
+
+        return $line->status === JobOrderAnalysisStatus::Completed
+            && filled($line->result_value);
+    }
+
+    /**
      * @param  list<array{name?: mixed, prc_id?: mixed}>|null  $signatories
      */
     public function submitForReview(JobOrder $jobOrder, User $analyst, ?array $signatories = null): JobOrder
@@ -800,12 +818,11 @@ class JobOrderService
             ]);
         }
 
-        $jobOrder->load(['analyses.assignee', 'packages']);
+        $jobOrder->load(['analyses.assignee', 'analyses.analysisType', 'packages']);
         $this->assertUserCanSubmitForReview($jobOrder, $analyst);
 
         $incomplete = $jobOrder->analyses->reject(
-            fn (JobOrderAnalysis $line) => $line->status === JobOrderAnalysisStatus::Completed
-                && filled($line->result_value)
+            fn (JobOrderAnalysis $line) => $this->lineHasResult($line)
         );
 
         if ($incomplete->isNotEmpty()) {
@@ -815,6 +832,16 @@ class JobOrderService
                 'job_order' => 'Encode all results before sending to Head'
                     .($names !== '' ? ': '.$names : '.'),
             ]);
+        }
+
+        foreach ($jobOrder->analyses as $line) {
+            if ($line->isSamplePreparation() && $line->status !== JobOrderAnalysisStatus::Completed) {
+                $line->update([
+                    'status' => JobOrderAnalysisStatus::Completed,
+                    'completed_at' => now(),
+                    'assigned_to' => $line->assigned_to ?? $analyst->id,
+                ]);
+            }
         }
 
         $resultForm = $this->reports->matchingControlledForm($jobOrder);
@@ -911,7 +938,7 @@ class JobOrderService
     {
         $jobs = JobOrder::query()
             ->where('status', JobOrderStatus::InAnalysis)
-            ->with(['analyses.assignee', 'packages.signatory'])
+            ->with(['analyses.assignee', 'analyses.analysisType', 'packages.signatory'])
             ->latest('id')
             ->limit(40)
             ->get()
@@ -920,8 +947,7 @@ class JobOrderService
 
         return $jobs->map(function (JobOrder $job) use ($user) {
             $incomplete = $job->analyses->reject(
-                fn (JobOrderAnalysis $line) => $line->status === JobOrderAnalysisStatus::Completed
-                    && filled($line->result_value)
+                fn (JobOrderAnalysis $line) => $this->lineHasResult($line)
             );
             $summary = $this->reports->forJobOrder($job, $user, withValues: false)->summary();
             $previewUrl = "/analyst/job-orders/{$job->id}/result-report";
@@ -944,8 +970,7 @@ class JobOrderService
                     'status' => $line->status->value,
                     'status_label' => $line->status->label(),
                     'result_value' => $line->result_value,
-                    'completed' => $line->status === JobOrderAnalysisStatus::Completed
-                        && filled($line->result_value),
+                    'completed' => $this->lineHasResult($line),
                 ])->values()->all(),
             ];
         })->all();

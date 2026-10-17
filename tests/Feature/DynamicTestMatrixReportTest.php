@@ -486,9 +486,9 @@ class DynamicTestMatrixReportTest extends TestCase
         $matrix = $revision->fields()->where('field_type', 'dynamic_test_matrix')->first();
         $this->assertNotNull($matrix);
         $this->assertSame('ww_fo2_matrix', $matrix->name);
-        $this->assertEqualsWithDelta(26.425, (float) $matrix->x, 0.01);
-        $this->assertEqualsWithDelta(61.621, (float) $matrix->y, 0.01);
-        $this->assertEqualsWithDelta(163.05, (float) $matrix->width, 0.01);
+        $this->assertEqualsWithDelta(28.475, (float) $matrix->x, 0.01);
+        $this->assertEqualsWithDelta(62.272, (float) $matrix->y, 0.01);
+        $this->assertEqualsWithDelta(159.492, (float) $matrix->width, 0.01);
         $keys = collect($matrix->table_config['columns'] ?? [])->pluck('key')->all();
         $this->assertSame(['test', 'method', 'result'], $keys);
         $this->assertSame('C', $matrix->table_config['columns'][0]['align'] ?? null);
@@ -500,8 +500,8 @@ class DynamicTestMatrixReportTest extends TestCase
 
         $certified2 = $revision->fields()->where('name', 'results.analyst_name_4')->first();
         $this->assertNotNull($certified2);
-        $this->assertEqualsWithDelta(125.721, (float) $certified2->x, 0.01);
-        $this->assertEqualsWithDelta(227.421, (float) $certified2->y, 0.01);
+        $this->assertEqualsWithDelta(126.221, (float) $certified2->x, 0.01);
+        $this->assertEqualsWithDelta(227.009, (float) $certified2->y, 0.01);
 
         $rows = \App\Support\DynamicTestMatrix::previewRowsForForm($form->fresh(['analysisPackage', 'analysisTypes']));
         $this->assertSame('Lab pH', $rows[0]['test']);

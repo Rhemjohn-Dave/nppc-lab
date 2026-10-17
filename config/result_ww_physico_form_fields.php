@@ -2,7 +2,7 @@
 
 /**
  * Field blueprint for LSP-7.8-FO2.
- * Captured from Form Designer ACTIVE revision 01
+ * Captured from Form Designer ACTIVE revision 1
  * via `php artisan controlled-forms:export-blueprints`.
  */
 
@@ -197,10 +197,10 @@ return array (
       'label' => 'Dynamic test matrix',
       'type' => 'dynamic_test_matrix',
       'page' => 1,
-      'x' => 26.425,
-      'y' => 61.621,
-      'w' => 163.05,
-      'h' => 107.595,
+      'x' => 28.475,
+      'y' => 62.272,
+      'w' => 159.492,
+      'h' => 106.055,
       'font_size' => 6.5,
       'font_family' => 'calibri',
       'font_color' => '#000000',

@@ -61,7 +61,7 @@ class ExportControlledFormBlueprintsCommand extends Command
         ],
         'LSP-7.8-F016-MILK' => [
             'config' => 'result_milk_form_fields',
-            'pdf' => 'Milk Sample Test Result Form.pdf',
+            'pdf' => 'Milk Sample Test Result Form - seed.pdf',
         ],
         'LSP-7.8-F016-WA' => [
             'config' => 'result_water_activity_form_fields',
@@ -73,7 +73,7 @@ class ExportControlledFormBlueprintsCommand extends Command
         ],
         'LSP-7.8-F016-NO2' => [
             'config' => 'result_nitrite_form_fields',
-            'pdf' => 'Nitrite Test Result Form-blank.pdf',
+            'pdf' => 'Nitrite Test Result Form - seed.pdf',
         ],
     ];
 

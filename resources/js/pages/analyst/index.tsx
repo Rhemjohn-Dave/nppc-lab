@@ -699,6 +699,9 @@ export default function AnalystIndex({
 
         return jobTasks
             .filter((task) => {
+                if (task.is_sample_preparation === true) {
+                    return false;
+                }
                 if (active?.id === task.id) {
                     return (
                         !form.data.performed_at.trim() ||
@@ -769,7 +772,10 @@ export default function AnalystIndex({
             return;
         }
 
-        if (!form.data.performed_at.trim()) {
+        if (
+            active.is_sample_preparation !== true &&
+            !form.data.performed_at.trim()
+        ) {
             form.setError(
                 'performed_at',
                 'Enter the date and time this test was performed.',

@@ -68,6 +68,12 @@ class JobOrderAnalysis extends Model
         ];
     }
 
+    public function isSamplePreparation(): bool
+    {
+        return $this->analysisType?->isSamplePreparation()
+            ?? AnalysisType::isSamplePreparationName($this->name);
+    }
+
     public function resolvedCategoryLabel(): string
     {
         return $this->category_label

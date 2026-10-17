@@ -26,9 +26,7 @@ class ControlledFormDefaultsSeeder extends Seeder
      *
      * @var list<string>
      */
-    public const REFERENCE_ONLY_PDF_FORMS = [
-        'LSP-7.8-F016-MILK',
-    ];
+    public const REFERENCE_ONLY_PDF_FORMS = [];
 
     public function run(): void
     {

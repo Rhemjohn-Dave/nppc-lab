@@ -315,8 +315,8 @@ export default function AnalystEncodingStudio({
                                 <strong className="font-semibold text-slate-700">
                                     {job.sample_storage_temp}
                                 </strong>
-                            </span>
-                        ) : null}
+                                </span>
+                            ) : null}
                         {job.received_at ? (
                             <>
                                 <span>·</span>
@@ -326,8 +326,8 @@ export default function AnalystEncodingStudio({
                             </>
                         ) : null}
                     </div>
-                )}
-            </div>
+                    )}
+                </div>
 
             <EncodingSampleTabs
                 groups={sampleGroups}
@@ -365,7 +365,7 @@ export default function AnalystEncodingStudio({
                                         <div className="flex min-w-0 items-center gap-2">
                                             <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-nppc-900 text-[11px] font-bold text-white">
                                                 {Math.max(activeIndex, 0) + 1}
-                                            </span>
+                                </span>
                                             <div className="min-w-0">
                                                 <div className="flex flex-wrap items-center gap-1.5">
                                                     <h2 className="truncate text-sm font-bold tracking-tight text-slate-900">
@@ -376,7 +376,7 @@ export default function AnalystEncodingStudio({
                                                             {
                                                                 active.category_label
                                                             }
-                                                        </span>
+                                </span>
                                                     ) : null}
                                                 </div>
                                                 {sampleLabel ||
@@ -393,7 +393,7 @@ export default function AnalystEncodingStudio({
                                                     </p>
                                                 ) : null}
                                             </div>
-                                        </div>
+                            </div>
                                         <div className="flex shrink-0 items-center gap-1.5">
                                             {!distractionFree ? (
                                                 <Button
@@ -438,8 +438,8 @@ export default function AnalystEncodingStudio({
                                                     : readOnly
                                                       ? 'View only'
                                                       : 'Editing'}
-                                            </span>
-                                        </div>
+                                </span>
+                            </div>
                                     </div>
 
                                     <div className="p-3.5 sm:p-4">
