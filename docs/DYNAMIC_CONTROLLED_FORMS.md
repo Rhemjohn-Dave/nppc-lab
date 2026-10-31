@@ -37,6 +37,8 @@ Work lines and printed rows stay aligned: if the customer ordered four tests, th
 - Food Analysis and Special Analysis result sheets (multi-test matrix layout).
 - Drinking Water Physico-Chemical package (`LSP-7.8-FO37` / `PKG-DW-PHYSICO`) with Method + Acceptable Values columns.
 - Drinking Water Physico-Chemical Issue 11 OLD individual (`LSP-7.8-FO3`, types-only): any subset of bound DW tests; Method + Acceptable Values from Procedures.
+- **DW-03 Total Dissolved Solids** and **DW-02 pH** on FO3/FO37 print as **rowspan-style pairs**: shared Tests Performed + Method across two sub-rows; Results, Acceptable Values, and Remarks are split. TDS Raw uses `600 for product…`, Finish uses `<10 for product…`. pH Raw uses `6.5-8.5`, Finish uses `5-7 for product water that undergone reverse osmosis/distillation process`. The analyst encodes Raw/Finish results and remarks on one analysis line (`result_raw` / `result_finish`, `result_remarks_raw` / `result_remarks_finish`).
+- **DW-05 Residual Chlorine** prints as a **three-row rowspan**: Finish → Chlorinated → Raw. Limits are `<1.0 mg/L for RO water`, `0.3 - 1.5 mg/L for chlorinated drinking water`, and `Not applicable to Raw Water`. Analyst encodes Finish + Chlorinated only (`result_finish` / `result_chlorinated`); Raw Results always prints `-`.
 - Admin setup through Controlled Forms + Packages (same screens as today).
 - Form Designer field type: **Dynamic test matrix**.
 - Per-cell and per-column styling in the designer (headers, sublabels, fonts, alignment).
@@ -110,6 +112,60 @@ If a `dynamic_matrix` package is bound to a form **without** a matrix region, th
 
 **Template tip:** If the uploaded PDF already prints column headers (`TEST`, `Result`, etc.), turn off **Show column headers** on the matrix field and position the region over the **body rows only**. Otherwise headers will appear twice.
 
+### Anchor below matrix (flowing footer)
+
+When `stretch_body` is **false**, a short table leaves a white gap above notes/signatures that were plotted at a fixed designer Y. Use **Flow under matrix** in the properties panel:
+
+| Option | Meaning |
+|--------|---------|
+| **Anchor below matrix** | Field print Y = drawn matrix content bottom + offset (mm) |
+| **Offset (mm)** | Gap after the last matrix row (stack notes vs signatures with different offsets) |
+| **Static text** | Drawn when the field has no data-source value (notes / references that used to live only on the PDF ink) |
+
+Stored Y remains the **fallback** when the matrix has no rows. Designer preview follows the same rule when matrix natural height is known. Multiline / static-text fields on the canvas use **pre-wrap** (same line breaks as print `MultiCell`), not a truncated single line.
+
+**FO3 footer (`LSP-7.8-FO3`):** the blueprint splits the under-table chrome into editable anchored fields (not one blob):
+
+| Block | Field names |
+|-------|-------------|
+| Lab conditions / references / NOTE (2-col) | `fo3_lab_conditions`, `fo3_references`, `fo3_note_left`, `fo3_note_right` |
+| Analyzed by / Certified Correct | labels + roles + license prefixes (static) + `results.analyst_name` / `_2` + PRC |
+| Noted by | `fo3_label_noted_by`, `fo3_noted_by_name` (static Wendy), role/license static |
+| Form meta | `fo3_form_meta` |
+
+Signatory stack print order is **name → license → role** (Laboratory Analyst below the license line). Signatory / Noted by / form-meta fields use **no** `options.cover` (transparent overlays so white boxes cannot hide another line). Keep `cover` only on large under-table note blocks when blanking PDF ink. **Laboratory Head (Noted by)** is always static: `WENDY A. TAYSON, RCh, MEnE` / Laboratory Head / License #15131 — not `job_orders.reviewed_by_name`.
+
+Edit layout by moving boxes and changing **Footer / printed text** (Static text) / offsets — double-click a field on the canvas to jump to that editor. **Import blueprint** (or run migrations: heal re-imports FO3 when chrome fields are missing) after uploading a blank footer PDF.
+
+**FO37 footer (`LSP-7.8-FO37`, New Mandatory):** same anchor-below-matrix pattern on `dw_physico_matrix` (`stretch_body: false`). Chrome fields use the `fo37_*` prefix:
+
+| Block | Field names |
+|-------|-------------|
+| Lab conditions + Method Detection Limit | `fo37_lab_conditions` |
+| References | `fo37_references` |
+| NOTE (2-col) | `fo37_note_left`, `fo37_note_right` |
+| Analyzed / Certified / Noted | `fo37_label_*`, roles, license prefixes + `results.analyst_*` / PRC; Noted by name is `fo37_noted_by_name` (static Wendy) |
+| Form meta | `fo37_form_meta` (`LSP 7.8 FO37` / Rev. 06 / Issue 07) |
+
+Under-table note fields (`fo37_lab_conditions` / references / NOTE) may set `options.cover` to white-out printed Issue 7 PDF ink. **Signatory chrome has no cover**; print order is name → license → role. Default preview names/licenses (LANACA / BARNUEVO / Wendy + PRC) live in Static text; live jobs still fill `results.analyst_*` from signatories. Sole-rev deploy: `2026_10_27_130000_deploy_all_plotted_controlled_forms_sole_rev` (all plotted forms including FO3/FO37 → revision `1`).
+
+**FO2 / FO2A footers (Issue 18 wastewater physico):** two controlled forms, one layout each (same blank PDF family). Both use the FO3-style anchor-below-matrix pattern on `ww_fo2_matrix` (`stretch_body: false`). Notes / references / lab conditions / signatory chrome are designer overlays.
+
+| Form | Kind | Notes | Signatory slots |
+|------|------|-------|-----------------|
+| `LSP-7.8-FO2` | Wastewater / River water | 6 notes (PAB/EMB footnotes) | Reviewed / Noted / Certified ×2 |
+| `LSP-7.8-FO2A` | Abstracted water | 4 notes (`*Not EMB- DENR Accredited`) | Reviewed / Certified / Noted |
+
+`AnalysisResultReportResolver` picks FO2 vs FO2A from `sample.description` when the selected types ⊆ the shared WW physico panel. Bag keys `fo2_notes`, `fo2_lab_conditions`, `fo2_references` default from `OfficialAnalysisCatalog`; analysts may override via `job_orders.result_footer` (`PUT /analyst/job-orders/{id}/result-footer`) from the result preview. Both forms print document meta via `fo2_form_meta` (`Test Report#: CHE WW –` / `NPPC-ADL` / `LSP 7.8_FO2` / `Rev. 17/Issue 18` / `Effectivity Date: 09/16/2026`). FO2A signatories are **Reviewed | Certified** on one row and **Noted By** under Reviewed (three layers: name / role / license). Sole-rev deploy: `2026_10_27_130000_deploy_all_plotted_controlled_forms_sole_rev`. Schema: `2026_10_20_131000_add_result_footer_to_job_orders` for analyst footer overrides.
+
+**Blank PDF ops (required for the gap to disappear):**
+
+1. Start from `resources/forms/official/PC OLD Drinking Water Test Result Form Issue 11 blank.pdf` (or the Issue 11 Word → PDF).
+2. Remove (or white-out) **notes / references / laboratory conditions** and **signature chrome below the table**. Keep letterhead and customer/header blocks.
+3. Upload that blank as the active FO3 revision canonical PDF (seed key `source_pdf` already points at the blank filename — replace the file when ready).
+4. Re-import blueprint or open Form Designer and confirm anchored fields sit under the preview table.
+5. Export when calibrated: `php artisan controlled-forms:export-blueprints --form=LSP-7.8-FO3` (add `--pdfs` only if committing a new blank under `resources/forms/official/`).
+
 ### 2. Procedures — analysis catalog
 
 1. Ensure analysis types exist for every test the package can include (% Fat, % Protein, etc.).
@@ -117,6 +173,18 @@ If a `dynamic_matrix` package is bound to a form **without** a matrix region, th
 3. Proximate codes `PX-01`…`PX-08` are seeded with official methods; other types start blank until an admin fills them.
 
 **Proximate filter tip:** Procedures live under category slug `proximate_analysis` (“Proximate Analysis”). Legacy duplicate categories (e.g. empty slug `proximate`) are deleted after any leftover types are moved. Edit Method from the procedure row modal, not from Form Designer cell text (designer edits are layout preview only).
+
+**F016-PROX footer (Proximate Analysis Result):** `proximate_f016_matrix` uses FO3-style anchor-below-matrix chrome (`stretch_body: false`). Overlays: `prox_f016_notes` (NOTES 1–2), **Analyzed by** (live `results.analyst_name` / `_2` + PRC with Cabero / Lanaca designer defaults), **Approved by** (static Wendy A. Tayson, Laboratory Head), and `prox_f016_form_meta` (`NPPC ADL` / `LSP 7.8 F016` / `Rev 05 / Issue 06` / `Effectivity Date: 07/15/2026`).
+
+**FO26 footer (Microbiological Food Test Result):** `food_micro_fo26_matrix` (`stretch_body: false`) plus **static** `results.test_methods_references` (`options.prefer_static` + Issue 4 list; title `**Test Methods and References:**`), `fo26_notes` (NOTE 1–2, numbered list), **Analyzed by** (live `results.analyst_name`, Riz Mae Fernandez, RMT default; 1 slot, no PRC), **Approved by** (static Wendy A. Tayson, Laboratory Head), and `fo26_form_meta` (`NPPC-ADL LSP 7.8 FO26` / `Rev 03/Issue 04` / `Effectivity Date: 07/15/2026`). Designer: Appearance **Bold** (whole field) or Static text **Bold selection** (`**…**` inline).
+
+**FO27 footer (Food Micro Sugar Test Result):** `food_micro_sugar_fo27_matrix` (`stretch_body: false`) plus **static** `results.test_methods_references` (Issue 4 sugar methods; title `**…**`), `fo27_notes` (NOTE 1–2, numbered), **Analyzed by** (live `results.analyst_name`, Riz Mae Fernandez default; 1 slot, no PRC), **Approved by** (static Wendy A. Tayson, RCh, MEnE / Laboratory Head), and `fo27_form_meta` (`NPPC-ADL LSP 7.8 FO27` / `Rev.03/Issue04` / `Effectivity Date: 07/15/2026`).
+
+**F016-NO2 footer (Nitrite Test Result):** `nitrite_f016_matrix` (`stretch_body: false`) plus static Maximum Level (167 mg/kg), `no2_f016_notes` (NOTES 1–2, numbered), **Analyzed by** (live `results.analyst_name` / PRC, Ferresa Mae O. Caberoy default; 1 slot), **Approved by** (static Wendy A. Tayson, RCh, MEE + PRC 15131), and `no2_f016_form_meta` (`NPPC ADL` / `LSP 7.8 F016` / `Rev 03 / Issue 04` / `Effectivity Date: 07/15/2026`).
+
+**F016-MILK footer (Milk Sample Test Result):** `milk_f016_matrix` (`stretch_body: false`) plus `milk_f016_notes` (NOTES 1–2, numbered), **Analyzed by** (live `results.analyst_name` / PRC, Ferresa Mae O. Caberoy default; 1 slot), **Approved by** (static Wendy A. Tayson, RCh, MEE + PRC 15131), and `milk_f016_form_meta` (`NPPC ADL` / `LSP 7.8 F016` / `Rev 05 / Issue 06` / `Effectivity Date: 07/15/2026`). Official PDF remains reference-only until a new blank is uploaded in Form Designer.
+
+All of the above footers ship via committed blueprints + sole-rev migration `2026_10_27_130000_deploy_all_plotted_controlled_forms_sole_rev` (and `ControlledFormDefaultsSeeder` on `--seed`).
 
 To add a new test with a method: create the analysis type → set Method → attach it as a package member → it appears in Form Designer preview (when the form is bound to that package) and on the PDF when selected at intake.
 
@@ -236,7 +304,8 @@ Eligibility: all **selected** analysis lines must be completed before combined/m
 | Job | `job_order_analyses` | One row source per selected test |
 | Job | `waived_type_ids` | Ignored by matrix renderer |
 | Job | `result_signatories` | Analyst name(s) + optional PRC entered at Send to Head |
-| Form | `analyst_signatory_slots` / `analyst_require_prc` | 1–4 analysts; PRC required or not. FO2 uses 4 labeled slots (Reviewed / Noted / Certified ×2). |
+| Form | `analyst_signatory_slots` / `analyst_require_prc` | 1–4 analysts; PRC required or not. FO2 = 4 slots (Reviewed / Noted / Certified ×2); FO2A = 3 slots (Reviewed / Certified / Noted). |
+| Job | `result_footer` | Optional FO2/FO2A override for lab conditions / references / notes (else catalog defaults). |
 
 ---
 

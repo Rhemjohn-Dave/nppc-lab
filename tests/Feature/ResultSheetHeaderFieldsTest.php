@@ -130,63 +130,55 @@ class ResultSheetHeaderFieldsTest extends TestCase
 
         $sample = app(FieldValueResolver::class)->sampleValues($revision->fresh(['form', 'fields']));
         $this->assertSame('Microbiological Food Test', $sample['results.test_requested']);
-        $this->assertNotEmpty($sample['results.test_methods_references'] ?? null);
-        $this->assertStringContainsString(' — ', (string) $sample['results.test_methods_references']);
     }
 
-    public function test_fo26_test_methods_references_lists_selected_tests_only_and_prefers_result_method(): void
+    public function test_fo26_test_methods_field_prefers_static_text_over_mapped_bag(): void
     {
         $this->seed();
 
-        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO26')->firstOrFail();
-        $codes = ['FM-01', 'FM-08', 'FM-11'];
-        $typeIds = collect($codes)
-            ->map(fn (string $code) => \App\Models\AnalysisType::query()->where('code', $code)->value('id'))
-            ->filter()
-            ->map(fn ($id): int => (int) $id)
-            ->values()
-            ->all();
-        $this->assertCount(3, $typeIds);
-
-        $this->actingAs($receiving)
-            ->post('/intake/job-orders', [
-                'customer_name' => 'FO26 Methods Customer',
-                'customer_email' => 'fo26-methods@example.com',
-                'classification' => 'Others: Food Products - Microbiological Test',
-                'samples' => [
-                    ['description' => 'Meat product', 'matrix' => 'Solid'],
-                ],
-                'package_ids' => [],
-                'analysis_type_ids' => $typeIds,
-            ])
-            ->assertRedirect();
-
-        $job = JobOrder::query()->latest('id')->firstOrFail();
-        $line = $job->analyses()->where('analysis_type_id', $typeIds[0])->firstOrFail();
-        $line->update(['result_method' => 'Custom Analyst Method XYZ']);
-
         $revision = $form->activeRevision() ?? $form->revisions()->firstOrFail();
-        $bag = app(FieldValueResolver::class)->forResult(
-            $revision,
-            $job->fresh(['analyses.analysisType']),
-            null,
-            $form,
+
+        $methodsField = $revision->fields()
+            ->where('name', 'results.test_methods_references')
+            ->first();
+        $this->assertNotNull($methodsField);
+        $this->assertTrue((bool) (($methodsField->options['prefer_static'] ?? false)));
+        $this->assertTrue((bool) (($methodsField->options['cover'] ?? false)));
+        $this->assertNull($methodsField->data_source_key);
+
+        $static = (string) (($methodsField->options['static_text'] ?? ''));
+        $this->assertStringContainsString('Test Methods and References', $static);
+        $this->assertStringContainsString('Pour Plate', $static);
+
+        $overlay = $methodsField->toOverlayArray();
+        $overlay['font_family'] = 'helvetica';
+        $filler = app(\App\Services\ControlledPdfFiller::class);
+        $pdf = new \setasign\Fpdi\Tcpdf\Fpdi('P', 'mm', [215.9, 279.4], true, 'UTF-8', false);
+        $pdf->setCompression(false);
+        $pdf->setPrintHeader(false);
+        $pdf->setPrintFooter(false);
+        $pdf->SetMargins(0, 0, 0);
+        $pdf->SetAutoPageBreak(false, 0);
+        $pdf->AddPage();
+
+        $write = new \ReflectionMethod($filler, 'writeField');
+        $write->setAccessible(true);
+        $write->invoke(
+            $filler,
+            $pdf,
+            $overlay,
+            "Aerobic Plate Count — Custom Analyst Method XYZ\nTotal Coliform — Mapped Only",
+            [],
         );
 
-        $block = (string) ($bag['results.test_methods_references'] ?? '');
-        $this->assertStringContainsString('Custom Analyst Method XYZ', $block);
-        $this->assertStringContainsString('Total Coliform', $block);
-        $this->assertStringContainsString('Fecal Coliform', $block);
-        $this->assertStringNotContainsString('Salmonella', $block);
-        $this->assertSame(3, substr_count($block, "\n") + 1);
-
-        $mappedField = $revision->fields()
-            ->where('data_source_key', 'results.test_methods_references')
-            ->orWhere('name', 'results.test_methods_references')
-            ->first();
-        $this->assertNotNull($mappedField);
-        $this->assertTrue((bool) (($mappedField->options['cover'] ?? false)));
+        $raw = $pdf->Output('', 'S');
+        $this->assertStringContainsString('(Pour )', $raw);
+        $this->assertStringContainsString('(Plate )', $raw);
+        $this->assertStringContainsString('Helvetica-Bold', $raw);
+        $this->assertStringNotContainsString('Custom Analyst Method XYZ', $raw);
+        $this->assertStringNotContainsString('Mapped Only', $raw);
+        $this->assertStringNotContainsString('**', $raw);
     }
 
     public function test_fo26_preview_pdf_nests_methods_under_tests_even_when_method_font_size_is_zero(): void
@@ -214,7 +206,12 @@ class ResultSheetHeaderFieldsTest extends TestCase
             ->sampleValues($revision->fresh(['fields', 'form.analysisTypes']));
         $matrixRows = $rows['food_micro_fo26_matrix'] ?? [];
         $this->assertNotEmpty($matrixRows);
-        $this->assertSame('Pour Plate Method', $matrixRows[0]['test_method'] ?? null);
+        $this->assertSame(
+            "Pour Plate Method, Plate Count Agar (PCA); BAM Online Chapter 3\n"
+            ."AOAC International Official Method of Analysis – Method 990.12\n"
+            .'3M PetrifilmTM Rapid Aerobic Count Plates, AOAC Certificate Number 121403',
+            $matrixRows[0]['test_method'] ?? null,
+        );
 
         $overlay = $matrix->fresh()->toOverlayArray();
         $filler = app(\App\Services\ControlledPdfFiller::class);

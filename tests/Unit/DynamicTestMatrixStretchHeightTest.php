@@ -77,7 +77,7 @@ class DynamicTestMatrixStretchHeightTest extends TestCase
             ->first(fn ($field): bool => is_array($field) && ($field['name'] ?? '') === 'milk_f016_matrix');
 
         $this->assertIsArray($milk);
-        $this->assertNotFalse($milk['table_config']['stretch_body'] ?? true);
+        $this->assertFalse($milk['table_config']['stretch_body'] ?? true);
     }
 
     public function test_fo26_blueprint_matrix_disables_body_stretch(): void

@@ -18,6 +18,8 @@ use App\Notifications\JobOrderJoApproved;
 use App\Notifications\JobOrderPendingReview;
 use App\Notifications\JobOrderSubmitted;
 use App\Notifications\ResultsReleased;
+use App\Support\OfficialAnalysisCatalog;
+use App\Support\ResultFooter;
 use App\Support\ResultSignatories;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -262,6 +264,9 @@ class JobOrderService
                     'unit_price' => $price,
                     'total_cost' => $price,
                     'status' => JobOrderAnalysisStatus::Pending,
+                    'accreditation_footnote' => OfficialAnalysisCatalog::wastewaterAccreditationFootnoteTier(
+                        $type->code,
+                    ),
                 ]);
             }
         }
@@ -554,14 +559,37 @@ class JobOrderService
     }
 
     /**
-     * @param  array{result_value?: ?string, result_pass_fail?: ?string, result_measurement?: ?string, result_unit?: ?string, result_remarks?: ?string, result_method?: ?string, performed_at?: mixed}  $data
+     * @param  array{result_value?: ?string, result_raw?: ?string, result_finish?: ?string, result_pass_fail?: ?string, result_measurement?: ?string, result_unit?: ?string, result_remarks?: ?string, result_method?: ?string, performed_at?: mixed}  $data
      */
     public function saveAnalysisDraft(JobOrderAnalysis $analysis, array $data, User $analyst): JobOrderAnalysis
     {
         $this->assertAnalystCanWorkOn($analysis, $analyst);
         $analysis->loadMissing('analysisType');
 
-        $value = $this->optionalText($data['result_value'] ?? null);
+        $code = $analysis->analysisType?->code;
+        $rawFinish = OfficialAnalysisCatalog::usesRawFinishResults($code);
+        $residualCl = OfficialAnalysisCatalog::usesResidualChlorineResults($code);
+
+        $raw = $rawFinish ? $this->optionalText($data['result_raw'] ?? null) : null;
+        $finish = ($rawFinish || $residualCl) ? $this->optionalText($data['result_finish'] ?? null) : null;
+        $chlorinated = $residualCl ? $this->optionalText($data['result_chlorinated'] ?? null) : null;
+        $value = $rawFinish
+            ? OfficialAnalysisCatalog::summarizeRawFinishResults($raw, $finish)
+            : ($residualCl
+                ? OfficialAnalysisCatalog::summarizeResidualChlorineResults($finish, $chlorinated)
+                : $this->optionalText($data['result_value'] ?? null));
+        $remarksRaw = $rawFinish ? $this->optionalText($data['result_remarks_raw'] ?? null) : null;
+        $remarksFinish = ($rawFinish || $residualCl)
+            ? $this->optionalText($data['result_remarks_finish'] ?? null)
+            : null;
+        $remarksChlorinated = $residualCl
+            ? $this->optionalText($data['result_remarks_chlorinated'] ?? null)
+            : null;
+        $remarks = $rawFinish
+            ? OfficialAnalysisCatalog::summarizeRawFinishResults($remarksRaw, $remarksFinish)
+            : ($residualCl
+                ? OfficialAnalysisCatalog::summarizeResidualChlorineResults($remarksFinish, $remarksChlorinated)
+                : ($data['result_remarks'] ?? null));
         $requiresPassFail = (bool) ($analysis->analysisType?->requires_pass_fail);
         $passFail = $requiresPassFail
             ? $this->normalizedPassFail($data['result_pass_fail'] ?? null)
@@ -569,7 +597,13 @@ class JobOrderService
         $measurement = $this->optionalText($data['result_measurement'] ?? null);
         $unit = $this->optionalText($data['result_unit'] ?? null);
         $method = $this->optionalText($data['result_method'] ?? null);
-        $performedAt = $this->parsePerformedAt($data['performed_at'] ?? null);
+        $accreditationFootnote = $this->normalizedAccreditationFootnote(
+            $data['accreditation_footnote'] ?? null,
+            $code,
+            $analysis->accreditation_footnote,
+        );
+        $performedAt = $this->parsePerformedAt($data['performed_at'] ?? null)
+            ?? $analysis->performed_at;
 
         if ($requiresPassFail
             && ($data['result_pass_fail'] ?? null) !== null
@@ -581,10 +615,16 @@ class JobOrderService
         }
 
         $hasResultContent = $value !== null
+            || $raw !== null
+            || $finish !== null
+            || $chlorinated !== null
             || $passFail !== null
             || $measurement !== null
             || $unit !== null
-            || $this->optionalText($data['result_remarks'] ?? null) !== null
+            || $this->optionalText(is_string($remarks) ? $remarks : null) !== null
+            || $remarksRaw !== null
+            || $remarksFinish !== null
+            || $remarksChlorinated !== null
             || $method !== null;
 
         if ($hasResultContent && $performedAt === null) {
@@ -604,11 +644,18 @@ class JobOrderService
         $analysis->update([
             'assigned_to' => $analyst->id,
             'result_value' => $value,
+            'result_raw' => $rawFinish ? $raw : null,
+            'result_finish' => ($rawFinish || $residualCl) ? $finish : null,
+            'result_chlorinated' => $residualCl ? $chlorinated : null,
             'result_pass_fail' => $passFail,
             'result_measurement' => $measurement,
             'result_unit' => $unit,
-            'result_remarks' => $data['result_remarks'] ?? null,
+            'result_remarks' => $remarks,
+            'result_remarks_raw' => $rawFinish ? $remarksRaw : null,
+            'result_remarks_finish' => ($rawFinish || $residualCl) ? $remarksFinish : null,
+            'result_remarks_chlorinated' => $residualCl ? $remarksChlorinated : null,
             'result_method' => $method,
+            'accreditation_footnote' => $accreditationFootnote,
             'performed_at' => $performedAt,
             'status' => $analysis->status === JobOrderAnalysisStatus::Returned
                 ? JobOrderAnalysisStatus::Returned
@@ -626,14 +673,36 @@ class JobOrderService
     }
 
     /**
-     * @param  array{result_value: string, result_pass_fail?: ?string, result_measurement?: ?string, result_unit?: ?string, result_remarks?: ?string, result_method?: ?string, performed_at?: mixed}  $data
+     * @param  array{result_value?: string, result_raw?: ?string, result_finish?: ?string, result_pass_fail?: ?string, result_measurement?: ?string, result_unit?: ?string, result_remarks?: ?string, result_method?: ?string, performed_at?: mixed}  $data
      */
     public function completeAnalysis(JobOrderAnalysis $analysis, array $data, User $analyst): JobOrderAnalysis
     {
         $this->assertAnalystCanWorkOn($analysis, $analyst);
         $analysis->loadMissing(['analysisType', 'jobOrder.packages', 'jobOrder.analyses']);
 
-        $value = $this->optionalText($data['result_value'] ?? null);
+        $code = $analysis->analysisType?->code;
+        $rawFinish = OfficialAnalysisCatalog::usesRawFinishResults($code);
+        $residualCl = OfficialAnalysisCatalog::usesResidualChlorineResults($code);
+        $raw = $rawFinish ? $this->optionalText($data['result_raw'] ?? null) : null;
+        $finish = ($rawFinish || $residualCl) ? $this->optionalText($data['result_finish'] ?? null) : null;
+        $chlorinated = $residualCl ? $this->optionalText($data['result_chlorinated'] ?? null) : null;
+        $value = $rawFinish
+            ? OfficialAnalysisCatalog::summarizeRawFinishResults($raw, $finish)
+            : ($residualCl
+                ? OfficialAnalysisCatalog::summarizeResidualChlorineResults($finish, $chlorinated)
+                : $this->optionalText($data['result_value'] ?? null));
+        $remarksRaw = $rawFinish ? $this->optionalText($data['result_remarks_raw'] ?? null) : null;
+        $remarksFinish = ($rawFinish || $residualCl)
+            ? $this->optionalText($data['result_remarks_finish'] ?? null)
+            : null;
+        $remarksChlorinated = $residualCl
+            ? $this->optionalText($data['result_remarks_chlorinated'] ?? null)
+            : null;
+        $remarks = $rawFinish
+            ? OfficialAnalysisCatalog::summarizeRawFinishResults($remarksRaw, $remarksFinish)
+            : ($residualCl
+                ? OfficialAnalysisCatalog::summarizeResidualChlorineResults($remarksFinish, $remarksChlorinated)
+                : ($data['result_remarks'] ?? null));
         $requiresPassFail = (bool) ($analysis->analysisType?->requires_pass_fail);
         $passFail = $requiresPassFail
             ? $this->normalizedPassFail($data['result_pass_fail'] ?? null)
@@ -641,14 +710,30 @@ class JobOrderService
         $measurement = $this->optionalText($data['result_measurement'] ?? null);
         $unit = $this->optionalText($data['result_unit'] ?? null);
         $method = $this->optionalText($data['result_method'] ?? null);
-        $performedAt = $this->parsePerformedAt($data['performed_at'] ?? null);
+        $accreditationFootnote = $this->normalizedAccreditationFootnote(
+            $data['accreditation_footnote'] ?? null,
+            $code,
+            $analysis->accreditation_footnote,
+        );
+        $performedAt = $this->parsePerformedAt($data['performed_at'] ?? null)
+            ?? $analysis->performed_at;
 
         $isPrep = $analysis->isSamplePreparation();
         $errors = [];
         if ($performedAt === null && ! $isPrep) {
             $errors['performed_at'] = 'Enter the date and time this test was performed.';
         }
-        if (blank($value) && ! $isPrep) {
+        if ($rawFinish) {
+            if (blank($raw) && blank($finish) && ! $isPrep) {
+                $errors['result_raw'] = 'Enter Raw or Finish.';
+                $errors['result_finish'] = 'Enter Raw or Finish.';
+            }
+        } elseif ($residualCl) {
+            if (blank($finish) && blank($chlorinated) && ! $isPrep) {
+                $errors['result_finish'] = 'Enter Finish or Chlorinated.';
+                $errors['result_chlorinated'] = 'Enter Finish or Chlorinated.';
+            }
+        } elseif (blank($value) && ! $isPrep) {
             $errors['result_value'] = 'A result value is required to complete this analysis.';
         }
         if ($requiresPassFail && $passFail === null) {
@@ -660,14 +745,21 @@ class JobOrderService
 
         $wasCompleted = $analysis->status === JobOrderAnalysisStatus::Completed;
 
-        $fresh = DB::transaction(function () use ($analysis, $data, $analyst, $value, $passFail, $measurement, $unit, $method, $performedAt, $wasCompleted) {
+        $fresh = DB::transaction(function () use ($analysis, $analyst, $value, $raw, $finish, $chlorinated, $rawFinish, $residualCl, $remarks, $remarksRaw, $remarksFinish, $remarksChlorinated, $passFail, $measurement, $unit, $method, $accreditationFootnote, $performedAt, $wasCompleted) {
             $payload = [
                 'result_value' => $value,
+                'result_raw' => $rawFinish ? $raw : null,
+                'result_finish' => ($rawFinish || $residualCl) ? $finish : null,
+                'result_chlorinated' => $residualCl ? $chlorinated : null,
                 'result_pass_fail' => $passFail,
                 'result_measurement' => $measurement,
                 'result_unit' => $unit,
-                'result_remarks' => $data['result_remarks'] ?? null,
+                'result_remarks' => $remarks,
+                'result_remarks_raw' => $rawFinish ? $remarksRaw : null,
+                'result_remarks_finish' => ($rawFinish || $residualCl) ? $remarksFinish : null,
+                'result_remarks_chlorinated' => $residualCl ? $remarksChlorinated : null,
                 'result_method' => $method,
+                'accreditation_footnote' => $accreditationFootnote,
                 'performed_at' => $performedAt,
                 'status' => JobOrderAnalysisStatus::Completed,
                 'completed_at' => $wasCompleted
@@ -734,7 +826,17 @@ class JobOrderService
                 continue;
             }
 
-            if (blank($line->result_value)) {
+            if (OfficialAnalysisCatalog::usesRawFinishResults($line->analysisType?->code)) {
+                if (blank($line->result_raw) && blank($line->result_finish)) {
+                    $missing[] = $line->name.' (Raw or Finish)';
+                    continue;
+                }
+            } elseif (OfficialAnalysisCatalog::usesResidualChlorineResults($line->analysisType?->code)) {
+                if (blank($line->result_finish) && blank($line->result_chlorinated)) {
+                    $missing[] = $line->name.' (Finish or Chlorinated)';
+                    continue;
+                }
+            } elseif (blank($line->result_value)) {
                 $missing[] = $line->name;
                 continue;
             }
@@ -857,6 +959,7 @@ class JobOrderService
             $updates['result_signatories'] = ResultSignatories::normalizeForStorage(
                 $signatories,
                 $resultForm,
+                $jobOrder,
             );
         }
 
@@ -963,6 +1066,7 @@ class JobOrderService
                 'missing' => $incomplete->pluck('name')->values()->all(),
                 'review_notes' => $job->review_notes,
                 'signatory' => $this->consolidationSignatoryPayload($job),
+                'footer' => $this->consolidationFooterPayload($job),
                 'lines' => $job->analyses->map(fn (JobOrderAnalysis $line) => [
                     'id' => $line->id,
                     'name' => $line->name,
@@ -995,6 +1099,23 @@ class JobOrderService
 
         // Submit posts signatories with send-to-head; save_url is only for later edits.
         return $payload;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function consolidationFooterPayload(JobOrder $job): ?array
+    {
+        $form = $this->reports->matchingControlledForm($job);
+        if ($form === null || ! ResultFooter::formSupportsFooter($form)) {
+            return null;
+        }
+
+        return ResultFooter::manifestPayload(
+            $job,
+            $form,
+            "/analyst/job-orders/{$job->id}/result-footer",
+        );
     }
 
     /**
@@ -1052,6 +1173,13 @@ class JobOrderService
                         $job->analyses,
                     )
                     : null,
+                'footer' => $form && ResultFooter::formSupportsFooter($form)
+                    ? ResultFooter::manifestPayload(
+                        $job,
+                        $form,
+                        "/analyst/job-orders/{$job->id}/result-footer",
+                    )
+                    : null,
             ];
         })->all();
     }
@@ -1074,6 +1202,36 @@ class JobOrderService
             in_array($normalized, ['failed', 'fail'], true) => 'Failed',
             default => null,
         };
+    }
+
+    /**
+     * Persist FO2/FO2A accreditation mark. Empty string = explicit none; null input keeps current.
+     */
+    private function normalizedAccreditationFootnote(
+        mixed $value,
+        ?string $code,
+        ?string $current,
+    ): ?string {
+        if (! OfficialAnalysisCatalog::isWastewaterPhysicoPanelCode($code)) {
+            return $current;
+        }
+
+        if ($value === null) {
+            return $current;
+        }
+
+        $text = trim((string) $value);
+        if ($text === '' || strcasecmp($text, 'none') === 0) {
+            return '';
+        }
+
+        if (! in_array($text, ['*', '**', '***'], true)) {
+            throw ValidationException::withMessages([
+                'accreditation_footnote' => 'Choose None, *, **, or ***.',
+            ]);
+        }
+
+        return $text;
     }
 
     private function optionalText(mixed $value): ?string
@@ -1235,7 +1393,7 @@ class JobOrderService
                     'result_unit' => null,
                     'result_remarks' => null,
                     'result_method' => null,
-                    'performed_at' => null,
+                    // Keep performed_at so the analyst can re-encode without re-entering date/time.
                     'completed_at' => null,
                     'status' => JobOrderAnalysisStatus::Returned,
                 ]);
@@ -1250,7 +1408,7 @@ class JobOrderService
                 'reviewed_by' => null,
                 'reviewed_at' => null,
                 'review_notes' => $notes,
-                'result_signatories' => null,
+                // Keep result_signatories so Confirm analyst signatories prefills on re-submit.
             ]);
 
             return $jobOrder->fresh(['samples', 'analyses.assignee']) ?? $jobOrder;

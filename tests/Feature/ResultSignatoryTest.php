@@ -118,6 +118,30 @@ class ResultSignatoryTest extends TestCase
         $this->assertSame('Preview Analyst', $job->fresh()->result_signatories[0]['name']);
     }
 
+    public function test_in_analysis_consolidation_exposes_editable_signatories(): void
+    {
+        Storage::fake('local');
+        $this->seed();
+
+        [, $job, $analyst] = $this->prepareCompletedCombinedJob(release: false);
+
+        $this->assertSame('in_analysis', $job->fresh()->status->value);
+
+        $this->actingAs($analyst)
+            ->get('/analyst')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('analyst/index')
+                ->has('consolidations', fn ($consolidations) => $consolidations
+                    ->where('0.id', $job->id)
+                    ->where('0.signatory.can_edit', true)
+                    ->where(
+                        '0.signatory.save_url',
+                        "/analyst/job-orders/{$job->id}/result-signatories",
+                    )
+                    ->etc()));
+    }
+
     public function test_saved_signatories_override_pdf_values_with_prc(): void
     {
         Storage::fake('local');

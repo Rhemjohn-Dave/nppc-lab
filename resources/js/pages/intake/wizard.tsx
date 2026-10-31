@@ -98,7 +98,36 @@ type Options = {
     other_classification_options: string[];
     wastewater_sources: string[];
     aqua_sources: string[];
+    wastewater_kinds?: string[];
+    wastewater_fo2_default_codes?: Record<string, string[]>;
 };
+
+const FO2_PRESET_KEY = 'ww_physico_fo2';
+const FO2_FORM_CODE = 'LSP-7.8-FO2';
+
+function isFo2Preset(preset: IntakeTypePreset): boolean {
+    return (
+        preset.key === FO2_PRESET_KEY || preset.form_code === FO2_FORM_CODE
+    );
+}
+
+/** FO2 member type IDs to select for a wastewater sample-description kind. */
+function fo2DefaultMemberIds(
+    preset: IntakeTypePreset,
+    kind: string,
+    defaultCodes: Record<string, string[]> | undefined,
+): number[] {
+    const codes = defaultCodes?.[kind];
+    if (!codes?.length) {
+        return [];
+    }
+
+    const codeSet = new Set(codes);
+
+    return preset.tests
+        .filter((test) => codeSet.has(test.code))
+        .map((test) => test.id);
+}
 
 const PAYMENT_MODE_OPTIONS = [
     {
@@ -350,6 +379,34 @@ function isAquaClassificationValue(classification: string): boolean {
     return !value.includes('potability') && !value.includes('wastewater');
 }
 
+/** Category slugs shown in the individual-test catalog for a Details classification. */
+const CLASSIFICATION_CATEGORY_SLUGS: Record<string, string[]> = {
+    Potability: ['drinking_water', 'microbiological'],
+    Wastewater: ['waste_water'],
+    Aqua: [
+        'water_analysis_aquaculture',
+        'soil_analysis_aquaculture',
+        'adult_fry_prawn_aquaculture',
+        'metals',
+    ],
+    Agriculture: [
+        'fertilizer',
+        'lime_analysis',
+        'soil_analysis_agriculture',
+        'metals',
+        'special_analysis',
+    ],
+    'Academic/Research': [
+        'metals',
+        'special_analysis',
+        'phytochemical',
+        'proximate_analysis',
+        'other_food_analysis',
+        'food_products_microbiological',
+        'nutrifacts',
+    ],
+};
+
 function scopeVisible(scope: string, isAqua: boolean): boolean {
     if (scope === 'both') {
         return true;
@@ -360,6 +417,50 @@ function scopeVisible(scope: string, isAqua: boolean): boolean {
     }
 
     return !isAqua;
+}
+
+/**
+ * Allowed individual-test category slugs for the Details classification.
+ * `null` = no classification filter (keep aqua/non-aqua scope only).
+ */
+function categorySlugsForClassification(
+    classification: string,
+    classificationOther: string,
+    categories: Array<{ category: string | null; label: string }>,
+): Set<string> | null {
+    if (!classification.trim()) {
+        return null;
+    }
+
+    if (classification === 'Others') {
+        const otherLabel = classificationOther.trim().toLowerCase();
+        if (!otherLabel || isGenericOtherCategory(classificationOther)) {
+            return null;
+        }
+
+        const match = categories.find(
+            (group) => group.label.trim().toLowerCase() === otherLabel,
+        );
+        if (match?.category) {
+            return new Set([match.category]);
+        }
+
+        return null;
+    }
+
+    const mapped = CLASSIFICATION_CATEGORY_SLUGS[classification];
+    if (mapped) {
+        return new Set(mapped);
+    }
+
+    const needle = classification.toLowerCase();
+    for (const [label, slugs] of Object.entries(CLASSIFICATION_CATEGORY_SLUGS)) {
+        if (needle.includes(label.toLowerCase())) {
+            return new Set(slugs);
+        }
+    }
+
+    return null;
 }
 
 export default function IntakeWizard({
@@ -403,9 +504,21 @@ export default function IntakeWizard({
     const [sampleStorageTemp, setSampleStorageTemp] = useState('');
     const [wastewaterSource, setWastewaterSource] = useState('');
     const [wastewaterSourceOther, setWastewaterSourceOther] = useState('');
+    const [wastewaterKind, setWastewaterKind] = useState('');
+    const [fo2NeedsKind, setFo2NeedsKind] = useState(false);
     const [otherTests, setOtherTests] = useState('');
+
+    const wastewaterKinds = options.wastewater_kinds ?? [
+        'Wastewater',
+        'River water',
+        'Abstracted water',
+    ];
+    const fo2DefaultCodes = options.wastewater_fo2_default_codes;
+    const fo2Preset = type_presets.find(isFo2Preset);
     const [activeCategory, setActiveCategory] = useState<string | null>(null);
-    const [browseTestsOpen, setBrowseTestsOpen] = useState(false);
+    const [browseOpenBySample, setBrowseOpenBySample] = useState<
+        Record<number, boolean>
+    >({});
     const [testsQuery, setTestsQuery] = useState('');
     const [samples, setSamples] = useState<SampleDraft[]>([emptySample()]);
     const [activeTestSample, setActiveTestSample] = useState(0);
@@ -538,6 +651,12 @@ export default function IntakeWizard({
     }, [packages, isAquaClassification]);
 
     const scopedCategories = useMemo(() => {
+        const allowedSlugs = categorySlugsForClassification(
+            classification,
+            classificationOther,
+            categories,
+        );
+
         return categories
             .map((group) => ({
                 ...group,
@@ -548,8 +667,31 @@ export default function IntakeWizard({
                     ),
                 ),
             }))
-            .filter((group) => group.items.length > 0);
-    }, [categories, isAquaClassification]);
+            .filter((group) => group.items.length > 0)
+            .filter((group) => {
+                if (allowedSlugs === null) {
+                    return true;
+                }
+
+                return (
+                    group.category != null && allowedSlugs.has(group.category)
+                );
+            });
+    }, [
+        categories,
+        isAquaClassification,
+        classification,
+        classificationOther,
+    ]);
+
+    useEffect(() => {
+        if (
+            activeCategory !== null &&
+            !scopedCategories.some((group) => group.category === activeCategory)
+        ) {
+            setActiveCategory(null);
+        }
+    }, [scopedCategories, activeCategory]);
 
     const needsSpecimen = useMemo(() => {
         if (classification === 'Others') {
@@ -987,19 +1129,83 @@ export default function IntakeWizard({
         });
     }
 
+    function applyWastewaterKind(kind: string) {
+        setWastewaterKind(kind);
+        if (kind) {
+            setFo2NeedsKind(false);
+        }
+
+        const defaultIds =
+            fo2Preset && kind
+                ? fo2DefaultMemberIds(fo2Preset, kind, fo2DefaultCodes)
+                : [];
+        const fo2AllIds = new Set(fo2Preset?.analysis_type_ids ?? []);
+
+        setSamples((current) =>
+            current.map((sample) => {
+                const withDescription = {
+                    ...sample,
+                    description: kind,
+                };
+
+                if (
+                    !fo2Preset ||
+                    !kind ||
+                    !sample.preset_keys.includes(fo2Preset.key)
+                ) {
+                    return withDescription;
+                }
+
+                const kept = sample.analysis_type_ids.filter(
+                    (id) => !fo2AllIds.has(id),
+                );
+
+                return {
+                    ...withDescription,
+                    analysis_type_ids: [
+                        ...new Set([...kept, ...defaultIds]),
+                    ],
+                };
+            }),
+        );
+    }
+
     function toggleTypePreset(sampleIndex: number, preset: IntakeTypePreset) {
         setActiveTestSample(sampleIndex);
+
+        if (isFo2Preset(preset) && classification === 'Wastewater') {
+            const selected = samples[sampleIndex]?.preset_keys.includes(
+                preset.key,
+            );
+            if (!selected && !wastewaterKind) {
+                setFo2NeedsKind(true);
+                return;
+            }
+        }
+
+        setFo2NeedsKind(false);
         setSamples((current) =>
             current.map((sample, i) => {
                 if (i !== sampleIndex) {
                     return sample;
                 }
 
-                const memberIds = preset.analysis_type_ids;
+                const memberIds =
+                    isFo2Preset(preset) && wastewaterKind
+                        ? fo2DefaultMemberIds(
+                              preset,
+                              wastewaterKind,
+                              fo2DefaultCodes,
+                          )
+                        : preset.analysis_type_ids;
+                // Always drop the full FO2 panel when unselecting so leftover members clear.
+                const removeIds = isFo2Preset(preset)
+                    ? preset.analysis_type_ids
+                    : memberIds;
                 const selected = sample.preset_keys.includes(preset.key);
 
                 if (selected) {
-                    const keep = keptTypeIdsExcluding(sample, memberIds, {
+                    const keep = keptTypeIdsExcluding(sample, removeIds, {
                         exceptPresetKey: preset.key,
                     });
 
@@ -1009,7 +1215,7 @@ export default function IntakeWizard({
                             (key) => key !== preset.key,
                         ),
                         analysis_type_ids: sample.analysis_type_ids.filter(
-                            (id) => !memberIds.includes(id) || keep.has(id),
+                            (id) => !removeIds.includes(id) || keep.has(id),
                         ),
                     };
                 }
@@ -1213,6 +1419,10 @@ export default function IntakeWizard({
                 return false;
             }
 
+            if (classification === 'Wastewater' && !wastewaterKind) {
+                return false;
+            }
+
             if (paymentMode === 'billing_partial' && !paymentTerms) {
                 return false;
             }
@@ -1257,6 +1467,10 @@ export default function IntakeWizard({
                 !classificationOtherSpecify.trim()
             ) {
                 return 'Specify the Other classification.';
+            }
+
+            if (classification === 'Wastewater' && !wastewaterKind) {
+                return 'Choose a sample description (Wastewater, River water, or Abstracted water).';
             }
 
             if (paymentMode === 'billing_partial' && !paymentTerms) {
@@ -1334,7 +1548,10 @@ export default function IntakeWizard({
                 other_tests: otherTests || null,
                 samples: samples.map((sample) => ({
                     sample_code: sample.sample_code,
-                    description: sample.description,
+                    description:
+                        classification === 'Wastewater' && wastewaterKind
+                            ? wastewaterKind
+                            : sample.description,
                     matrix: sample.matrix,
                     quantity: sample.quantity || null,
                     unit: sample.unit,
@@ -1867,6 +2084,38 @@ export default function IntakeWizard({
                                                                 );
                                                                 if (
                                                                     item !==
+                                                                    'Wastewater'
+                                                                ) {
+                                                                    const kindSet =
+                                                                        new Set(
+                                                                            wastewaterKinds,
+                                                                        );
+                                                                    setWastewaterKind(
+                                                                        '',
+                                                                    );
+                                                                    setFo2NeedsKind(
+                                                                        false,
+                                                                    );
+                                                                    setSamples(
+                                                                        (current) =>
+                                                                            current.map(
+                                                                                (
+                                                                                    sample,
+                                                                                ) =>
+                                                                                    kindSet.has(
+                                                                                        sample.description,
+                                                                                    )
+                                                                                        ? {
+                                                                                              ...sample,
+                                                                                              description:
+                                                                                                  '',
+                                                                                          }
+                                                                                        : sample,
+                                                                            ),
+                                                                    );
+                                                                }
+                                                                if (
+                                                                    item !==
                                                                     'Others'
                                                                 ) {
                                                                     setClassificationOther(
@@ -1987,6 +2236,66 @@ export default function IntakeWizard({
                                                         />
                                                     </IntakeField>
                                                 )}
+                                            </div>
+                                        )}
+                                        {classification === 'Wastewater' && (
+                                            <div className="space-y-2 pt-2">
+                                                <Label
+                                                    htmlFor="wastewater_kind"
+                                                    className="text-xs font-semibold text-slate-700"
+                                                >
+                                                    Sample description{' '}
+                                                    <span className="text-rose-600">
+                                                        *
+                                                    </span>
+                                                </Label>
+                                                <p className="text-[11px] text-slate-500">
+                                                    Printed on the FO2 result.
+                                                    Wastewater and River water
+                                                    default to the full physico
+                                                    panel; Abstracted water
+                                                    defaults to pH, DO, BOD, and
+                                                    TSS.
+                                                </p>
+                                                <div
+                                                    className="flex flex-wrap gap-2"
+                                                    role="group"
+                                                    aria-label="Sample description"
+                                                >
+                                                    {wastewaterKinds.map(
+                                                        (kind) => (
+                                                            <ChoiceChip
+                                                                key={kind}
+                                                                active={
+                                                                    wastewaterKind ===
+                                                                    kind
+                                                                }
+                                                                onClick={() =>
+                                                                    applyWastewaterKind(
+                                                                        wastewaterKind ===
+                                                                            kind
+                                                                            ? ''
+                                                                            : kind,
+                                                                    )
+                                                                }
+                                                            >
+                                                                {kind}
+                                                            </ChoiceChip>
+                                                        ),
+                                                    )}
+                                                </div>
+                                                {attemptedContinue &&
+                                                !wastewaterKind ? (
+                                                    <p
+                                                        className="border-l-2 border-rose-300 py-1 pl-2 text-xs font-medium text-rose-700"
+                                                        role="alert"
+                                                        data-intake-error=""
+                                                    >
+                                                        Choose Wastewater, River
+                                                        water, or Abstracted
+                                                        water.
+                                                    </p>
+                                                ) : null}
                                             </div>
                                         )}
                                     </FormSection>
@@ -2545,6 +2854,23 @@ export default function IntakeWizard({
                                                         <p className="text-xs font-semibold text-slate-900">
                                                             Test panels
                                                         </p>
+                                                        {fo2NeedsKind ? (
+                                                            <IntakeAlert
+                                                                variant="error"
+                                                                data-intake-error=""
+                                                            >
+                                                                Choose a Sample
+                                                                description on
+                                                                Details
+                                                                (Wastewater,
+                                                                River water, or
+                                                                Abstracted
+                                                                water) before
+                                                                selecting the
+                                                                Physico-Chemical
+                                                                panel.
+                                                            </IntakeAlert>
+                                                        ) : null}
                                                         <div className="space-y-1.5">
                                                             {(suggestedTypePresets.length >
                                                             0
@@ -2664,22 +2990,35 @@ export default function IntakeWizard({
                                                             size="sm"
                                                             className="h-8 border-nppc-900/30 px-2.5 text-xs text-nppc-900 hover:bg-nppc-50"
                                                             aria-expanded={
-                                                                browseTestsOpen
+                                                                Boolean(
+                                                                    browseOpenBySample[
+                                                                        sampleIndex
+                                                                    ],
+                                                                )
                                                             }
                                                             onClick={() =>
-                                                                setBrowseTestsOpen(
-                                                                    (open) =>
-                                                                        !open,
+                                                                setBrowseOpenBySample(
+                                                                    (current) => ({
+                                                                        ...current,
+                                                                        [sampleIndex]:
+                                                                            !current[
+                                                                                sampleIndex
+                                                                            ],
+                                                                    }),
                                                                 )
                                                             }
                                                         >
-                                                            {browseTestsOpen
+                                                            {browseOpenBySample[
+                                                                sampleIndex
+                                                            ]
                                                                 ? 'Hide catalog'
                                                                 : 'View individual tests'}
                                                         </Button>
                                                     </div>
 
-                                                    {browseTestsOpen && (
+                                                    {browseOpenBySample[
+                                                        sampleIndex
+                                                    ] && (
                                                         <IntakeIndividualTestCatalog
                                                             categories={
                                                                 scopedCategories

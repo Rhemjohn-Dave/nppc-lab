@@ -31,6 +31,10 @@ class ExportControlledFormBlueprintsCommand extends Command
             'config' => 'result_ww_physico_form_fields',
             'pdf' => 'PC Wastewater result Form Issue 18 09012026 blank.pdf',
         ],
+        'LSP-7.8-FO2A' => [
+            'config' => 'result_ww_physico_abstracted_form_fields',
+            'pdf' => 'PC Wastewater result Form Issue 18 09012026 blank.pdf',
+        ],
         'LSP-7.8-FO3' => [
             'config' => 'result_dw_old_fo3_form_fields',
             'pdf' => 'PC OLD Drinking Water Test Result Form Issue 11 blank.pdf',

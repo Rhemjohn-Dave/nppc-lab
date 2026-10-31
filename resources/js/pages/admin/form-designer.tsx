@@ -15,7 +15,12 @@ import {
 import DynamicTestMatrixPreview from '@/components/form-designer/dynamic-test-matrix-preview';
 import FieldLibrary from '@/components/form-designer/field-library';
 import PropertiesPanel from '@/components/form-designer/properties-panel';
-import { DEFAULT_MATRIX_CONFIG, type MatrixCellSelection, type MatrixTableConfig } from '@/lib/dynamic-test-matrix';
+import {
+    DEFAULT_MATRIX_CONFIG,
+    fontSizeCssPx,
+    type MatrixCellSelection,
+    type MatrixTableConfig,
+} from '@/lib/dynamic-test-matrix';
 import {
     snapMove,
     snapPoint,
@@ -44,9 +49,21 @@ import type {
     FieldTypeOption,
 } from '@/lib/controlled-forms';
 import {
+    fieldAnchor,
+    fieldBold,
+    fieldListIndentMm,
+    fieldListStyle,
+    fieldStaticText,
+    parseInlineBoldSegments,
+    parseMultilineListPreview,
+} from '@/lib/controlled-forms';
+import {
     fitScaleToWidth,
+    pageDisplayPxKeepingPdfAspect,
     pagePxSize,
     pdfjsViewportScaleForFpdiMm,
+    SHORT_BOND_HEIGHT_MM,
+    SHORT_BOND_WIDTH_MM,
 } from '@/lib/controlled-pdf-viewport';
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -65,6 +82,22 @@ function SidebarCollapser() {
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     return null;
+}
+
+function renderInlineBoldPreview(text: string, forceBold = false): React.ReactNode {
+    const segments = parseInlineBoldSegments(text);
+    if (segments.length === 0) {
+        return text;
+    }
+
+    return segments.map((segment, index) => (
+        <span
+            key={`ib-${index}-${segment.text.slice(0, 12)}`}
+            className={forceBold || segment.bold ? 'font-bold' : 'font-normal'}
+        >
+            {segment.text}
+        </span>
+    ));
 }
 
 type CanonicalPage = {
@@ -162,10 +195,13 @@ export default function FormDesigner({
     const [zoom, setZoom] = useState(0.75);
     const didAutoFit = useRef(false);
     // FPDI millimetres from the server are authoritative (same as ControlledPdfFiller).
+    // Fallback is short bond (Letter) when metrics are missing.
     const initialWidthMm =
-        canonical_page?.width_mm ?? revision.page_width_mm ?? 215.9;
+        canonical_page?.width_mm ?? revision.page_width_mm ?? SHORT_BOND_WIDTH_MM;
     const initialHeightMm =
-        canonical_page?.height_mm ?? revision.page_height_mm ?? 330.2;
+        canonical_page?.height_mm ??
+        revision.page_height_mm ??
+        SHORT_BOND_HEIGHT_MM;
     const initialBasePx = pagePxSize(initialWidthMm, initialHeightMm, 1);
     const initialZoomPx = pagePxSize(initialWidthMm, initialHeightMm, 0.75);
     const [basePageSize, setBasePageSize] = useState({
@@ -389,8 +425,11 @@ export default function FormDesigner({
 
                 const maxX = Math.max(0, pageSize.widthMm - field.width);
                 const maxY = Math.max(0, pageSize.heightMm - field.height);
+                const lockedY = fieldAnchor(field) !== null;
                 const x = Number(Math.min(maxX, Math.max(0, field.x + dx)).toFixed(3));
-                const y = Number(Math.min(maxY, Math.max(0, field.y + dy)).toFixed(3));
+                const y = lockedY
+                    ? field.y
+                    : Number(Math.min(maxY, Math.max(0, field.y + dy)).toFixed(3));
 
                 if (x === field.x && y === field.y) {
                     return field;
@@ -449,11 +488,11 @@ export default function FormDesigner({
             const widthMm =
                 canonical_page?.width_mm ??
                 revision.page_width_mm ??
-                (widthMmFromPdf > 0 ? widthMmFromPdf : 215.9);
+                (widthMmFromPdf > 0 ? widthMmFromPdf : SHORT_BOND_WIDTH_MM);
             const heightMm =
                 canonical_page?.height_mm ??
                 revision.page_height_mm ??
-                (heightMmFromPdf > 0 ? heightMmFromPdf : 330.2);
+                (heightMmFromPdf > 0 ? heightMmFromPdf : SHORT_BOND_HEIGHT_MM);
 
             // Stretch pdf.js raster so CSS px map 1:1 to FPDI millimetres.
             const renderScale = pdfjsViewportScaleForFpdiMm(
@@ -478,8 +517,18 @@ export default function FormDesigner({
 
             await pdfPage.render({ canvasContext: context, viewport, canvas }).promise;
 
+            // Field placement uses stored FPDI mm; raster display keeps PDF aspect (no squash).
             const basePx = pagePxSize(widthMm, heightMm, 1);
             const zoomPx = pagePxSize(widthMm, heightMm, zoom);
+            const displayPx = pageDisplayPxKeepingPdfAspect(
+                widthMm,
+                unscaledViewport.width,
+                unscaledViewport.height,
+                zoom,
+            );
+
+            canvas.style.width = `${displayPx.widthPx}px`;
+            canvas.style.height = `${displayPx.heightPx}px`;
 
             setBasePageSize({
                 widthPx: basePx.widthPx,
@@ -879,6 +928,7 @@ export default function FormDesigner({
             setFields((current) =>
                 current.map((field, index) => {
                     const id = clientId(field, index);
+                    const lockY = fieldAnchor(field) !== null;
 
                     if (drag.group && drag.group.length > 1) {
                         const orig = drag.group.find((item) => item.id === id);
@@ -893,7 +943,11 @@ export default function FormDesigner({
                         return {
                             ...field,
                             x: Number(Math.min(maxX, Math.max(0, orig.origX + appliedDx)).toFixed(3)),
-                            y: Number(Math.min(maxY, Math.max(0, orig.origY + appliedDy)).toFixed(3)),
+                            y: lockY
+                                ? field.y
+                                : Number(
+                                      Math.min(maxY, Math.max(0, orig.origY + appliedDy)).toFixed(3),
+                                  ),
                         };
                     }
 
@@ -901,7 +955,7 @@ export default function FormDesigner({
                         ? {
                               ...field,
                               x: Number(snapped.x.toFixed(3)),
-                              y: Number(snapped.y.toFixed(3)),
+                              y: lockY ? field.y : Number(snapped.y.toFixed(3)),
                           }
                         : field;
                 }),
@@ -1247,17 +1301,72 @@ export default function FormDesigner({
                                         // Natural-height tables: the box ends at the last row (field height stays as print capacity).
                                         const contentMm = isMatrix ? (matrixContentMm[id] ?? null) : null;
                                         const endsAtLastRow = contentMm !== null && contentMm > 0;
+                                        const anchor = fieldAnchor(field);
+                                        let previewTopMm = field.y;
+                                        if (anchor) {
+                                            const matrixIndex = fields.findIndex(
+                                                (item) =>
+                                                    item.page_number === field.page_number &&
+                                                    item.field_type === 'dynamic_test_matrix' &&
+                                                    item.name === anchor.below,
+                                            );
+                                            if (matrixIndex >= 0) {
+                                                const matrix = fields[matrixIndex];
+                                                const matrixId = clientId(matrix, matrixIndex);
+                                                const matrixContent =
+                                                    matrixContentMm[matrixId] ?? null;
+                                                if (matrixContent !== null && matrixContent > 0) {
+                                                    previewTopMm =
+                                                        matrix.y +
+                                                        matrixContent +
+                                                        anchor.offset_mm;
+                                                }
+                                            }
+                                        }
+                                        const staticText = fieldStaticText(field);
+                                        const isMultiline = field.field_type === 'multiline';
+                                        const listStyle = isMultiline
+                                            ? fieldListStyle(field)
+                                            : null;
+                                        const listIndentMm = listStyle
+                                            ? fieldListIndentMm(field)
+                                            : 6;
+                                        const listPreview =
+                                            listStyle && staticText !== ''
+                                                ? parseMultilineListPreview(
+                                                      staticText,
+                                                      listStyle,
+                                                  )
+                                                : null;
+                                        const showWrappedPreview =
+                                            !isTable &&
+                                            !isMatrix &&
+                                            (isMultiline || staticText !== '');
+                                        const previewBody = isTable
+                                            ? `▦ ${field.label}`
+                                            : staticText !== ''
+                                              ? staticText
+                                              : field.label;
+                                        // font_size is PDF points (TCPDF); match matrix preview / print.
+                                        const fontSizePt = Number(field.font_size) || 11;
+                                        const fontSizePx = fontSizeCssPx(fontSizePt, pxPerMm);
+                                        const lineHeightMm = Math.max(3.0, fontSizePt * 0.42);
+                                        const lineHeightPx = lineHeightMm * pxPerMm;
+                                        const listGutterPx = Math.max(
+                                            4,
+                                            listIndentMm * pxPerMm,
+                                        );
 
                                         return (
                                             <div
                                                 key={`${id}-${index}`}
                                                 data-designer-field={id}
-                                                className={`absolute z-10 overflow-visible text-[10px] leading-tight ${
+                                                className={`absolute z-10 overflow-visible leading-none ${
                                                     isMatrix ? '' : 'select-none'
                                                 } ${canEdit && !isMatrix ? 'cursor-move' : canEdit ? '' : 'cursor-default'}`}
                                                 style={{
                                                     left: px(field.x),
-                                                    top: px(field.y),
+                                                    top: px(previewTopMm),
                                                     width: px(field.width),
                                                     height: px(endsAtLastRow ? Math.min(contentMm, field.height) : field.height),
                                                 }}
@@ -1267,6 +1376,23 @@ export default function FormDesigner({
                                                         setMatrixCellSelection(null);
                                                     }
                                                     setMobilePropertiesOpen(true);
+                                                }}
+                                                onDoubleClick={(event) => {
+                                                    event.stopPropagation();
+                                                    if (isMatrix || isTable) {
+                                                        return;
+                                                    }
+                                                    setSelectedIds([id]);
+                                                    setMatrixCellSelection(null);
+                                                    setPendingSource(null);
+                                                    setMobilePropertiesOpen(true);
+                                                    window.requestAnimationFrame(() => {
+                                                        const el = document.getElementById(
+                                                            'prop-static-text',
+                                                        ) as HTMLTextAreaElement | null;
+                                                        el?.focus();
+                                                        el?.select();
+                                                    });
                                                 }}
                                                 onPointerDown={(event) => {
                                                     if (isMatrix) {
@@ -1330,17 +1456,71 @@ export default function FormDesigner({
                                                         />
                                                     ) : (
                                                         <span
-                                                            className="pointer-events-none flex h-full items-start px-1 py-0.5"
+                                                            className="pointer-events-none flex h-full items-start overflow-hidden px-0.5 py-0"
                                                             style={{
                                                                 fontFamily: cssFontFamily(field.font_family),
-                                                                fontSize: `${Math.max(8, field.font_size)}px`,
+                                                                fontSize: `${fontSizePx}px`,
+                                                                fontWeight: fieldBold(field)
+                                                                    ? 700
+                                                                    : undefined,
+                                                                lineHeight: showWrappedPreview
+                                                                    ? `${lineHeightPx}px`
+                                                                    : `${fontSizePx}px`,
                                                             }}
                                                         >
-                                                            <span className="truncate font-medium text-slate-800">
-                                                                {isTable
-                                                                    ? `▦ ${field.label}`
-                                                                    : field.label}
-                                                            </span>
+                                                            {listPreview ? (
+                                                                <span className="flex w-full flex-col font-normal text-slate-800">
+                                                                    {listPreview.headers.map(
+                                                                        (header, headerIndex) => (
+                                                                            <span
+                                                                                key={`h-${headerIndex}`}
+                                                                                className="whitespace-pre-wrap break-words"
+                                                                            >
+                                                                                {renderInlineBoldPreview(
+                                                                                    header,
+                                                                                    fieldBold(field),
+                                                                                )}
+                                                                            </span>
+                                                                        ),
+                                                                    )}
+                                                                    {listPreview.items.map(
+                                                                        (item, itemIndex) => (
+                                                                            <span
+                                                                                key={`i-${itemIndex}`}
+                                                                                className="flex w-full items-start"
+                                                                            >
+                                                                                <span
+                                                                                    className="shrink-0"
+                                                                                    style={{
+                                                                                        width: `${listGutterPx}px`,
+                                                                                    }}
+                                                                                >
+                                                                                    {item.marker}
+                                                                                </span>
+                                                                                <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
+                                                                                    {renderInlineBoldPreview(
+                                                                                        item.body,
+                                                                                        fieldBold(field),
+                                                                                    )}
+                                                                                </span>
+                                                                            </span>
+                                                                        ),
+                                                                    )}
+                                                                </span>
+                                                            ) : (
+                                                                <span
+                                                                    className={
+                                                                        showWrappedPreview
+                                                                            ? 'w-full whitespace-pre-wrap break-words font-normal text-slate-800'
+                                                                            : 'truncate font-normal text-slate-800'
+                                                                    }
+                                                                >
+                                                                    {renderInlineBoldPreview(
+                                                                        previewBody,
+                                                                        fieldBold(field),
+                                                                    )}
+                                                                </span>
+                                                            )}
                                                         </span>
                                                     )}
                                                 </div>
@@ -1424,6 +1604,7 @@ export default function FormDesigner({
                             selected={selected}
                             selectedCount={selectedIds.length}
                             selectedFields={selectedFields}
+                            pageFields={fields}
                             groupedSources={groupedSources}
                             canEdit={canEdit}
                             matrixCellSelection={
@@ -1502,12 +1683,11 @@ export default function FormDesigner({
                         throw new Error('Could not generate the preview.');
                     }
 
+                    // Same load shape as ResultReportPreview / test results (blob only).
                     return {
                         blob: await response.blob(),
                         filename: `${form.form_code}-preview.pdf`,
                         title: 'Preview',
-                        pageWidthMm: pageSize.widthMm,
-                        pageHeightMm: pageSize.heightMm,
                     };
                 }}
             />

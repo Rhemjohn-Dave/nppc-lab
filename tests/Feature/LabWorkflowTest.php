@@ -265,6 +265,10 @@ class LabWorkflowTest extends TestCase
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
         $job = $this->createFinishedJob('Return Customer', 'return@example.com');
         $line = $job->analyses()->firstOrFail();
+        $performedAt = $line->performed_at?->copy();
+        $this->assertNotNull($performedAt);
+        $signatoriesBefore = $job->result_signatories;
+        $this->assertNotEmpty($signatoriesBefore);
 
         $this->actingAs($head)
             ->post("/head/{$job->id}/return", [
@@ -278,6 +282,9 @@ class LabWorkflowTest extends TestCase
         $this->assertSame(JobOrderStatus::InAnalysis, $job->status);
         $this->assertSame(JobOrderAnalysisStatus::Returned, $line->status);
         $this->assertNull($line->result_value);
+        $this->assertNotNull($line->performed_at);
+        $this->assertTrue($performedAt->equalTo($line->performed_at));
+        $this->assertSame($signatoriesBefore, $job->result_signatories);
 
         $this->actingAs($analyst)
             ->get('/analyst?status=returned')
@@ -289,6 +296,45 @@ class LabWorkflowTest extends TestCase
                 ->where('tasks.0.status', JobOrderAnalysisStatus::Returned->value)
                 ->where('tasks.0.job_order.review_notes', 'Please recheck the pH reading.')
                 ->where('jobs.total', 1));
+    }
+
+    public function test_returned_assay_recomplete_reuses_stored_performed_at(): void
+    {
+        Mail::fake();
+        $this->seed();
+
+        $head = User::where('email', 'head@nppc.local')->firstOrFail();
+        $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+        $job = $this->createFinishedJob('Return Keep Stamp', 'return-stamp@example.com');
+        $line = $job->analyses()->firstOrFail();
+        $performedAt = $line->performed_at?->copy();
+        $this->assertNotNull($performedAt);
+
+        $this->actingAs($head)
+            ->post("/head/{$job->id}/return", [
+                'analysis_ids' => [$line->id],
+                'review_notes' => 'Recheck value only.',
+            ])
+            ->assertRedirect('/head/results');
+
+        $line->refresh();
+        $this->assertSame(JobOrderAnalysisStatus::Returned, $line->status);
+        $this->assertTrue($performedAt->equalTo($line->performed_at));
+
+        $this->actingAs($analyst)
+            ->post("/analyst/tasks/{$line->id}/complete", [
+                'result_value' => '1.2',
+                'result_pass_fail' => 'Passed',
+                'result_method' => 'Standard Method',
+            ])
+            ->assertRedirect()
+            ->assertSessionDoesntHaveErrors();
+
+        $line->refresh();
+        $this->assertSame(JobOrderAnalysisStatus::Completed, $line->status);
+        $this->assertSame('1.2', $line->result_value);
+        $this->assertNotNull($line->performed_at);
+        $this->assertTrue($performedAt->equalTo($line->performed_at));
     }
 
     public function test_head_cannot_return_after_results_are_released(): void

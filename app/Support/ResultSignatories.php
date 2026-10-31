@@ -15,9 +15,12 @@ class ResultSignatories
      * @param  list<array{name?: mixed, prc_id?: mixed}>  $signatories
      * @return list<array{name: string, prc_id: string|null}>
      */
-    public static function normalizeForStorage(array $signatories, ControlledForm $form): array
-    {
-        $slots = self::slotsFor($form);
+    public static function normalizeForStorage(
+        array $signatories,
+        ControlledForm $form,
+        ?JobOrder $jobOrder = null,
+    ): array {
+        $slots = self::slotsFor($form, $jobOrder);
         $requirePrc = self::requirePrcFor($form);
         $normalized = [];
 
@@ -47,8 +50,12 @@ class ResultSignatories
         return $normalized;
     }
 
-    public static function slotsFor(?ControlledForm $form): int
+    public static function slotsFor(?ControlledForm $form, ?JobOrder $jobOrder = null): int
     {
+        if ($form?->form_code === 'LSP-7.8-FO2A') {
+            return 3;
+        }
+
         $slots = (int) ($form?->analyst_signatory_slots ?? 1);
 
         return max(1, min(4, $slots));
@@ -59,19 +66,25 @@ class ResultSignatories
      *
      * @return list<string>
      */
-    public static function slotLabels(?ControlledForm $form): array
+    public static function slotLabels(?ControlledForm $form, ?JobOrder $jobOrder = null): array
     {
-        $slots = self::slotsFor($form);
+        $slots = self::slotsFor($form, $jobOrder);
+
+        if ($form?->form_code === 'LSP-7.8-FO2A') {
+            return array_slice([
+                'Reviewed by',
+                'Certified Correct',
+                'Noted By',
+            ], 0, $slots);
+        }
 
         if ($form?->form_code === 'LSP-7.8-FO2') {
-            $labels = [
+            return array_slice([
                 'Reviewed by',
                 'Noted By',
                 'Certified Correct (1)',
                 'Certified Correct (2)',
-            ];
-
-            return array_slice($labels, 0, $slots);
+            ], 0, $slots);
         }
 
         return array_map(
@@ -91,7 +104,7 @@ class ResultSignatories
      */
     public static function defaults(JobOrder $jobOrder, ?ControlledForm $form = null, ?Collection $orderedAnalyses = null): array
     {
-        $slots = self::slotsFor($form);
+        $slots = self::slotsFor($form, $jobOrder);
         $names = self::candidateNames($jobOrder, $orderedAnalyses);
         $defaults = [];
 
@@ -222,8 +235,8 @@ class ResultSignatories
         $canEdit = filled($saveUrl);
 
         return [
-            'slots' => self::slotsFor($form),
-            'slot_labels' => self::slotLabels($form),
+            'slots' => self::slotsFor($form, $jobOrder),
+            'slot_labels' => self::slotLabels($form, $jobOrder),
             'require_prc' => self::requirePrcFor($form),
             'confirmed' => $confirmed,
             'can_edit' => $canEdit,

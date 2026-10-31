@@ -139,7 +139,7 @@ class ControlledFormRevision extends Model
     {
         return [
             'width' => (float) ($this->page_width_mm ?: 215.9),
-            'height' => (float) ($this->page_height_mm ?: 330.2),
+            'height' => (float) ($this->page_height_mm ?: 279.4),
             'unit' => 'mm',
         ];
     }

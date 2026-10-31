@@ -14,7 +14,8 @@ import type { ReactNode } from 'react';
 export default function DesignerLayout({ children }: { children: ReactNode }) {
     return (
         <AppShell variant="sidebar">
-            <AppSidebar />
+            {/* Offcanvas: collapsed = fully hidden (no icon rail overlapping the header). */}
+            <AppSidebar collapsible="offcanvas" />
             {/* Mirrors SidebarInset but uses h-svh + overflow-hidden instead of min-h-svh */}
             <main
                 className={cn(

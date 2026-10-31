@@ -155,6 +155,15 @@ export function matrixMethodFontSize(fieldFontSize: number, config: MatrixTableC
  * sizes as the form preview and generated PDF. Keep both sides in sync.
  */
 export const PT_TO_MM = 0.352778;
+
+/**
+ * CSS pixel size for a PDF point at the current Designer/PDF page scale.
+ * Matches ControlledPdfFiller SetFont(pt) when pxPerMm comes from FPDI mm × CSS zoom.
+ */
+export function fontSizeCssPx(fontSizePt: number, pxPerMm: number): number {
+    return fontSizePt * PT_TO_MM * pxPerMm;
+}
+
 /** TCPDF default left/right cell padding (mm). */
 const TCPDF_CELL_PADDING_MM = 1.000125;
 const TCPDF_CELL_HEIGHT_RATIO = 1.25;
@@ -350,11 +359,15 @@ export function measureMatrixBodyRowHeightMm(
     methodFontSizePt: number,
     testNameBold: boolean,
     measure: MatrixTextMeasurer,
+    skipSpanColumns = false,
 ): number {
     let maxHeight = baseRowHeightMm;
     const separateMethodColumn = columns.some((column) => column.key === 'method');
 
     columns.forEach((column, index) => {
+        if (skipSpanColumns && isMatrixRowSpanColumnKey(column.key)) {
+            return;
+        }
         const colWidth = (totalWidthMm * columnWidthPct(columns, index)) / 100;
         const colFontSize = columnFontSizePt(column, bodyFontSizePt);
         const innerWidth = Math.max(1, colWidth - 1.6);
@@ -439,6 +452,7 @@ export function fitMatrixBodyFonts(
                     methodSize,
                     testNameBold,
                     measure,
+                    matrixRowSpanRole(row) === 'continue',
                 ) +
                 matrixRowExtraMm(rowExtraMm),
             0,
@@ -512,6 +526,63 @@ export function matrixRowExtraMm(rowExtraMm: number | undefined): number {
     return typeof rowExtraMm === 'number' && Number.isFinite(rowExtraMm) ? Math.max(0, rowExtraMm) : 0;
 }
 
+/** Columns that rowspan across a Raw/Finish pair (mirrors DynamicTestMatrix::rowSpanColumnKeys). */
+export const MATRIX_ROW_SPAN_COLUMN_KEYS = ['test', 'method'] as const;
+
+export function isMatrixRowSpanColumnKey(key: string): boolean {
+    return (MATRIX_ROW_SPAN_COLUMN_KEYS as readonly string[]).includes(key);
+}
+
+export function matrixRowSpanGroup(row: Record<string, string>): string | null {
+    const group = (row.row_span_group ?? '').trim();
+    return group !== '' ? group : null;
+}
+
+export function matrixRowSpanRole(row: Record<string, string>): 'start' | 'continue' | null {
+    const role = (row.row_span_role ?? '').trim().toLowerCase();
+    return role === 'start' || role === 'continue' ? role : null;
+}
+
+export function matrixRowsFormSpanPair(
+    start: Record<string, string>,
+    cont: Record<string, string>,
+): boolean {
+    return matrixRowContinuesSpan(start, cont);
+}
+
+export function matrixRowContinuesSpan(
+    start: Record<string, string>,
+    next: Record<string, string>,
+): boolean {
+    const group = matrixRowSpanGroup(start);
+    return (
+        group !== null &&
+        matrixRowSpanRole(start) === 'start' &&
+        matrixRowSpanGroup(next) === group &&
+        matrixRowSpanRole(next) === 'continue'
+    );
+}
+
+/** Consecutive span rows starting at index (1 when not a span start). */
+export function matrixSpanGroupLength(
+    rows: Array<Record<string, string>>,
+    startIndex: number,
+): number {
+    const start = rows[startIndex];
+    if (!start || matrixRowSpanRole(start) !== 'start') {
+        return 1;
+    }
+    let length = 1;
+    for (let i = startIndex + 1; i < rows.length; i++) {
+        const next = rows[i];
+        if (!next || !matrixRowContinuesSpan(start, next)) {
+            break;
+        }
+        length++;
+    }
+    return length;
+}
+
 /** Key for a body row in `row_heights_mm` (same as DynamicTestMatrix::rowHeightKey). */
 export function matrixRowKey(row: Record<string, string>): string {
     return (row.test ?? '').trim().toLowerCase();
@@ -555,6 +626,7 @@ export function planMatrixBodyRows(
                 fit.methodFontSizePt,
                 testNameBold,
                 measure,
+                matrixRowSpanRole(row) === 'continue',
             ) + matrixRowExtraMm(rowExtraMm);
 
         if (total + heightMm > availableHeightMm + 0.01) {
@@ -638,15 +710,91 @@ export function matrixConfig(field: DesignerField): MatrixTableConfig {
     return merged;
 }
 
+const TDS_ACCEPTABLE_RAW =
+    '600 for product that has not undergone reverse osmosis / distillation process';
+const TDS_ACCEPTABLE_FINISH =
+    '<10 for product that undergone reverse osmosis/distillation process';
+const PH_ACCEPTABLE_RAW = '6.5-8.5';
+const PH_ACCEPTABLE_FINISH =
+    '5-7 for product water that undergone reverse osmosis/distillation process';
+const CL_ACCEPTABLE_FINISH = '<1.0 mg/L for RO water';
+const CL_ACCEPTABLE_CHLORINATED = '0.3 - 1.5 mg/L for chlorinated drinking water';
+const CL_ACCEPTABLE_RAW = 'Not applicable to Raw Water';
+
+function variantLimitsForTest(test: string): Record<string, string> | null {
+    const key = test.trim().toLowerCase();
+    if (key === '') {
+        return null;
+    }
+    if (key.includes('total dissolved solids')) {
+        return { raw: TDS_ACCEPTABLE_RAW, finish: TDS_ACCEPTABLE_FINISH };
+    }
+    if (key === 'ph' || key.startsWith('ph ') || key.startsWith('ph(')) {
+        return { raw: PH_ACCEPTABLE_RAW, finish: PH_ACCEPTABLE_FINISH };
+    }
+    if (key.includes('residual chlorine')) {
+        return {
+            finish: CL_ACCEPTABLE_FINISH,
+            chlorinated: CL_ACCEPTABLE_CHLORINATED,
+            raw: CL_ACCEPTABLE_RAW,
+        };
+    }
+
+    return null;
+}
+
+function rowVariantKey(row: Record<string, string>): string | null {
+    const explicit = (row.row_variant ?? '').trim().toLowerCase();
+    if (explicit !== '') {
+        return explicit;
+    }
+    const role = matrixRowSpanRole(row);
+    if (role === 'start') {
+        return 'raw';
+    }
+    if (role === 'continue') {
+        return 'finish';
+    }
+    return null;
+}
+
+/** Drop sibling limit text when multiple variants were stored in one cell. */
+export function sanitizeTdsAcceptableValues(row: Record<string, string>): Record<string, string> {
+    const role = matrixRowSpanRole(row);
+    if (role === null) {
+        return row;
+    }
+    const limits = variantLimitsForTest(row.test ?? '');
+    if (limits === null) {
+        return row;
+    }
+
+    const variant = rowVariantKey(row);
+    if (variant === null || !(variant in limits)) {
+        return row;
+    }
+
+    const canonical = limits[variant];
+    const current = (row.acceptable_values ?? '').trim();
+    const siblings = Object.entries(limits).filter(([key]) => key !== variant);
+    const polluted = siblings.some(([, text]) => current.includes(text));
+    if (current === '' || polluted) {
+        return { ...row, acceptable_values: canonical };
+    }
+
+    return row;
+}
+
 export function matrixPreviewData(
     config: MatrixTableConfig,
     baseRows: Array<Record<string, string>> = MATRIX_DESIGNER_PREVIEW_ROWS,
 ): Array<Record<string, string>> {
     const stored = config.preview_data ?? [];
     const source = baseRows.length > 0 ? baseRows : MATRIX_DESIGNER_PREVIEW_ROWS;
+    // Prefer catalog/package length when preview_rows is stale/smaller (e.g. FO3 gained Cl rows).
     const desired =
         typeof config.preview_rows === 'number' && config.preview_rows > 0
-            ? config.preview_rows
+            ? Math.max(config.preview_rows, source.length)
             : Math.max(source.length, stored.length);
 
     // Same as other matrices: clamp to bound package/type preview rows from the server.
@@ -658,9 +806,20 @@ export function matrixPreviewData(
         const merged: Record<string, string> = { ...base };
 
         for (const [key, value] of Object.entries(override)) {
+            const empty =
+                value === undefined ||
+                value === null ||
+                String(value).trim() === '';
+            // Do not let blank stored preview_data wipe catalog limits (e.g. TDS Finish).
             if (
-                (key === 'test' || key === 'test_method') &&
-                (value === undefined || value === null || String(value).trim() === '')
+                empty &&
+                (key === 'test' ||
+                    key === 'test_method' ||
+                    key === 'method' ||
+                    key === 'acceptable_values' ||
+                    key === 'test_detail' ||
+                    key === 'row_span_group' ||
+                    key === 'row_span_role')
             ) {
                 continue;
             }
@@ -668,7 +827,7 @@ export function matrixPreviewData(
             merged[key] = value == null ? '' : String(value);
         }
 
-        return merged;
+        return sanitizeTdsAcceptableValues(merged);
     });
 }
 

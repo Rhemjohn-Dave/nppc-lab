@@ -332,23 +332,130 @@ class OfficialAnalysisCatalog
             'WW-11' => '2550 B – Laboratory and Field Method',
             'SA-19' => '4500-SO4-2 – Turbidimetric Method',
             'SA-06' => '4500-Cl- B – Argentometric Method',
-            'FM-01' => 'Pour Plate Method',
-            'FM-08', 'FM-11' => 'Multiple Tube Fermentation Technique',
+            'FM-01' => "Pour Plate Method, Plate Count Agar (PCA); BAM Online Chapter 3\nAOAC International Official Method of Analysis – Method 990.12\n3M PetrifilmTM Rapid Aerobic Count Plates, AOAC Certificate Number 121403",
+            'FM-08', 'FM-11' => 'Multiple Tube Fermentation Technique; BAM Online',
             'FM-02' => 'Compact Dry Media (AOAC Performance Tested, Cert. #110402)',
             'FM-06' => 'Compact Dry Media (AOAC Performance Tested, Cert. #081001)',
             'FM-07' => '3M Petrifilm Salmonella Express (AOAC Certified)',
             'FM-03' => 'Reveal 2.0 Test for Listeria (AOAC-RI License No. 041101)',
-            'FM-09', 'FM-05' => 'Pour Plate Method, 72 Hours',
+            'FM-09', 'FM-05' => 'Pour Plate Method; BAM',
             'FM-10' => 'Compact Dry Media',
-            'SM-01' => 'ICUMSA (Method GS2/3-43, 1994)',
-            'SM-02' => 'ICUMSA (Method GS2/3-49, 1994)',
-            'SM-03' => 'Compact Dry Media (AOAC Performance Tested, Cert. #110402)',
-            'SM-04' => 'Serial Dilution Method, Compact Dry Media (AOAC Performance Tested, Cert. #110402)',
-            'SM-05', 'SM-06' => 'Multiple Tube Fermentation Technique; BAM',
+            // Nested matrix methods (FO27 Issue 4 parentheses under test names).
+            'SM-01', 'SM-02' => 'Pour Plate Method',
+            'SM-03', 'SM-04' => 'Compact Dry Media',
+            'SM-05', 'SM-06' => 'Multiple Tube Fermentation Technique',
             'SM-07' => '3M Petrifilm Salmonella Express (AOAC Certified)',
             'SM-08', 'SM-09' => 'ICUMSA (Method GS2/3-47, 1994), ICUMSA and BAM',
             default => null,
         };
+    }
+
+    /**
+     * Codes that print two matrix rows (Raw + Finish) with separate measured values.
+     */
+    public static function usesRawFinishResults(?string $code): bool
+    {
+        return in_array($code, ['DW-02', 'DW-03'], true);
+    }
+
+    /**
+     * Residual Chlorine (DW-05): Finish + Chlorinated measured; Raw Results always "-".
+     */
+    public static function usesResidualChlorineResults(?string $code): bool
+    {
+        return $code === 'DW-05';
+    }
+
+    /**
+     * Acceptable-value text for a matrix variant (DW-02 pH, DW-03 TDS, DW-05 Cl).
+     */
+    public static function acceptableValuesForCodeVariant(?string $code, string $variant): ?string
+    {
+        if ($code === null || $code === '') {
+            return null;
+        }
+
+        $key = strtolower(trim($variant));
+
+        if ($code === 'DW-02') {
+            return match ($key) {
+                'raw' => '6.5-8.5',
+                'finish' => '5-7 for product water that undergone reverse osmosis/distillation process',
+                default => null,
+            };
+        }
+
+        if ($code === 'DW-03') {
+            return match ($key) {
+                'raw' => '600 for product that has not undergone reverse osmosis / distillation process',
+                'finish' => '<10 for product that undergone reverse osmosis/distillation process',
+                default => null,
+            };
+        }
+
+        if ($code === 'DW-05') {
+            return match ($key) {
+                'finish' => '<1.0 mg/L for RO water',
+                'chlorinated' => '0.3 - 1.5 mg/L for chlorinated drinking water',
+                'raw' => 'Not applicable to Raw Water',
+                default => null,
+            };
+        }
+
+        return null;
+    }
+
+    /**
+     * Keep only the limit line for a span role / variant (strip siblings if both were stored together).
+     *
+     * @param  string|null  $variant  Explicit variant (finish|chlorinated|raw); preferred for DW-05.
+     */
+    public static function acceptableValuesForCodeRole(
+        ?string $code,
+        ?string $role,
+        ?string $current = null,
+        ?string $variant = null,
+    ): ?string {
+        $variantKey = strtolower(trim((string) $variant));
+        if ($variantKey === '') {
+            $roleKey = strtolower(trim((string) $role));
+            $variantKey = match ($roleKey) {
+                'start', 'raw' => 'raw',
+                'continue', 'finish' => 'finish',
+                'chlorinated' => 'chlorinated',
+                default => '',
+            };
+        }
+        if ($variantKey === '') {
+            return $current;
+        }
+
+        $canonical = self::acceptableValuesForCodeVariant($code, $variantKey);
+        if ($canonical === null) {
+            return $current;
+        }
+
+        $text = trim((string) $current);
+        if ($text === '') {
+            return $canonical;
+        }
+
+        $siblings = match ($code) {
+            'DW-05' => ['finish', 'chlorinated', 'raw'],
+            'DW-02', 'DW-03' => ['raw', 'finish'],
+            default => [],
+        };
+        foreach ($siblings as $sibling) {
+            if ($sibling === $variantKey) {
+                continue;
+            }
+            $other = self::acceptableValuesForCodeVariant($code, $sibling);
+            if ($other !== null && str_contains($text, $other)) {
+                return $canonical;
+            }
+        }
+
+        return $text;
     }
 
     /**
@@ -362,10 +469,14 @@ class OfficialAnalysisCatalog
 
         return match ($code) {
             'DW-01' => '10 color units',
-            'DW-02' => "6.5-8.5\n5-7 for product water that undergone reverse osmosis/distillation process",
-            'DW-03' => "600 for product that has not undergone reverse osmosis /\ndistillation process\n<10 for product that undergone reverse osmosis/distillation process",
+            'DW-02' => (string) self::acceptableValuesForCodeVariant('DW-02', 'raw')
+                ."\n".(string) self::acceptableValuesForCodeVariant('DW-02', 'finish'),
+            'DW-03' => (string) self::acceptableValuesForCodeVariant('DW-03', 'raw')
+                ."\n".(string) self::acceptableValuesForCodeVariant('DW-03', 'finish'),
             'DW-04' => '5 NTU',
-            'DW-05' => "<1.0 mg/L for RO water\n0.3 - 1.5 mg/L for chlorinated drinking water\nNot applicable to Raw Water",
+            'DW-05' => (string) self::acceptableValuesForCodeVariant('DW-05', 'finish')
+                ."\n".(string) self::acceptableValuesForCodeVariant('DW-05', 'chlorinated')
+                ."\n".(string) self::acceptableValuesForCodeVariant('DW-05', 'raw'),
             'DW-06' => '50 mg/L',
             'DW-07', 'DW-08' => '0.01 mg/L',
             'DW-09' => '0.003 mg/L',
@@ -377,6 +488,50 @@ class OfficialAnalysisCatalog
             'DW-20' => '250 mg/L',
             default => null,
         };
+    }
+
+    /**
+     * Combined result_value summary for list/complete checks (Raw + Finish assays).
+     */
+    public static function summarizeRawFinishResults(?string $raw, ?string $finish): ?string
+    {
+        $rawText = trim((string) $raw);
+        $finishText = trim((string) $finish);
+        if ($rawText === '' && $finishText === '') {
+            return null;
+        }
+
+        $parts = [];
+        if ($rawText !== '') {
+            $parts[] = 'Raw: '.$rawText;
+        }
+        if ($finishText !== '') {
+            $parts[] = 'Finish: '.$finishText;
+        }
+
+        return implode('; ', $parts);
+    }
+
+    /**
+     * Combined result_value summary for Residual Chlorine (Finish + Chlorinated; Raw is dash-only).
+     */
+    public static function summarizeResidualChlorineResults(?string $finish, ?string $chlorinated): ?string
+    {
+        $finishText = trim((string) $finish);
+        $chlorinatedText = trim((string) $chlorinated);
+        if ($finishText === '' && $chlorinatedText === '') {
+            return null;
+        }
+
+        $parts = [];
+        if ($finishText !== '') {
+            $parts[] = 'Finish: '.$finishText;
+        }
+        if ($chlorinatedText !== '') {
+            $parts[] = 'Chlorinated: '.$chlorinatedText;
+        }
+
+        return implode('; ', $parts);
     }
 
     /**
@@ -431,6 +586,111 @@ class OfficialAnalysisCatalog
             'SA-19', // Sulfate
             'SA-06', // Chloride
         ];
+    }
+
+    /**
+     * FO2 default member codes for Abstracted water (subset of Issue 18), print order.
+     * Wastewater and River water use the full {@see wastewaterPhysicoIssue18TypeCodes()} panel.
+     *
+     * @return list<string>
+     */
+    public static function wastewaterPhysicoAbstractedTypeCodes(): array
+    {
+        return ['WW-08', 'WW-05', 'WW-02', 'WW-14'];
+    }
+
+    /**
+     * Wastewater sample-description kinds shown at intake (also printed on FO2).
+     *
+     * @return list<string>
+     */
+    public static function wastewaterKinds(): array
+    {
+        return ['Wastewater', 'River water', 'Abstracted water'];
+    }
+
+    /**
+     * FO2 default type codes for a wastewater sample-description kind.
+     *
+     * @return list<string>
+     */
+    public static function wastewaterFo2DefaultTypeCodes(?string $kind): array
+    {
+        return match ($kind) {
+            'Abstracted water' => self::wastewaterPhysicoAbstractedTypeCodes(),
+            'Wastewater', 'River water' => self::wastewaterPhysicoIssue18TypeCodes(),
+            default => [],
+        };
+    }
+
+    public static function isWastewaterAbstractedKind(?string $description): bool
+    {
+        return trim((string) $description) === 'Abstracted water';
+    }
+
+    /**
+     * FO2 under-table footer variant for a sample description kind.
+     *
+     * @return 'abstracted'|'full'
+     */
+    public static function fo2FooterVariant(?string $description): string
+    {
+        return self::isWastewaterAbstractedKind($description) ? 'abstracted' : 'full';
+    }
+
+    /**
+     * Designer/print default NOTE block for FO2 (full WW/River sheet).
+     */
+    public static function fo2FullNotesText(): string
+    {
+        return <<<'TXT'
+Notes:
+1. This report shall not be reproduced, except in full, without the written approval of the laboratory.
+2. The results and interpretations in this Test Report relate only to the samples received, coded and tested by the laboratory.
+3. Measurement uncertainty is available upon request.
+4. *Not PAB Accredited but EMB DENR accredited.
+5. **Not EMB –DENR but PAB accredited.
+6. ***Not PAB and EMB - DENR Accredited.
+TXT;
+    }
+
+    /**
+     * Designer/print default NOTE block for FO2A Abstracted water sheet.
+     */
+    public static function fo2AbstractedNotesText(): string
+    {
+        return <<<'TXT'
+Notes:
+1. This report shall not be reproduced, except in full, without the written approval of the laboratory.
+2. The results and interpretations in this Test Report relate only to the samples received, coded and tested by the laboratory.
+3. Measurement uncertainty is available upon request.
+4. *Not EMB- DENR Accredited.
+TXT;
+    }
+
+    public static function fo2ReferencesText(): string
+    {
+        return <<<'TXT'
+References: SMEWW,24th Edition 2023 –(Method Reference) DENR–Environmental Management Bureau DAO No. 2016-08 and 2021-19
+US – EPA
+TXT;
+    }
+
+    public static function fo2LabConditionsText(string $variant = 'full'): string
+    {
+        // Full WW/River and Abstracted both print Temp/Humidity + NA under the matrix.
+        return <<<'TXT'
+Laboratory Conditions during the conduct of test: Temp =      °C ; Humidity =      %
+NA – Not Applicable for specified water body .
+TXT;
+    }
+
+    /**
+     * Result form code for a wastewater sample-description kind.
+     */
+    public static function wastewaterPhysicoFormCode(?string $description): string
+    {
+        return self::isWastewaterAbstractedKind($description) ? 'LSP-7.8-FO2A' : 'LSP-7.8-FO2';
     }
 
     /**
@@ -548,6 +808,78 @@ class OfficialAnalysisCatalog
     }
 
     /**
+     * Whether the analysis type is on the FO2 / FO2A wastewater physico panel.
+     */
+    public static function isWastewaterPhysicoPanelCode(?string $code): bool
+    {
+        if ($code === null || $code === '') {
+            return false;
+        }
+
+        return in_array($code, self::wastewaterPhysicoIssue18TypeCodes(), true);
+    }
+
+    /**
+     * Official paper accreditation mark for FO2 TEST names (*, **, ***), or null for none.
+     *
+     * @return '*'|'**'|'***'|null
+     */
+    public static function wastewaterAccreditationFootnoteTier(?string $code): ?string
+    {
+        if ($code === null || $code === '') {
+            return null;
+        }
+
+        return match ($code) {
+            'WW-09', 'WW-11', 'SA-06' => '*',
+            'WW-12', 'SA-25', 'SA-17' => '**',
+            'WW-04', 'WW-10', 'WW-03', 'SA-19' => '***',
+            default => null,
+        };
+    }
+
+    /**
+     * Prefix a test label with the accreditation footnote tier (paper style: *Phosphate).
+     */
+    public static function wastewaterTestLabelWithFootnote(string $baseName, ?string $tier): string
+    {
+        $name = preg_replace('/^\*{1,3}\s*/u', '', trim($baseName)) ?? trim($baseName);
+        if ($tier === null || $tier === '') {
+            return $name;
+        }
+
+        if (! in_array($tier, ['*', '**', '***'], true)) {
+            return $name;
+        }
+
+        return $tier.$name;
+    }
+
+    /**
+     * Resolve effective footnote tier for a stored JO analysis line.
+     * null column → catalog default; empty string → explicit none; otherwise stored mark.
+     *
+     * @return '*'|'**'|'***'|null
+     */
+    public static function resolveWastewaterAccreditationFootnote(?string $stored, ?string $code): ?string
+    {
+        if (! self::isWastewaterPhysicoPanelCode($code)) {
+            return null;
+        }
+
+        if ($stored === null) {
+            return self::wastewaterAccreditationFootnoteTier($code);
+        }
+
+        $trimmed = trim($stored);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        return in_array($trimmed, ['*', '**', '***'], true) ? $trimmed : null;
+    }
+
+    /**
      * Distinct internal Controlled Form codes for package result sheets.
      *
      * @return array<string, array{form_code: string, name: string, official: string, revision: string, effective: string, package_code?: string, type_codes?: list<string>, source_pdf?: string}>
@@ -578,7 +910,16 @@ class OfficialAnalysisCatalog
                 'name' => 'Physico-Chemical Test Results — Wastewater',
                 'official' => 'LSP 7.8 FO2',
                 'revision' => '17/Issue 18',
-                'effective' => '09/01/2026',
+                'effective' => '09/16/2026',
+                'type_codes' => self::wastewaterPhysicoIssue18TypeCodes(),
+                'source_pdf' => 'PC Wastewater result Form Issue 18 09012026 blank.pdf',
+            ],
+            'ww_physico_abstracted' => [
+                'form_code' => 'LSP-7.8-FO2A',
+                'name' => 'Physico-Chemical Test Results — Abstracted Water',
+                'official' => 'LSP 7.8 FO2',
+                'revision' => '17/Issue 18',
+                'effective' => '09/16/2026',
                 'type_codes' => self::wastewaterPhysicoIssue18TypeCodes(),
                 'source_pdf' => 'PC Wastewater result Form Issue 18 09012026 blank.pdf',
             ],
@@ -669,6 +1010,8 @@ class OfficialAnalysisCatalog
                 'revision' => '10/Issue 11',
                 'effective' => '09/01/2026',
                 'type_codes' => self::drinkingWaterOldIssue11TypeCodes(),
+                // Blank must keep letterhead/header only: strip notes + signature chrome
+                // below the table so anchored overlays (options.anchor) can flow under the matrix.
                 'source_pdf' => 'PC OLD Drinking Water Test Result Form Issue 11 blank.pdf',
             ],
         ];

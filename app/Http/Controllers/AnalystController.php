@@ -13,6 +13,8 @@ use App\Services\JobOrderService;
 use App\Support\AnalysisResultPdfExporter;
 use App\Support\AnalysisResultReport;
 use App\Support\DynamicTestMatrix;
+use App\Support\OfficialAnalysisCatalog;
+use App\Support\ResultFooter;
 use App\Support\ResultSignatories;
 use App\Support\SampleControlNumber;
 use Illuminate\Http\JsonResponse;
@@ -97,6 +99,11 @@ class AnalystController extends Controller
         }
 
         $showingCompleted = $statusFilter === JobOrderAnalysisStatus::Completed->value;
+        $showingReadyToSubmit = $statusFilter === 'ready_to_submit';
+
+        $readyToSubmitJobsQuery = $this->readyToSubmitJobsQuery($user, $isAdmin, $dayRange, $search);
+        $readyToSubmitCount = (clone $readyToSubmitJobsQuery)->count();
+
         $baseQuery = $showingCompleted ? $completedQuery : $openQuery;
 
         $assignedCount = (clone $openQuery)
@@ -117,11 +124,13 @@ class AnalystController extends Controller
                 ->where('status', JobOrderAnalysisStatus::InProgress)
                 ->count(),
             'assigned' => $assignedCount,
+            'ready_to_submit' => $readyToSubmitCount,
             'completed' => (clone $completedQuery)->count(),
         ];
 
         $allowedStatusFilters = [
             'needs_action',
+            'ready_to_submit',
             JobOrderAnalysisStatus::Returned->value,
             JobOrderAnalysisStatus::InProgress->value,
             JobOrderAnalysisStatus::Assigned->value,
@@ -129,46 +138,51 @@ class AnalystController extends Controller
             JobOrderAnalysisStatus::Completed->value,
         ];
 
-        $filteredQuery = (clone $baseQuery)
-            ->when(
-                in_array($statusFilter, $allowedStatusFilters, true) && ! $showingCompleted,
-                function ($query) use ($statusFilter) {
-                    if ($statusFilter === 'needs_action') {
-                        $query->whereIn('status', [
-                            JobOrderAnalysisStatus::Assigned,
-                            JobOrderAnalysisStatus::Pending,
-                            JobOrderAnalysisStatus::Returned,
-                        ]);
-                    } elseif ($statusFilter === JobOrderAnalysisStatus::Assigned->value) {
-                        $query->whereIn('status', [
-                            JobOrderAnalysisStatus::Assigned,
-                            JobOrderAnalysisStatus::Pending,
-                        ]);
-                    } else {
-                        $query->where('status', $statusFilter);
-                    }
-                },
-            )
-            ->when($search !== '', function ($query) use ($search) {
-                $query->where(function ($inner) use ($search) {
-                    $inner->where('name', 'like', "%{$search}%")
-                        ->orWhere('category_label', 'like', "%{$search}%")
-                        ->orWhereHas('jobOrder', function ($job) use ($search) {
-                            $job->where('reference_no', 'like', "%{$search}%")
-                                ->orWhere('customer_name', 'like', "%{$search}%")
-                                ->orWhere('company_name', 'like', "%{$search}%")
-                                ->orWhere('classification', 'like', "%{$search}%")
-                                ->orWhereHas('samples', function ($samples) use ($search) {
-                                    $samples->where('sample_code', 'like', "%{$search}%")
-                                        ->orWhere('description', 'like', "%{$search}%");
-                                });
-                        });
-                });
-            });
-
         $returnedValue = JobOrderAnalysisStatus::Returned->value;
-        $jobsQuery = JobOrder::query()
-            ->whereIn('id', (clone $filteredQuery)->select('job_order_id'));
+
+        if ($showingReadyToSubmit) {
+            $jobsQuery = $readyToSubmitJobsQuery;
+        } else {
+            $filteredQuery = (clone $baseQuery)
+                ->when(
+                    in_array($statusFilter, $allowedStatusFilters, true) && ! $showingCompleted,
+                    function ($query) use ($statusFilter) {
+                        if ($statusFilter === 'needs_action') {
+                            $query->whereIn('status', [
+                                JobOrderAnalysisStatus::Assigned,
+                                JobOrderAnalysisStatus::Pending,
+                                JobOrderAnalysisStatus::Returned,
+                            ]);
+                        } elseif ($statusFilter === JobOrderAnalysisStatus::Assigned->value) {
+                            $query->whereIn('status', [
+                                JobOrderAnalysisStatus::Assigned,
+                                JobOrderAnalysisStatus::Pending,
+                            ]);
+                        } else {
+                            $query->where('status', $statusFilter);
+                        }
+                    },
+                )
+                ->when($search !== '', function ($query) use ($search) {
+                    $query->where(function ($inner) use ($search) {
+                        $inner->where('name', 'like', "%{$search}%")
+                            ->orWhere('category_label', 'like', "%{$search}%")
+                            ->orWhereHas('jobOrder', function ($job) use ($search) {
+                                $job->where('reference_no', 'like', "%{$search}%")
+                                    ->orWhere('customer_name', 'like', "%{$search}%")
+                                    ->orWhere('company_name', 'like', "%{$search}%")
+                                    ->orWhere('classification', 'like', "%{$search}%")
+                                    ->orWhereHas('samples', function ($samples) use ($search) {
+                                        $samples->where('sample_code', 'like', "%{$search}%")
+                                            ->orWhere('description', 'like', "%{$search}%");
+                                    });
+                            });
+                    });
+                });
+
+            $jobsQuery = JobOrder::query()
+                ->whereIn('id', (clone $filteredQuery)->select('job_order_id'));
+        }
 
         if ($sort === 'newest') {
             $jobsQuery->orderByDesc('id');
@@ -256,12 +270,34 @@ class AnalystController extends Controller
                 'category_label' => $task->resolvedCategoryLabel(),
                 'status' => $task->status->value,
                 'status_label' => $task->status->label(),
+                'analysis_type_code' => $task->analysisType?->code,
+                'uses_raw_finish' => OfficialAnalysisCatalog::usesRawFinishResults(
+                    $task->analysisType?->code,
+                ),
+                'uses_residual_chlorine' => OfficialAnalysisCatalog::usesResidualChlorineResults(
+                    $task->analysisType?->code,
+                ),
                 'result_value' => $task->result_value,
+                'result_raw' => $task->result_raw,
+                'result_finish' => $task->result_finish,
+                'result_chlorinated' => $task->result_chlorinated,
                 'result_pass_fail' => $task->result_pass_fail,
                 'result_measurement' => $task->result_measurement,
                 'result_unit' => $task->result_unit,
                 'result_remarks' => $task->result_remarks,
+                'result_remarks_raw' => $task->result_remarks_raw,
+                'result_remarks_finish' => $task->result_remarks_finish,
+                'result_remarks_chlorinated' => $task->result_remarks_chlorinated,
                 'result_method' => $task->result_method,
+                'accreditation_footnote' => ($supportsFootnote = OfficialAnalysisCatalog::isWastewaterPhysicoPanelCode(
+                    $task->analysisType?->code,
+                ))
+                    ? (OfficialAnalysisCatalog::resolveWastewaterAccreditationFootnote(
+                        $task->accreditation_footnote,
+                        $task->analysisType?->code,
+                    ) ?? '')
+                    : null,
+                'supports_accreditation_footnote' => $supportsFootnote,
                 'performed_at' => $task->performed_at
                     ? $task->performed_at
                         ->timezone((string) config('app.lab_timezone', 'Asia/Manila'))
@@ -331,11 +367,18 @@ class AnalystController extends Controller
         $data = $request->validate([
             'performed_at' => ['nullable', 'date'],
             'result_value' => ['nullable', 'string', 'max:255'],
+            'result_raw' => ['nullable', 'string', 'max:255'],
+            'result_finish' => ['nullable', 'string', 'max:255'],
+            'result_chlorinated' => ['nullable', 'string', 'max:255'],
             'result_pass_fail' => ['nullable', 'string', 'max:20'],
             'result_measurement' => ['nullable', 'string', 'max:80'],
             'result_unit' => ['nullable', 'string', 'max:50'],
             'result_remarks' => ['nullable', 'string', 'max:1000'],
+            'result_remarks_raw' => ['nullable', 'string', 'max:1000'],
+            'result_remarks_finish' => ['nullable', 'string', 'max:1000'],
+            'result_remarks_chlorinated' => ['nullable', 'string', 'max:1000'],
             'result_method' => ['nullable', 'string', 'max:2000'],
+            'accreditation_footnote' => ['nullable', 'string', 'max:8'],
         ]);
 
         $this->jobOrders->saveAnalysisDraft($analysis, $data, $request->user());
@@ -349,15 +392,45 @@ class AnalystController extends Controller
         $analysis->loadMissing(['jobOrder.packages', 'jobOrder.analyses', 'analysisType']);
         $requiresPassFail = (bool) ($analysis->analysisType?->requires_pass_fail);
         $isPrep = $analysis->isSamplePreparation();
+        $rawFinish = OfficialAnalysisCatalog::usesRawFinishResults($analysis->analysisType?->code);
+        $residualCl = OfficialAnalysisCatalog::usesResidualChlorineResults($analysis->analysisType?->code);
+        $hasStoredPerformedAt = $analysis->performed_at !== null
+            || $analysis->status === JobOrderAnalysisStatus::Returned;
+        $performedAtRule = $isPrep || $hasStoredPerformedAt ? 'nullable' : 'required';
 
         $data = $request->validate([
-            'performed_at' => [$isPrep ? 'nullable' : 'required', 'date'],
-            'result_value' => [$isPrep ? 'nullable' : 'required', 'string', 'max:255'],
+            'performed_at' => [$performedAtRule, 'date'],
+            'result_value' => [
+                $isPrep || $rawFinish || $residualCl ? 'nullable' : 'required',
+                'string',
+                'max:255',
+            ],
+            'result_raw' => [
+                $rawFinish && ! $isPrep ? 'required_without:result_finish' : 'nullable',
+                'string',
+                'max:255',
+            ],
+            'result_finish' => [
+                $rawFinish && ! $isPrep
+                    ? 'required_without:result_raw'
+                    : ($residualCl && ! $isPrep ? 'required_without:result_chlorinated' : 'nullable'),
+                'string',
+                'max:255',
+            ],
+            'result_chlorinated' => [
+                $residualCl && ! $isPrep ? 'required_without:result_finish' : 'nullable',
+                'string',
+                'max:255',
+            ],
             'result_pass_fail' => [$requiresPassFail ? 'required' : 'nullable', 'string', 'max:20'],
             'result_measurement' => ['nullable', 'string', 'max:80'],
             'result_unit' => ['nullable', 'string', 'max:50'],
             'result_remarks' => ['nullable', 'string', 'max:1000'],
+            'result_remarks_raw' => ['nullable', 'string', 'max:1000'],
+            'result_remarks_finish' => ['nullable', 'string', 'max:1000'],
+            'result_remarks_chlorinated' => ['nullable', 'string', 'max:1000'],
             'result_method' => ['nullable', 'string', 'max:2000'],
+            'accreditation_footnote' => ['nullable', 'string', 'max:8'],
         ]);
 
         $wasCompleted = $analysis->status === JobOrderAnalysisStatus::Completed;
@@ -562,6 +635,7 @@ class AnalystController extends Controller
         $normalized = ResultSignatories::normalizeForStorage(
             $data['signatories'],
             $resolved->controlledForm,
+            $jobOrder,
         );
 
         $jobOrder->update(['result_signatories' => $normalized]);
@@ -575,6 +649,54 @@ class AnalystController extends Controller
                 $resolved->controlledForm,
                 "/analyst/job-orders/{$jobOrder->id}/result-signatories",
                 $resolved->analyses,
+            ),
+        ]);
+    }
+
+    public function updateResultFooter(Request $request, JobOrder $jobOrder): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user !== null, 403);
+
+        $resolved = $this->reports->forJobOrder($jobOrder, $user);
+        abort_unless(
+            $this->reports->userCanAccessCombined($resolved->analyses, $user, $jobOrder)
+            || $user->hasRole('admin'),
+            403,
+        );
+
+        $form = $resolved->controlledForm
+            ?? $this->reports->matchingControlledForm($jobOrder);
+        abort_unless(
+            ResultFooter::formSupportsFooter($form),
+            422,
+            'Result footer notes apply only to FO2 / FO2A wastewater physico sheets.',
+        );
+
+        $data = $request->validate([
+            'lab_conditions' => ['nullable', 'string', 'max:2000'],
+            'references' => ['nullable', 'string', 'max:4000'],
+            'notes' => ['nullable', 'string', 'max:8000'],
+            'reset' => ['sometimes', 'boolean'],
+        ]);
+
+        if (($data['reset'] ?? false) === true) {
+            $jobOrder->update(['result_footer' => null]);
+        } else {
+            $jobOrder->update([
+                'result_footer' => ResultFooter::normalizeForStorage($data),
+            ]);
+        }
+
+        $jobOrder->refresh();
+
+        return response()->json([
+            'ok' => true,
+            'result_footer' => $jobOrder->result_footer,
+            'footer' => ResultFooter::manifestPayload(
+                $jobOrder,
+                $form,
+                "/analyst/job-orders/{$jobOrder->id}/result-footer",
             ),
         ]);
     }
@@ -651,6 +773,67 @@ class AnalystController extends Controller
      * @param  array{kind: string, title: string, message: string|null, can_preview: bool, can_print?: bool}|null  $jobSummary
      * @return array{kind: string, title: string, message: string|null, can_preview: bool, can_print: bool}
      */
+    /**
+     * Job orders still in analysis with every line completed that the user may send to Head.
+     *
+     * @param  array{0: \Illuminate\Support\Carbon, 1: \Illuminate\Support\Carbon}|null  $dayRange
+     * @return \Illuminate\Database\Eloquent\Builder<JobOrder>
+     */
+    private function readyToSubmitJobsQuery(
+        User $user,
+        bool $isAdmin,
+        ?array $dayRange,
+        string $search,
+    ) {
+        $completed = JobOrderAnalysisStatus::Completed;
+
+        $query = JobOrder::query()
+            ->where('status', JobOrderStatus::InAnalysis)
+            ->whereHas('analyses')
+            ->whereDoesntHave('analyses', function ($analyses) use ($completed) {
+                $analyses->where('status', '!=', $completed);
+            });
+
+        if (! $isAdmin) {
+            $query->where(function ($outer) use ($user) {
+                $outer->where(function ($packageBound) use ($user) {
+                    $packageBound->whereHas('packages')
+                        ->whereHas('packages', function ($packages) use ($user) {
+                            $packages->where('analysis_packages.signatory_user_id', $user->id);
+                        });
+                })->orWhere(function ($typesOnly) use ($user) {
+                    $typesOnly->whereDoesntHave('packages')
+                        ->whereHas('analyses', function ($analyses) use ($user) {
+                            $analyses->where('assigned_to', $user->id);
+                        });
+                });
+            });
+        }
+
+        if ($dayRange !== null) {
+            $query->whereBetween('received_at', $dayRange);
+        }
+
+        if ($search !== '') {
+            $query->where(function ($inner) use ($search) {
+                $inner->where('reference_no', 'like', "%{$search}%")
+                    ->orWhere('customer_name', 'like', "%{$search}%")
+                    ->orWhere('company_name', 'like', "%{$search}%")
+                    ->orWhere('classification', 'like', "%{$search}%")
+                    ->orWhereHas('samples', function ($samples) use ($search) {
+                        $samples->where('sample_code', 'like', "%{$search}%")
+                            ->orWhere('description', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('analyses', function ($analyses) use ($search) {
+                        $analyses->where('name', 'like', "%{$search}%")
+                            ->orWhere('category_label', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        return $query;
+    }
+
     private function taskReportSummary(?array $jobSummary, JobOrder $jobOrder): array
     {
         if ($jobSummary && $jobSummary['kind'] !== AnalysisResultReport::KIND_INDIVIDUAL) {
@@ -737,7 +920,7 @@ class AnalystController extends Controller
     }
 
     /**
-     * @return array{signatory?: array<string, mixed>}
+     * @return array{signatory?: array<string, mixed>, footer?: array<string, mixed>}
      */
     private function signatoryManifestExtra(JobOrder $jobOrder, AnalysisResultReport $resolved, ?string $saveUrl): array
     {
@@ -745,7 +928,7 @@ class AnalystController extends Controller
             return [];
         }
 
-        return [
+        $extra = [
             'signatory' => ResultSignatories::manifestPayload(
                 $jobOrder,
                 $resolved->controlledForm,
@@ -753,5 +936,17 @@ class AnalystController extends Controller
                 $resolved->analyses,
             ),
         ];
+
+        if (ResultFooter::formSupportsFooter($resolved->controlledForm)) {
+            $extra['footer'] = ResultFooter::manifestPayload(
+                $jobOrder,
+                $resolved->controlledForm,
+                $saveUrl
+                    ? "/analyst/job-orders/{$jobOrder->id}/result-footer"
+                    : null,
+            );
+        }
+
+        return $extra;
     }
 }

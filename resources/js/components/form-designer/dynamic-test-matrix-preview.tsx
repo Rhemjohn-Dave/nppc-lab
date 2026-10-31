@@ -8,6 +8,7 @@ import {
     columnWidthPct,
     createMatrixTextMeasurer,
     fitMatrixBodyFonts,
+    fontSizeCssPx,
     MATRIX_CELL_TEXT_INSET_MM,
     MATRIX_DESIGNER_DRAG_HANDLE_PX,
     matrixCellKey,
@@ -17,10 +18,14 @@ import {
     matrixHeaderSublines,
     matrixLineHeightMm,
     matrixMethodFontSize,
+    isMatrixRowSpanColumnKey,
     matrixPreviewData,
     matrixPrintedCellValue,
     matrixRowExtraMm,
     matrixRowKey,
+    matrixRowContinuesSpan,
+    matrixRowsFormSpanPair,
+    matrixRowSpanRole,
     matrixScientificExponentSizePt,
     matrixScientificFontSizePt,
     matrixTestCellLineHeightMm,
@@ -28,7 +33,6 @@ import {
     matrixWrappedLineHeightMm,
     measureMatrixHeaderRowHeightMm,
     planMatrixBodyRows,
-    PT_TO_MM,
     splitMatrixScientific,
     stretchBodyRowHeightsMm,
 } from '@/lib/dynamic-test-matrix';
@@ -113,7 +117,7 @@ export default function DynamicTestMatrixPreview({
     const measure = useMemo(() => createMatrixTextMeasurer(fontFamily), [fontFamily]);
     const scale: Scale = {
         mm: (valueMm) => valueMm * pxPerMm,
-        pt: (fontSizePt) => fontSizePt * PT_TO_MM * pxPerMm,
+        pt: (fontSizePt) => fontSizeCssPx(fontSizePt, pxPerMm),
     };
 
     // Same layout steps as ControlledPdfFiller::writeDynamicTestMatrix.
@@ -329,32 +333,67 @@ export default function DynamicTestMatrixPreview({
                 ))}
 
             {plan.map((item, rowIndex) =>
-                columns.map((column, index) => (
-                    <MatrixBodyCell
-                        key={`${rowIndex}-${column.key}`}
-                        column={column}
-                        fitColumn={fit.columns[index] ?? column}
-                        columns={columns}
-                        row={item.row}
-                        rowIndex={rowIndex}
-                        leftPx={scale.mm(columnLeftsMm[index])}
-                        topPx={scale.mm(rowTopsMm[rowIndex])}
-                        widthMm={columnWidthsMm[index]}
-                        heightMm={rowHeightsMm[rowIndex]}
-                        scale={scale}
-                        cellLinePx={showBorder ? cellLinePx : 0}
-                        bodyFontSizePt={fit.bodyFontSizePt}
-                        methodFontSizePt={fit.methodFontSizePt}
-                        testNameBold={testNameBold}
-                        measure={measure}
-                        canEdit={canEdit}
-                        selection={selection}
-                        onSelectCell={onSelectCell}
-                        config={config}
-                        onUpdateConfig={updateConfig}
-                        packagePreviewRows={packagePreviewRows}
-                    />
-                )),
+                columns.map((column, index) => {
+                    const spanLength =
+                        matrixRowSpanRole(item.row) === 'start'
+                            ? (() => {
+                                  let length = 1;
+                                  for (let i = rowIndex + 1; i < plan.length; i++) {
+                                      const next = plan[i];
+                                      if (
+                                          !next ||
+                                          !matrixRowContinuesSpan(item.row, next.row)
+                                      ) {
+                                          break;
+                                      }
+                                      length++;
+                                  }
+                                  return length;
+                              })()
+                            : 1;
+                    const isSpanStart = spanLength >= 2;
+                    const isSpanContinue = matrixRowSpanRole(item.row) === 'continue';
+                    const spanColumn = isMatrixRowSpanColumnKey(column.key);
+
+                    // Continue row: skip shared Test/Method (drawn on the start row).
+                    if (isSpanContinue && spanColumn) {
+                        return null;
+                    }
+
+                    const heightMm =
+                        isSpanStart && spanColumn
+                            ? Array.from({ length: spanLength }, (_, offset) =>
+                                  rowHeightsMm[rowIndex + offset] ?? 0,
+                              ).reduce((sum, h) => sum + h, 0)
+                            : (rowHeightsMm[rowIndex] ?? 0);
+
+                    return (
+                        <MatrixBodyCell
+                            key={`${rowIndex}-${column.key}`}
+                            column={column}
+                            fitColumn={fit.columns[index] ?? column}
+                            columns={columns}
+                            row={item.row}
+                            rowIndex={rowIndex}
+                            leftPx={scale.mm(columnLeftsMm[index])}
+                            topPx={scale.mm(rowTopsMm[rowIndex])}
+                            widthMm={columnWidthsMm[index]}
+                            heightMm={heightMm}
+                            scale={scale}
+                            cellLinePx={showBorder ? cellLinePx : 0}
+                            bodyFontSizePt={fit.bodyFontSizePt}
+                            methodFontSizePt={fit.methodFontSizePt}
+                            testNameBold={testNameBold}
+                            measure={measure}
+                            canEdit={canEdit}
+                            selection={selection}
+                            onSelectCell={onSelectCell}
+                            config={config}
+                            onUpdateConfig={updateConfig}
+                            packagePreviewRows={packagePreviewRows}
+                        />
+                    );
+                }),
             )}
 
             {showBorder && frameHeightMm > 0.5 && (
@@ -817,8 +856,17 @@ function MatrixBodyCell({
     };
 
     function commitPreview(part: 'test' | 'test_method' | 'value', text: string) {
-        const preview_data = matrixPreviewData(config, packagePreviewRows).map((previewRow, index) => {
-            if (index !== rowIndex) {
+        const currentRows = matrixPreviewData(config, packagePreviewRows);
+        const preview_data = currentRows.map((previewRow, index) => {
+            const isThis = index === rowIndex;
+            const isPairedContinue =
+                index === rowIndex + 1 &&
+                matrixRowsFormSpanPair(currentRows[rowIndex] ?? {}, previewRow) &&
+                (part === 'test' ||
+                    part === 'test_method' ||
+                    isMatrixRowSpanColumnKey(column.key));
+
+            if (!isThis && !isPairedContinue) {
                 return previewRow;
             }
 

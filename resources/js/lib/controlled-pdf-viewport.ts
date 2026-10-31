@@ -4,6 +4,10 @@
  * pdf.js is only used to rasterize the background; never re-derive page mm from it alone.
  */
 
+/** Letter / short bond (8.5 × 11 in) — default when metrics are missing. */
+export const SHORT_BOND_WIDTH_MM = 215.9;
+export const SHORT_BOND_HEIGHT_MM = 279.4;
+
 /** CSS px per PDF point at 96dpi (1pt = 1/72in). */
 export const PDF_CSS_SCALE = 96 / 72;
 
@@ -60,4 +64,24 @@ export function pdfjsViewportScaleForFpdiMm(
     const targetWidthPx = (widthMm / 25.4) * 72 * PDF_CSS_SCALE * zoom;
 
     return targetWidthPx / unscaledViewportWidthPts;
+}
+
+/**
+ * Display size after width-scaling to FPDI mm: height follows the PDF MediaBox aspect
+ * so preview/designer do not squash Folio↔Letter mismatches.
+ */
+export function pageDisplayPxKeepingPdfAspect(
+    widthMm: number,
+    unscaledWidthPts: number,
+    unscaledHeightPts: number,
+    zoom = 1,
+): { widthPx: number; heightPx: number } {
+    const widthPx = pagePxSize(widthMm, SHORT_BOND_HEIGHT_MM, zoom).widthPx;
+    if (unscaledWidthPts <= 0) {
+        return pagePxSize(widthMm, SHORT_BOND_HEIGHT_MM, zoom);
+    }
+
+    const heightPx = (unscaledHeightPts / unscaledWidthPts) * widthPx;
+
+    return { widthPx, heightPx };
 }

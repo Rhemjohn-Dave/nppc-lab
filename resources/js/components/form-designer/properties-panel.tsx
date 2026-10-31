@@ -1,10 +1,20 @@
-import { Copy, Trash2 } from 'lucide-react';
+import { Bold, Copy, Trash2 } from 'lucide-react';
+import { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { DataSource, DesignerField } from '@/lib/controlled-forms';
+import {
+    fieldAnchor,
+    fieldBold,
+    fieldListIndentMm,
+    fieldListStyle,
+    fieldStaticText,
+    patchFieldOptions,
+    toggleInlineBoldSelection,
+} from '@/lib/controlled-forms';
 import { defaultTableColumns } from '@/components/form-designer/utils';
 import MatrixCellProperties from '@/components/form-designer/matrix-cell-properties';
 import type { MatrixCellSelection, MatrixColumnConfig, MatrixTableConfig } from '@/lib/dynamic-test-matrix';
@@ -14,6 +24,8 @@ type Props = {
     selected: DesignerField | null;
     selectedCount?: number;
     selectedFields?: DesignerField[];
+    /** All fields on the form (for matrix anchor dropdown). */
+    pageFields?: DesignerField[];
     groupedSources: Array<[string, DataSource[]]>;
     canEdit: boolean;
     matrixCellSelection?: MatrixCellSelection | null;
@@ -55,6 +67,7 @@ export default function PropertiesPanel({
     selected,
     selectedCount = selected ? 1 : 0,
     selectedFields = selected ? [selected] : [],
+    pageFields = [],
     groupedSources,
     canEdit,
     matrixCellSelection = null,
@@ -65,6 +78,8 @@ export default function PropertiesPanel({
     matrixPreviewRows,
     matrixDefaultConfig = null,
 }: Props) {
+    const staticTextRef = useRef<HTMLTextAreaElement | null>(null);
+
     if (selectedCount > 1) {
         const fontSize = sharedAppearanceValue(selectedFields, 'font_size');
         const fontFamily = sharedAppearanceValue(selectedFields, 'font_family');
@@ -213,6 +228,42 @@ export default function PropertiesPanel({
 
     const isTable = selected.field_type === 'table';
     const isMatrix = selected.field_type === 'dynamic_test_matrix';
+    const isMultiline = selected.field_type === 'multiline';
+    const anchor = fieldAnchor(selected);
+    const staticText = fieldStaticText(selected);
+    const listStyle = fieldListStyle(selected);
+    const listIndentMm = fieldListIndentMm(selected);
+
+    function applyInlineBoldSelection() {
+        const el = staticTextRef.current;
+        if (!el || !canEdit || !selected) {
+            return;
+        }
+        const next = toggleInlineBoldSelection(
+            el.value,
+            el.selectionStart ?? 0,
+            el.selectionEnd ?? 0,
+        );
+        onUpdate({
+            options: patchFieldOptions(selected.options, {
+                static_text: next.value.trim() === '' ? null : next.value,
+            }),
+        });
+        requestAnimationFrame(() => {
+            const node = staticTextRef.current;
+            if (!node) {
+                return;
+            }
+            node.focus();
+            node.setSelectionRange(next.selectionStart, next.selectionEnd);
+        });
+    }
+    const matrixAnchors = pageFields.filter(
+        (field) =>
+            field.field_type === 'dynamic_test_matrix' &&
+            field.page_number === selected.page_number &&
+            field.name !== selected.name,
+    );
     const tableConfig = (selected.table_config ?? {}) as {
         row_height?: number;
         row_height_mm?: number;
@@ -312,6 +363,232 @@ export default function PropertiesPanel({
                     )}
                 </section>
 
+                {!isMatrix && !isTable && (
+                    <>
+                        <Separator />
+                        <section className="space-y-2">
+                            <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+                                Flow under matrix
+                            </p>
+                            <Label htmlFor="prop-anchor-below">
+                                Anchor below matrix
+                            </Label>
+                            <select
+                                id="prop-anchor-below"
+                                className="h-9 w-full rounded-md border bg-white px-2 text-sm"
+                                disabled={!canEdit || matrixAnchors.length === 0}
+                                value={anchor?.below ?? ''}
+                                onChange={(event) => {
+                                    const below = event.target.value;
+                                    onUpdate(
+                                        {
+                                            options: patchFieldOptions(
+                                                selected.options,
+                                                {
+                                                    anchor:
+                                                        below === ''
+                                                            ? null
+                                                            : {
+                                                                  below,
+                                                                  offset_mm:
+                                                                      anchor?.offset_mm ??
+                                                                      3,
+                                                              },
+                                                },
+                                            ),
+                                        },
+                                        true,
+                                    );
+                                }}
+                            >
+                                <option value="">None (fixed Y)</option>
+                                {matrixAnchors.map((matrix) => (
+                                    <option key={matrix.name} value={matrix.name}>
+                                        {matrix.label || matrix.name}
+                                    </option>
+                                ))}
+                            </select>
+                            {anchor ? (
+                                <div>
+                                    <Label htmlFor="prop-anchor-offset">
+                                        Offset below table (mm)
+                                    </Label>
+                                    <Input
+                                        id="prop-anchor-offset"
+                                        type="number"
+                                        step="0.1"
+                                        disabled={!canEdit}
+                                        value={anchor.offset_mm}
+                                        onChange={(event) =>
+                                            onUpdate({
+                                                options: patchFieldOptions(
+                                                    selected.options,
+                                                    {
+                                                        anchor: {
+                                                            below: anchor.below,
+                                                            offset_mm: Number(
+                                                                event.target
+                                                                    .value,
+                                                            ),
+                                                        },
+                                                    },
+                                                ),
+                                            })
+                                        }
+                                        onBlur={() => onUpdate({}, true)}
+                                    />
+                                </div>
+                            ) : null}
+                            <p className="text-[11px] leading-snug text-muted-foreground">
+                                Print Y follows the drawn table bottom (Word-like).
+                                Stored Y is the fallback when the matrix is empty.
+                            </p>
+                            <Separator />
+                            <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+                                Footer / printed text
+                            </p>
+                            <div className="flex items-center justify-between gap-2">
+                                <Label htmlFor="prop-static-text">
+                                    Static text (what prints)
+                                </Label>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 gap-1 px-2 text-[11px]"
+                                    disabled={!canEdit}
+                                    title="Bold the selected text (**markers**)"
+                                    onMouseDown={(event) => {
+                                        // Keep textarea selection when clicking the button.
+                                        event.preventDefault();
+                                    }}
+                                    onClick={() => applyInlineBoldSelection()}
+                                >
+                                    <Bold className="size-3.5" />
+                                    Bold selection
+                                </Button>
+                            </div>
+                            <textarea
+                                id="prop-static-text"
+                                ref={staticTextRef}
+                                className="min-h-36 w-full rounded-md border bg-white px-2 py-1.5 font-mono text-xs leading-snug"
+                                disabled={!canEdit}
+                                placeholder="Printed when no data source value (notes, labels, titles…). Select text and click Bold selection."
+                                value={staticText}
+                                onChange={(event) =>
+                                    onUpdate({
+                                        options: patchFieldOptions(
+                                            selected.options,
+                                            {
+                                                static_text:
+                                                    event.target.value.trim() ===
+                                                    ''
+                                                        ? null
+                                                        : event.target.value,
+                                            },
+                                        ),
+                                    })
+                                }
+                                onBlur={() => onUpdate({}, true)}
+                            />
+                            <p className="text-[11px] leading-snug text-muted-foreground">
+                                Line breaks match the PDF. Wrap phrases in{' '}
+                                <span className="font-mono">**bold**</span> (or
+                                use Bold selection). Whole-field Bold in
+                                Appearance still bolds everything.
+                            </p>
+                            {isMultiline ? (
+                                <>
+                                    <Separator />
+                                    <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+                                        List layout
+                                    </p>
+                                    <Label htmlFor="prop-list-style">
+                                        List style
+                                    </Label>
+                                    <select
+                                        id="prop-list-style"
+                                        className="h-9 w-full rounded-md border bg-white px-2 text-sm"
+                                        disabled={!canEdit}
+                                        value={listStyle ?? ''}
+                                        onChange={(event) => {
+                                            const next = event.target.value;
+                                            onUpdate(
+                                                {
+                                                    options: patchFieldOptions(
+                                                        selected.options,
+                                                        {
+                                                            list_style:
+                                                                next === ''
+                                                                    ? null
+                                                                    : next,
+                                                            list_indent_mm:
+                                                                next === ''
+                                                                    ? null
+                                                                    : listIndentMm,
+                                                        },
+                                                    ),
+                                                },
+                                                true,
+                                            );
+                                        }}
+                                    >
+                                        <option value="">None</option>
+                                        <option value="numbered">
+                                            Numbered
+                                        </option>
+                                        <option value="bullet">Bullet</option>
+                                    </select>
+                                    <p className="text-[11px] leading-snug text-muted-foreground">
+                                        Numbered lines must start with{' '}
+                                        <span className="font-mono">1. </span>/
+                                        <span className="font-mono"> 2. </span>
+                                        (or <span className="font-mono">- </span>
+                                        for bullets). A header like{' '}
+                                        <span className="font-mono">NOTES :</span>{' '}
+                                        stays above the list. Wrapped lines stay
+                                        indented under the body text.
+                                    </p>
+                                    {listStyle ? (
+                                        <div>
+                                            <Label htmlFor="prop-list-indent">
+                                                List indent (mm)
+                                            </Label>
+                                            <Input
+                                                id="prop-list-indent"
+                                                type="number"
+                                                step="0.5"
+                                                min={4}
+                                                disabled={!canEdit}
+                                                value={listIndentMm}
+                                                onChange={(event) =>
+                                                    onUpdate({
+                                                        options:
+                                                            patchFieldOptions(
+                                                                selected.options,
+                                                                {
+                                                                    list_indent_mm:
+                                                                        Number(
+                                                                            event
+                                                                                .target
+                                                                                .value,
+                                                                        ),
+                                                                },
+                                                            ),
+                                                    })
+                                                }
+                                                onBlur={() =>
+                                                    onUpdate({}, true)
+                                                }
+                                            />
+                                        </div>
+                                    ) : null}
+                                </>
+                            ) : null}
+                        </section>
+                    </>
+                )}
+
                 <Separator />
 
                 <section className="space-y-2">
@@ -391,6 +668,23 @@ export default function PropertiesPanel({
                                     onBlur={() => onUpdate({}, true)}
                                 />
                             </div>
+                            <label className="flex items-center gap-2 text-xs">
+                                <Checkbox
+                                    checked={fieldBold(selected)}
+                                    disabled={!canEdit}
+                                    onCheckedChange={(checked) =>
+                                        onUpdate(
+                                            {
+                                                options: patchFieldOptions(selected.options, {
+                                                    bold: checked === true ? true : null,
+                                                }),
+                                            },
+                                            true,
+                                        )
+                                    }
+                                />
+                                Bold
+                            </label>
                             <div>
                                 <Label htmlFor="prop-font-family">Font</Label>
                                 <select

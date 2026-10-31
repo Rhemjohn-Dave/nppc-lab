@@ -165,10 +165,10 @@ return array (
       'label' => 'Dynamic test matrix',
       'type' => 'dynamic_test_matrix',
       'page' => 1,
-      'x' => 25.146,
+      'x' => 13.983,
       'y' => 53.858,
-      'w' => 171.568,
-      'h' => 181.0,
+      'w' => 188.517,
+      'h' => 180.142,
       'font_size' => 8.0,
       'font_family' => 'calibri',
       'font_color' => '#000000',
@@ -190,7 +190,7 @@ return array (
           array (
             'key' => 'method',
             'label' => 'Method',
-            'width_pct' => 33,
+            'width_pct' => 30,
             'align' => 'L',
             'header_align' => 'C',
             'font_size' => 8,
@@ -199,7 +199,7 @@ return array (
           array (
             'key' => 'result',
             'label' => 'Results',
-            'width_pct' => 10,
+            'width_pct' => 9,
             'align' => 'C',
             'header_align' => 'C',
           ),
@@ -207,7 +207,7 @@ return array (
           array (
             'key' => 'acceptable_values',
             'label' => 'Acceptable Values',
-            'width_pct' => 23,
+            'width_pct' => 28,
             'align' => 'C',
             'header_align' => 'C',
             'font_size' => 7.5,
@@ -216,7 +216,7 @@ return array (
           array (
             'key' => 'remarks',
             'label' => 'Remarks',
-            'width_pct' => 11,
+            'width_pct' => 10,
             'align' => 'C',
             'header_align' => 'C',
           ),
@@ -225,7 +225,7 @@ return array (
         'header_row_height_mm' => 0,
         'header_row' => true,
         'border' => true,
-        'preview_rows' => 15,
+        'preview_rows' => 19,
         'test_name_bold' => true,
         'header_bold' => true,
         'method_font_size' => 5,
@@ -243,6 +243,8 @@ return array (
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'sample_1' => NULL,
+            'sample_2' => NULL,
           ),
           1 => 
           array (
@@ -252,14 +254,37 @@ return array (
             'test_detail' => NULL,
             'method' => 'Total Dissolved Solids Dried at 180°C
 (2540D)',
-            'acceptable_values' => '600 for product that has not undergone reverse osmosis / distillation process
-<10 for product that undergone reverse osmosis/distillation process',
+            'acceptable_values' => '600 for product that has not undergone reverse osmosis / distillation process',
             'result' => NULL,
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'row_span_group' => 'preview-dw-03',
+            'row_span_role' => 'start',
+            'sample_1' => NULL,
+            'sample_2' => NULL,
+            'row_variant' => 'raw',
           ),
           2 => 
+          array (
+            'test' => 'Total Dissolved Solids (mg/L)',
+            'test_method' => 'Total Dissolved Solids Dried at 180°C
+(2540D)',
+            'test_detail' => NULL,
+            'method' => 'Total Dissolved Solids Dried at 180°C
+(2540D)',
+            'acceptable_values' => '<10 for product that undergone reverse osmosis/distillation process',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+            'row_span_group' => 'preview-dw-03',
+            'row_span_role' => 'continue',
+            'sample_1' => NULL,
+            'sample_2' => NULL,
+            'row_variant' => 'finish',
+          ),
+          3 => 
           array (
             'test' => 'Electrical Conductivity (µS/cm)',
             'test_method' => 'EC Meter (2510 B)',
@@ -270,8 +295,10 @@ return array (
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'sample_1' => NULL,
+            'sample_2' => NULL,
           ),
-          3 => 
+          4 => 
           array (
             'test' => 'Turbidity (NTU)',
             'test_method' => 'In-House Laboratory Method (Turbidimetry)',
@@ -282,21 +309,44 @@ return array (
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'sample_1' => NULL,
+            'sample_2' => NULL,
           ),
-          4 => 
+          5 => 
           array (
             'test' => 'pH',
             'test_method' => 'Electrometric Method (4500-H+ B)',
             'test_detail' => NULL,
             'method' => 'Electrometric Method (4500-H+ B)',
-            'acceptable_values' => '6.5-8.5
-5-7 for product water that undergone reverse osmosis/distillation process',
+            'acceptable_values' => '6.5-8.5',
             'result' => NULL,
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'row_span_group' => 'preview-dw-02',
+            'row_span_role' => 'start',
+            'sample_1' => NULL,
+            'sample_2' => NULL,
+            'row_variant' => 'raw',
           ),
-          5 => 
+          6 => 
+          array (
+            'test' => 'pH',
+            'test_method' => 'Electrometric Method (4500-H+ B)',
+            'test_detail' => NULL,
+            'method' => 'Electrometric Method (4500-H+ B)',
+            'acceptable_values' => '5-7 for product water that undergone reverse osmosis/distillation process',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+            'row_span_group' => 'preview-dw-02',
+            'row_span_role' => 'continue',
+            'sample_1' => NULL,
+            'sample_2' => NULL,
+            'row_variant' => 'finish',
+          ),
+          7 => 
           array (
             'test' => 'Chloride (mg/L)',
             'test_method' => 'Argentometric Method
@@ -308,22 +358,61 @@ return array (
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'sample_1' => NULL,
+            'sample_2' => NULL,
           ),
-          6 => 
+          8 => 
           array (
             'test' => 'Residual Chlorine (mg/L)',
             'test_method' => 'DPD Colorimetric Method',
             'test_detail' => NULL,
             'method' => 'DPD Colorimetric Method',
-            'acceptable_values' => '<1.0 mg/L for RO water
-0.3 - 1.5 mg/L for chlorinated drinking water
-Not applicable to Raw Water',
+            'acceptable_values' => '<1.0 mg/L for RO water',
             'result' => NULL,
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'row_span_group' => 'preview-dw-05',
+            'row_span_role' => 'start',
+            'sample_1' => NULL,
+            'sample_2' => NULL,
+            'row_variant' => 'finish',
           ),
-          7 => 
+          9 => 
+          array (
+            'test' => 'Residual Chlorine (mg/L)',
+            'test_method' => 'DPD Colorimetric Method',
+            'test_detail' => NULL,
+            'method' => 'DPD Colorimetric Method',
+            'acceptable_values' => '0.3 - 1.5 mg/L for chlorinated drinking water',
+            'result' => NULL,
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+            'row_span_group' => 'preview-dw-05',
+            'row_span_role' => 'continue',
+            'sample_1' => NULL,
+            'sample_2' => NULL,
+            'row_variant' => 'chlorinated',
+          ),
+          10 => 
+          array (
+            'test' => 'Residual Chlorine (mg/L)',
+            'test_method' => 'DPD Colorimetric Method',
+            'test_detail' => NULL,
+            'method' => 'DPD Colorimetric Method',
+            'acceptable_values' => 'Not applicable to Raw Water',
+            'result' => '-',
+            'remarks' => NULL,
+            'control_no' => NULL,
+            'sample_description' => NULL,
+            'row_span_group' => 'preview-dw-05',
+            'row_span_role' => 'continue',
+            'sample_1' => '-',
+            'sample_2' => NULL,
+            'row_variant' => 'raw',
+          ),
+          11 => 
           array (
             'test' => 'Total Hardness (mg/L)',
             'test_method' => 'Titrimetric Method (2340 C)',
@@ -334,8 +423,10 @@ Not applicable to Raw Water',
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'sample_1' => NULL,
+            'sample_2' => NULL,
           ),
-          8 => 
+          12 => 
           array (
             'test' => 'Calcium Hardness (mg/L)',
             'test_method' => 'Titrimetric Method (2340 C)',
@@ -346,8 +437,10 @@ Not applicable to Raw Water',
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'sample_1' => NULL,
+            'sample_2' => NULL,
           ),
-          9 => 
+          13 => 
           array (
             'test' => 'Magnesium Hardness (mg/L)',
             'test_method' => 'Titrimetric Method (2340 C)',
@@ -358,8 +451,10 @@ Not applicable to Raw Water',
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'sample_1' => NULL,
+            'sample_2' => NULL,
           ),
-          10 => 
+          14 => 
           array (
             'test' => 'Iron (mg/L)',
             'test_method' => 'Phenanthroline Method
@@ -372,8 +467,10 @@ Not applicable to Raw Water',
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'sample_1' => NULL,
+            'sample_2' => NULL,
           ),
-          11 => 
+          15 => 
           array (
             'test' => 'Nitrate (mg/L)',
             'test_method' => 'Nitrate Electrode Method (4500-NO3-D)',
@@ -384,8 +481,10 @@ Not applicable to Raw Water',
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'sample_1' => NULL,
+            'sample_2' => NULL,
           ),
-          12 => 
+          16 => 
           array (
             'test' => 'Nitrite (mg/L)',
             'test_method' => 'Diazotization Method',
@@ -396,21 +495,26 @@ Not applicable to Raw Water',
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'sample_1' => NULL,
+            'sample_2' => NULL,
           ),
-          13 => 
+          17 => 
           array (
             'test' => 'Sulfate (mg/L)',
             'test_method' => 'Turbidimetric Method
 4500 - SO4-2 E',
             'test_detail' => NULL,
-            'method' => 'Turbidimetric Method 4500 - SO4-2 E',
+            'method' => 'Turbidimetric Method
+4500 - SO4-2 E',
             'acceptable_values' => '250 mg/L',
             'result' => NULL,
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'sample_1' => NULL,
+            'sample_2' => NULL,
           ),
-          14 => 
+          18 => 
           array (
             'test' => 'Odor',
             'test_method' => 'Threshold Odor Test
@@ -423,79 +527,504 @@ Not applicable to Raw Water',
             'remarks' => NULL,
             'control_no' => NULL,
             'sample_description' => NULL,
+            'sample_1' => NULL,
+            'sample_2' => NULL,
           ),
         ),
         'stretch_body' => false,
         'row_heights_mm' => 
         array (
-          'total dissolved solids (mg/l)' => 20,
+          'total dissolved solids (mg/l)' => 5,
+          'ph' => 3,
           'chloride (mg/l)' => 3,
+          'electrical conductivity (µs/cm)' => 3,
         ),
       ),
     ),
     10 => 
     array (
-      'name' => 'results.analyst_name',
-      'label' => 'Analyzed by',
+      'name' => 'fo3_lab_conditions',
+      'label' => 'Lab test conditions',
+      'type' => 'multiline',
+      'page' => 1,
+      'x' => 12.242,
+      'y' => 180.0,
+      'w' => 192.0,
+      'h' => 5.0,
+      'font_size' => 7.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_lab_conditions',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 2,
+        ),
+        'static_text' => 'Laboratory Test Conditions during the conduct of the test:   Temp:          Humidity:',
+      ),
+    ),
+    11 => 
+    array (
+      'name' => 'fo3_references',
+      'label' => 'References',
+      'type' => 'multiline',
+      'page' => 1,
+      'x' => 12.0,
+      'y' => 185.0,
+      'w' => 192.0,
+      'h' => 8.0,
+      'font_size' => 7.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_references',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 6.5,
+        ),
+        'static_text' => 'References: Standard Methods for the Examination of Water and Wastewater 24th Edition 2023
+                                    Philippine National Standards for Drinking Water 2017 (AO 2017-0010)',
+      ),
+    ),
+    12 => 
+    array (
+      'name' => 'fo3_note_left',
+      'label' => 'NOTE (left)',
+      'type' => 'multiline',
+      'page' => 1,
+      'x' => 12.0,
+      'y' => 194.0,
+      'w' => 95.0,
+      'h' => 20.0,
+      'font_size' => 7.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_note_left',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 15,
+        ),
+        'static_text' => 'NOTE:
+1. This report shall not be reproduced, except in full, without the written
+    approval of the Laboratory Head.
+2. The results contained in this report relate only to the items received,
+    coded and tested by the laboratory.
+3. Measurement uncertainty is available upon request.',
+      ),
+    ),
+    13 => 
+    array (
+      'name' => 'fo3_note_right',
+      'label' => 'NOTE (right)',
+      'type' => 'multiline',
+      'page' => 1,
+      'x' => 108.0,
+      'y' => 194.0,
+      'w' => 96.0,
+      'h' => 20.0,
+      'font_size' => 7.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_note_right',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 15,
+        ),
+        'static_text' => '4. Statements of conformity (e.g. Pass/Fail) to specifications are made in this
+    report without taking measurement uncertainty into account except when
+    requested by the customer. Where statements of uncertainty are made in this
+    report, the following rules are applied: PASS- results within limit
+                             FAIL- results exceed limit',
+      ),
+    ),
+    14 => 
+    array (
+      'name' => 'fo3_label_analyzed_by',
+      'label' => 'Analyzed by label',
       'type' => 'text',
       'page' => 1,
       'x' => 12.0,
-      'y' => 222.0,
-      'w' => 70.0,
+      'y' => 216.0,
+      'w' => 40.0,
+      'h' => 4.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_label_analyzed_by',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 36,
+        ),
+        'static_text' => 'Analyzed by:',
+      ),
+    ),
+    15 => 
+    array (
+      'name' => 'fo3_label_certified',
+      'label' => 'Certified Correct label',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 126.0,
+      'y' => 216.0,
+      'w' => 50.0,
+      'h' => 4.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_label_certified',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 36,
+        ),
+        'static_text' => 'Certified Correct:',
+      ),
+    ),
+    16 => 
+    array (
+      'name' => 'results.analyst_name',
+      'label' => 'Analyzed by name',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 12.0,
+      'y' => 223.0,
+      'w' => 90.0,
       'h' => 5.0,
       'font_size' => 10.0,
       'font_family' => 'times',
       'font_color' => '#000000',
       'align' => 'L',
       'data_source_key' => 'results.analyst_name',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 43,
+        ),
+      ),
     ),
-    11 => 
-    array (
-      'name' => 'results.analyst_prc',
-      'label' => 'Analyzed by PRC',
-      'type' => 'text',
-      'page' => 1,
-      'x' => 68.189,
-      'y' => 231.0,
-      'w' => 14.511,
-      'h' => 4.2,
-      'font_size' => 10.0,
-      'font_family' => 'times',
-      'font_color' => '#000000',
-      'align' => 'L',
-      'data_source_key' => 'results.analyst_prc',
-    ),
-    12 => 
+    17 => 
     array (
       'name' => 'results.analyst_name_2',
-      'label' => 'Certified Correct',
+      'label' => 'Certified Correct name',
       'type' => 'text',
       'page' => 1,
-      'x' => 126.714,
-      'y' => 222.0,
-      'w' => 70.0,
+      'x' => 126.0,
+      'y' => 223.0,
+      'w' => 80.0,
       'h' => 5.0,
       'font_size' => 10.0,
       'font_family' => 'times',
       'font_color' => '#000000',
       'align' => 'L',
       'data_source_key' => 'results.analyst_name_2',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 43,
+        ),
+      ),
     ),
-    13 => 
+    18 => 
+    array (
+      'name' => 'fo3_role_analyzed',
+      'label' => 'Analyzed by role',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 12.0,
+      'y' => 229.0,
+      'w' => 90.0,
+      'h' => 4.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_role_analyzed',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 50,
+        ),
+        'static_text' => 'Laboratory Analyst',
+      ),
+    ),
+    19 => 
+    array (
+      'name' => 'fo3_role_certified',
+      'label' => 'Certified Correct role',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 126.0,
+      'y' => 229.0,
+      'w' => 80.0,
+      'h' => 4.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_role_certified',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 50,
+        ),
+        'static_text' => 'Laboratory Analyst',
+      ),
+    ),
+    20 => 
+    array (
+      'name' => 'fo3_lic_prefix_1',
+      'label' => 'Analyzed by license prefix',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 12.0,
+      'y' => 234.0,
+      'w' => 50.0,
+      'h' => 4.0,
+      'font_size' => 8.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_lic_prefix_1',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 47,
+        ),
+        'static_text' => 'Registered Chemical Technician, License #',
+      ),
+    ),
+    21 => 
+    array (
+      'name' => 'results.analyst_prc',
+      'label' => 'Analyzed by PRC',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 61.0,
+      'y' => 234.0,
+      'w' => 20.0,
+      'h' => 4.0,
+      'font_size' => 8.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'results.analyst_prc',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 47,
+        ),
+      ),
+    ),
+    22 => 
+    array (
+      'name' => 'fo3_lic_prefix_2',
+      'label' => 'Certified Correct license prefix',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 126.0,
+      'y' => 234.0,
+      'w' => 35.801,
+      'h' => 4.0,
+      'font_size' => 8.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_lic_prefix_2',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 47,
+        ),
+        'static_text' => 'Registered Chemist, License #',
+      ),
+    ),
+    23 => 
     array (
       'name' => 'results.analyst_prc_2',
       'label' => 'Certified Correct PRC',
       'type' => 'text',
       'page' => 1,
-      'x' => 167.278,
-      'y' => 231.0,
-      'w' => 18.186,
-      'h' => 4.2,
-      'font_size' => 10.0,
+      'x' => 161.301,
+      'y' => 234.0,
+      'w' => 22.0,
+      'h' => 4.0,
+      'font_size' => 8.0,
       'font_family' => 'times',
       'font_color' => '#000000',
       'align' => 'L',
       'data_source_key' => 'results.analyst_prc_2',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 47,
+        ),
+      ),
+    ),
+    24 => 
+    array (
+      'name' => 'fo3_label_noted_by',
+      'label' => 'Noted by label',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 125.964,
+      'y' => 244.0,
+      'w' => 40.0,
+      'h' => 4.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_label_noted_by',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 58,
+        ),
+        'static_text' => 'Noted by:',
+      ),
+    ),
+    25 => 
+    array (
+      'name' => 'fo3_noted_by_name',
+      'label' => 'Noted by name',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 126.0,
+      'y' => 251.0,
+      'w' => 80.0,
+      'h' => 5.0,
+      'font_size' => 10.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_noted_by_name',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 63,
+        ),
+        'static_text' => 'WENDY A. TAYSON, RCh, MEnE',
+      ),
+    ),
+    26 => 
+    array (
+      'name' => 'fo3_role_noted',
+      'label' => 'Noted by role',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 126.0,
+      'y' => 257.0,
+      'w' => 80.0,
+      'h' => 4.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_role_noted',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 67,
+        ),
+        'static_text' => 'Laboratory Head',
+      ),
+    ),
+    27 => 
+    array (
+      'name' => 'fo3_lic_noted',
+      'label' => 'Noted by license',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 126.0,
+      'y' => 262.0,
+      'w' => 80.0,
+      'h' => 4.0,
+      'font_size' => 8.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_lic_noted',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 70,
+        ),
+        'static_text' => 'Registered Chemist, License #15131',
+      ),
+    ),
+    28 => 
+    array (
+      'name' => 'fo3_form_meta',
+      'label' => 'Form control footer',
+      'type' => 'multiline',
+      'page' => 1,
+      'x' => 11.95,
+      'y' => 264.0,
+      'w' => 192.0,
+      'h' => 17.672,
+      'font_size' => 7.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo3_form_meta',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'dw_old_fo3_matrix',
+          'offset_mm' => 75,
+        ),
+        'static_text' => 'Test Report #: CHE DW –
+Laboratory DOH Accreditation # # DOH052581
+NPPC-ADL
+LSP 7.8 FO3
+Rev. 10 / Issue 11 Effectivity Date:  09/01/2026                                                    Page 1-1',
+      ),
     ),
   ),
 );

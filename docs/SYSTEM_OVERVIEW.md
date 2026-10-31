@@ -123,7 +123,7 @@ The intake area captures:
 - sample information (**Sample type** = water/soil/food/prawn; not the PDF dynamic test matrix)
 - requested analyses from the **NPPC price-list catalog**, including **analysis packages** — chosen **per sample** (not once for the whole JO)
 - optional **standalone tests** that are not part of a package
-- for **Wastewater**, a **Physico-chem panel** preset (`LSP-7.8-FO2` Issue 18) that selects the panel’s tests as **individual-pay** lines (not an analysis package; members can be unchecked)
+- for **Wastewater**, a required **Sample description** kind (**Wastewater** / **River water** / **Abstracted water**) that is stored on each sample and printed on the result sheet **Sample Description**. Selecting the **Physico-chem panel** (intake preset still `LSP-7.8-FO2`) defaults to the **full** panel for Wastewater and River water, or **pH / DO / BOD / TSS** only for Abstracted water (members remain editable individual-pay lines, not a package). Kind also selects which result form prints: **FO2** (WW/River, 4 signatories + 6 notes) vs **FO2A** (Abstracted, 3 signatories + 4 notes). Analysts can edit lab conditions / references / notes on the workstation before print (`job_orders.result_footer`)
 
 **Multi-sample (same classification):** one JO keeps reference `YY-NNNN`; printed control numbers are `YY-NNNNA`, `YY-NNNNB`, … when there are 2+ samples. Each sample picks its own packages/tests; billing is the **sum of each sample’s lines** (four samples with the same package = 4×). Different classifications (e.g. food + water) stay **separate JOs** for now.
 
@@ -519,7 +519,7 @@ Domain logic lives in services, for example:
 - reference-number generation
 
 ### Inertia-Driven Frontend
-Laravel routes and permissions; React pages receive server props. Roles, notifications, and flash state come through Inertia middleware. Session `success` / `error` / `warning` / `info` flashes (and typed `Inertia::flash('toast', …)`) surface as Sonner toasts via `useFlashToast`. Destructive confirms use the shared `ConfirmDialog` (`resources/js/components/confirm-dialog.tsx`). In-app LMS notifications use the `database` channel plus Laravel Reverb `broadcast` so the header bell can update in real time when `php artisan reverb:start` is running (see `docs/DEPLOY.md`). Receiving, Analyst, and Head queue boards subscribe to private `lab.queue.*` channels and reload list props on `LabQueueUpdated` instead of interval polling.
+Laravel routes and permissions; React pages receive server props. Roles, notifications, and flash state come through Inertia middleware. Session `success` / `error` / `warning` / `info` flashes (and typed `Inertia::flash('toast', …)`) surface as Sonner toasts via `useFlashToast`. Destructive confirms use the shared `ConfirmDialog` (`resources/js/components/confirm-dialog.tsx`). In-app LMS notifications use the `database` channel plus Laravel Reverb `broadcast` so the header bell can update in real time when `php artisan reverb:start` is running (see `docs/DEPLOY.md`). Receiving, Analyst, and Head queue boards subscribe to private `lab.queue.*` channels and reload list props on `LabQueueUpdated` when Reverb/Echo is configured; otherwise they show an offline banner and poll every 30s (see `docs/DEPLOY.md`).
 
 ### Revision-Based Documents
 Upload-first overlays. The active revision is the approved operational version.

@@ -77,6 +77,10 @@ function openActionLabel(
         return { label: 'Resume Encoding', tone: 'amber' };
     }
 
+    if (aggregateKey === 'completed' && canSubmit) {
+        return { label: 'Send to Head', tone: 'primary' };
+    }
+
     if (aggregateKey === 'completed' && !canSubmit) {
         return { label: 'View Encoded', tone: 'outline' };
     }
@@ -87,13 +91,18 @@ function openActionLabel(
 function progressStatusLabel(
     aggregateKey: string,
     progress: { done: number; total: number },
+    canSubmit = false,
 ): string {
     if (aggregateKey === 'returned') {
         return 'Returned for revision';
     }
 
+    if (aggregateKey === 'completed' && canSubmit) {
+        return 'Ready to send to Head';
+    }
+
     if (aggregateKey === 'completed') {
-        return 'Sent to Head review';
+        return 'Fully encoded';
     }
 
     if (aggregateKey === 'in_progress' || progress.done > 0) {
@@ -448,6 +457,8 @@ export default function AnalystQueuePanel({
                                                                 {progressStatusLabel(
                                                                     aggregate.key,
                                                                     progress,
+                                                                    consolidation?.can_submit ===
+                                                                        true,
                                                                 )}
                                                             </span>
                                                             <span className="font-mono font-semibold tabular-nums text-slate-500">

@@ -88,7 +88,7 @@ export default function ControlNumberAdmin({ counter }: Props) {
                             id="next_number"
                             type="number"
                             min={counter.min_next}
-                            max={9999}
+                            max={99999999}
                             className="mt-1"
                             value={form.data.next_number}
                             onChange={(e) =>

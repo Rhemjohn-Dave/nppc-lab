@@ -50,6 +50,11 @@ export type ControlledRevisionSummary = {
     fields?: DesignerField[];
 };
 
+export type FieldAnchor = {
+    below: string;
+    offset_mm: number;
+};
+
 export type DesignerField = {
     id?: number;
     name: string;
@@ -71,6 +76,191 @@ export type DesignerField = {
     table_config: Record<string, unknown> | null;
     z_order: number;
 };
+
+export function fieldAnchor(field: DesignerField): FieldAnchor | null {
+    const options = field.options;
+    if (!options || typeof options !== 'object') {
+        return null;
+    }
+    const raw = options.anchor;
+    if (!raw || typeof raw !== 'object') {
+        return null;
+    }
+    const below = String((raw as { below?: unknown }).below ?? '').trim();
+    if (below === '') {
+        return null;
+    }
+    const offsetRaw = (raw as { offset_mm?: unknown }).offset_mm;
+    const offset_mm = typeof offsetRaw === 'number' && Number.isFinite(offsetRaw) ? offsetRaw : 0;
+
+    return { below, offset_mm };
+}
+
+export function fieldStaticText(field: DesignerField): string {
+    const options = field.options;
+    if (!options || typeof options !== 'object') {
+        return '';
+    }
+
+    return String(options.static_text ?? '');
+}
+
+export function fieldBold(field: DesignerField): boolean {
+    return field.options?.bold === true;
+}
+
+export type InlineBoldSegment = { text: string; bold: boolean };
+
+/** Mirror App\\Support\\InlineBoldMarkup::segments for Designer canvas parity. */
+export function parseInlineBoldSegments(text: string): InlineBoldSegment[] {
+    if (text === '') {
+        return [];
+    }
+    if (!text.includes('**')) {
+        return [{ text, bold: false }];
+    }
+
+    const parts = text.split(/\*\*([\s\S]*?)\*\*/);
+    const segments: InlineBoldSegment[] = [];
+    for (let index = 0; index < parts.length; index += 1) {
+        const part = parts[index];
+        if (part === '') {
+            continue;
+        }
+        segments.push({ text: part, bold: index % 2 === 1 });
+    }
+
+    return segments.length === 0 ? [{ text, bold: false }] : segments;
+}
+
+/** Wrap or unwrap ** markers around a textarea selection. */
+export function toggleInlineBoldSelection(
+    value: string,
+    selectionStart: number,
+    selectionEnd: number,
+): { value: string; selectionStart: number; selectionEnd: number } {
+    const start = Math.max(0, Math.min(selectionStart, selectionEnd));
+    const end = Math.max(0, Math.max(selectionStart, selectionEnd));
+    if (start === end) {
+        const next = `${value.slice(0, start)}****${value.slice(end)}`;
+        return {
+            value: next,
+            selectionStart: start + 2,
+            selectionEnd: start + 2,
+        };
+    }
+
+    const selected = value.slice(start, end);
+    const before = value.slice(0, start);
+    const after = value.slice(end);
+
+    if (selected.startsWith('**') && selected.endsWith('**') && selected.length >= 4) {
+        const inner = selected.slice(2, -2);
+        return {
+            value: `${before}${inner}${after}`,
+            selectionStart: start,
+            selectionEnd: start + inner.length,
+        };
+    }
+
+    if (before.endsWith('**') && after.startsWith('**')) {
+        return {
+            value: `${before.slice(0, -2)}${selected}${after.slice(2)}`,
+            selectionStart: start - 2,
+            selectionEnd: end - 2,
+        };
+    }
+
+    return {
+        value: `${before}**${selected}**${after}`,
+        selectionStart: start,
+        selectionEnd: end + 4,
+    };
+}
+
+export function fieldListStyle(
+    field: DesignerField,
+): 'numbered' | 'bullet' | null {
+    const raw = String(field.options?.list_style ?? '')
+        .trim()
+        .toLowerCase();
+    if (raw === 'numbered' || raw === 'bullet') {
+        return raw;
+    }
+
+    return null;
+}
+
+export function fieldListIndentMm(field: DesignerField): number {
+    const raw = Number(field.options?.list_indent_mm);
+
+    return Number.isFinite(raw) && raw > 0 ? raw : 6;
+}
+
+export type MultilineListPreview = {
+    headers: string[];
+    items: Array<{ marker: string; body: string }>;
+};
+
+/** Mirror ControlledPdfFiller list parsing for Designer canvas parity. */
+export function parseMultilineListPreview(
+    text: string,
+    listStyle: 'numbered' | 'bullet',
+): MultilineListPreview {
+    const lines = text.split(/\r\n|\n|\r/);
+    const headers: string[] = [];
+    const items: Array<{ marker: string; body: string }> = [];
+    let inItems = false;
+
+    for (const raw of lines) {
+        const line = raw.replace(/\s+$/u, '');
+        if (line === '' && !inItems) {
+            continue;
+        }
+
+        const numbered = line.match(/^(\d+\.)\s+(.*)$/u);
+        if (listStyle === 'numbered' && numbered) {
+            inItems = true;
+            items.push({ marker: numbered[1], body: numbered[2] });
+            continue;
+        }
+
+        const bullet = line.match(/^([-*•])\s+(.*)$/u);
+        if (listStyle === 'bullet' && bullet) {
+            inItems = true;
+            items.push({ marker: '•', body: bullet[2] });
+            continue;
+        }
+
+        if (inItems && line !== '' && /^\s+/u.test(line) && items.length > 0) {
+            items[items.length - 1].body += ` ${line.trim()}`;
+            continue;
+        }
+
+        if (!inItems && line !== '') {
+            headers.push(line);
+        }
+    }
+
+    return { headers, items };
+}
+
+/** Merge patch into options; omit empty keys; return null when empty. */
+export function patchFieldOptions(
+    current: Record<string, unknown> | null,
+    patch: Record<string, unknown | null | undefined>,
+): Record<string, unknown> | null {
+    const next: Record<string, unknown> = { ...(current ?? {}) };
+    for (const [key, value] of Object.entries(patch)) {
+        if (value === null || value === undefined || value === '') {
+            delete next[key];
+        } else {
+            next[key] = value;
+        }
+    }
+
+    return Object.keys(next).length > 0 ? next : null;
+}
 
 export type DataSource = {
     key: string;

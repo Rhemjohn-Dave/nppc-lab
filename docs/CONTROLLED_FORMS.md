@@ -51,7 +51,7 @@ Main responsibilities:
 | Analysis Result | Package | Job package → `analysis_package_id` (partial selection still matches; waived slots print `-` on **fixed-slot** packages) |
 | Analysis Result | Package + `dynamic_matrix` | Same binding; form includes one **Dynamic test matrix** region — only selected tests render as rows (see `docs/DYNAMIC_CONTROLLED_FORMS.md`) |
 | Analysis Result | Analysis types only | Exact `combination_key` when no package form applies |
-| Analysis Result | Types-only + `dynamic_test_matrix` | After exact miss: job type IDs ⊆ form bound types (e.g. `LSP-7.8-FO3` Issue 11 OLD individual DW sheet, `LSP-7.8-FO2` Issue 18 wastewater physico, `LSP-7.8-FO26` / `LSP-7.8-FO27` food / sugar micro). Package forms still win first (e.g. `LSP-7.8-FO37`). |
+| Analysis Result | Types-only + `dynamic_test_matrix` | After exact miss: job type IDs ⊆ form bound types (e.g. `LSP-7.8-FO3` Issue 11 OLD individual DW sheet, `LSP-7.8-FO2` / `LSP-7.8-FO2A` Issue 18 wastewater physico by sample kind, `LSP-7.8-FO26` / `LSP-7.8-FO27` food / sugar micro). Package forms still win first (e.g. `LSP-7.8-FO37`). |
 
 Packages admin shows the linked form read-only. Tag forms in Controlled Forms, not via free-text package form codes.
 
@@ -97,6 +97,8 @@ Responsibilities:
 **Overlay transparency (house rule):** field boxes are **transparent by default**. Do not seed or enable white `options.cover` fills — they blank printed PDF text under the box (e.g. License # behind a PRC number). Prefer resizing or repositioning the field. `cover: true` is a rare opt-in only when blanking printed template ink is deliberate (e.g. obsolete static **Test Methods and References** replaced by `results.test_methods_references`). `ControlledPdfFiller` only paints a white rectangle when that flag is explicitly set.
 
 **Dynamic test matrix (food / special analysis):** add field type **Dynamic test matrix** from the field library (one per revision). Draw the region where the test table should print. Map header and signature fields as usual. Row count follows selected intake tests at runtime.
+
+**Anchor below matrix:** non-matrix fields may set `options.anchor.below` to a matrix field name plus `offset_mm`. At fill time, `ControlledPdfFiller` draws matrices first, then rewrites those fields’ Y to `matrixContentBottom + offset` (Word-like footer under a short table). Optional `options.static_text` prints when there is no data-source value. Pilot: `LSP-7.8-FO3` — see `docs/DYNAMIC_CONTROLLED_FORMS.md` § Anchor below matrix.
 
 ### 4. Field Mapping and Persistence
 Field overlays are stored as controlled form fields attached to a specific revision.
@@ -182,13 +184,13 @@ These values are read from the canonical PDF itself in:
 
 ### Common Sizes
 - `A4` = `210.0 × 297.0 mm`
-- `Letter / Short bond / 8.5 × 11 in` = `215.9 × 279.4 mm`
+- `Letter / Short bond / 8.5 × 11 in` = `215.9 × 279.4 mm` (**default** for Form Designer and preview when metrics are missing)
 - `Folio / Long bond / 8.5 × 13 in` = `215.9 × 330.2 mm`
 
 ### Why This Matters
 The designer stores field positions against the real PDF page size. If the stored page dimensions do not match the uploaded PDF, preview output can become misaligned.
 
-The current implementation is intended to prevent that by using the canonical PDF dimensions once a real file exists.
+The current implementation is intended to prevent that by using the canonical PDF dimensions once a real file exists. Shared frontend defaults (`SHORT_BOND_*` in `controlled-pdf-viewport.ts`) and PHP `ControlledFormRevision::page()` fall back to short bond; after upload, `syncRevisionPageMetrics` keeps stored mm aligned with the canonical PDF. Preview display height follows the PDF MediaBox aspect (no Folio↔Letter squash). If the lab standard is short bond but an uploaded file is Folio, replace the PDF — do not invent Letter dimensions for a Folio file.
 
 ### Designer / preview parity
 Coordinate authority is always:
@@ -261,9 +263,9 @@ Versioned source documents live under `resources/forms/`. Combined microbiologic
 - `lsp-7.8-fo5-micro-drinking-water.pdf` (official `LSP 7.8 FO5` → internal `LSP-7.8-FO5`) — bind to package `PKG-MIC-DW` / `PKG-DW-BACT` / `MB-02A` + `MB-02B` + `MB-01`
 
 Physico-chemical:
-- `PC Wastewater result Form Issue 18 09012026 blank.pdf` (official `LSP 7.8 FO2` Issue 18 → `LSP-7.8-FO2`) — types-only dynamic matrix (TEST | METHOD | RESULTS; Time/Date of Analysis under each test name from `completed_at`); WW/SA panel tests individual pay
+- `PC Wastewater result Form Issue 18 09012026 blank.pdf` (official `LSP 7.8 FO2` Issue 18 → `LSP-7.8-FO2` for Wastewater/River; `LSP-7.8-FO2A` for Abstracted water) — types-only dynamic matrix (TEST | METHOD | RESULTS; Time/Date of Analysis under each test name from `completed_at`); WW/SA panel tests individual pay; analysts may override footer notes via `result_footer`
 - `PC Drinking Water Test Result Form Issue 7…` → `LSP-7.8-FO37` / `PKG-DW-PHYSICO`
-- `PC OLD Drinking Water Test Result Form Issue 11 blank.pdf` → `LSP-7.8-FO3` types-only
+- `PC OLD Drinking Water Test Result Form Issue 11 blank.pdf` → `LSP-7.8-FO3` types-only (flowing footer: remove notes/signature chrome below the table on the blank; overlays use `options.anchor` + `static_text` — see `docs/DYNAMIC_CONTROLLED_FORMS.md`)
 - `micro food test result form issue4 07152026.pdf` → `LSP-7.8-FO26` types-only dynamic matrix (Tests | Control No.; selected tests only); Methods/References via `results.test_methods_references`
 - `FOOD MICRO SUGAR Test Result form Issue4 07152026.pdf` → `LSP-7.8-FO27` types-only dynamic matrix (distinct `SM-*` codes; Tests | Control No.); Methods/References via `results.test_methods_references`
 

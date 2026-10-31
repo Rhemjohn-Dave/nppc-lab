@@ -46,6 +46,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $reviewed_at
  * @property string|null $review_notes
  * @property array<int, array{name: string, prc_id: string|null}>|null $result_signatories
+ * @property array{lab_conditions?: string|null, references?: string|null, notes?: string|null}|null $result_footer
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Collection<int, Sample> $samples
@@ -89,6 +90,7 @@ class JobOrder extends Model
         'reviewed_at',
         'review_notes',
         'result_signatories',
+        'result_footer',
     ];
 
     protected function casts(): array
@@ -105,6 +107,7 @@ class JobOrder extends Model
             'jo_approved_at' => 'datetime',
             'reviewed_at' => 'datetime',
             'result_signatories' => 'array',
+            'result_footer' => 'array',
         ];
     }
 

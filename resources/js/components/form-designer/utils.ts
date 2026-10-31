@@ -80,9 +80,11 @@ export const DRAG_SOURCE_MIME = 'application/x-designer-source';
 export function cssFontFamily(family: string): string {
     switch (family) {
         case 'calibri':
-            return 'Calibri, Carlito, "Segoe UI", sans-serif';
+            // Carlito is Calibri-metric; avoid Segoe UI (reads larger than TCPDF Calibri).
+            return 'Calibri, Carlito, sans-serif';
         case 'times':
-            return '"Times New Roman", Times, serif';
+            // Prefer core Times (closer to TCPDF) before Times New Roman.
+            return 'Times, "Times New Roman", serif';
         case 'courier':
             return '"Courier New", Courier, monospace';
         default:

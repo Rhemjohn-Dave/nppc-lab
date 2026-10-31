@@ -35,6 +35,7 @@ class DynamicTestMatrixReportTest extends TestCase
         $thermo = AnalysisType::query()->where('code', 'MB-02B')->firstOrFail();
         $hpc = AnalysisType::query()->where('code', 'MB-01')->firstOrFail();
 
+        AnalysisType::query()->whereKey([$total->id, $thermo->id])->update(['requires_pass_fail' => true]);
         $total->update(['method' => 'Custom MPN method']);
 
         $package = AnalysisPackage::query()->create([
@@ -262,6 +263,16 @@ class DynamicTestMatrixReportTest extends TestCase
         $this->assertSame('Colorimetric Method (2120 B)', $rows[0]['method']);
         $this->assertSame('10 color units', $rows[0]['acceptable_values']);
         $this->assertSame('Total Dissolved Solids (mg/L)', $rows[1]['test']);
+        $this->assertSame('Total Dissolved Solids (mg/L)', $rows[2]['test']);
+        $this->assertTrue(\App\Support\DynamicTestMatrix::rowsFormSpanPair($rows[1], $rows[2]));
+        $this->assertSame(
+            '600 for product that has not undergone reverse osmosis / distillation process',
+            $rows[1]['acceptable_values'],
+        );
+        $this->assertSame(
+            '<10 for product that undergone reverse osmosis/distillation process',
+            $rows[2]['acceptable_values'],
+        );
 
         $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO37')->firstOrFail();
         $this->assertSame(2, (int) $form->analyst_signatory_slots);
@@ -298,8 +309,10 @@ class DynamicTestMatrixReportTest extends TestCase
                 ->where('matrix_preview_rows.0.test', 'Color (Apparent Color)')
                 ->where('matrix_preview_rows.0.method', 'Colorimetric Method (2120 B)')
                 ->where('matrix_preview_rows.0.acceptable_values', '10 color units')
-                ->where('matrix_preview_rows.1.test', 'Total Dissolved Solids (mg/L)'));
-
+                ->where('matrix_preview_rows.1.test', 'Total Dissolved Solids (mg/L)')
+                ->where('matrix_preview_rows.2.test', 'Total Dissolved Solids (mg/L)')
+                ->where('matrix_preview_rows.1.row_span_role', 'start')
+                ->where('matrix_preview_rows.2.row_span_role', 'continue'));
         $values = app(FieldValueResolver::class)->sampleValues($revision->load(['fields', 'form.analysisPackage.analysisTypes']));
         $matrix = $revision->fields()->where('field_type', 'dynamic_test_matrix')->firstOrFail();
         $this->assertIsArray($values[$matrix->name] ?? null);
@@ -359,25 +372,32 @@ class DynamicTestMatrixReportTest extends TestCase
             ->assertRedirect('/receiving');
 
         foreach ($job->fresh()->analyses as $line) {
-            $value = match ((int) $line->analysis_type_id) {
-                $color->id => '5',
-                $ph->id => '7.1',
-                $tds->id => '231245.678912',
-                default => '1',
-            };
+            $payload = [
+                'performed_at' => '2026-07-29T15:00',
+                'result_pass_fail' => 'Passed',
+                'result_method' => \App\Support\DynamicTestMatrix::methodForAnalysisType($line->analysisType) ?? 'Standard Method',
+                'result_remarks' => 'Pass',
+                'result_signatory_name' => $analyst->name,
+                'result_signatory_prc' => '1234567',
+                'result_signatory_name_2' => 'Second Analyst',
+                'result_signatory_prc_2' => '7654321',
+            ];
+
+            if ((int) $line->analysis_type_id === $tds->id) {
+                $payload['result_raw'] = '450';
+                $payload['result_finish'] = '8';
+            } elseif ((int) $line->analysis_type_id === $ph->id) {
+                $payload['result_raw'] = '7.1';
+                $payload['result_finish'] = '6.0';
+            } else {
+                $payload['result_value'] = match ((int) $line->analysis_type_id) {
+                    $color->id => '5',
+                    default => '1',
+                };
+            }
 
             $this->actingAs($line->assignee ?? $analyst)
-                ->post("/analyst/tasks/{$line->id}/complete", [
-                    'performed_at' => '2026-07-29T15:00',
-                    'result_value' => $value,
-                    'result_pass_fail' => 'Passed',
-                    'result_method' => \App\Support\DynamicTestMatrix::methodForAnalysisType($line->analysisType) ?? 'Standard Method',
-                    'result_remarks' => 'Pass',
-                    'result_signatory_name' => $analyst->name,
-                    'result_signatory_prc' => '1234567',
-                    'result_signatory_name_2' => 'Second Analyst',
-                    'result_signatory_prc_2' => '7654321',
-                ])
+                ->post("/analyst/tasks/{$line->id}/complete", $payload)
                 ->assertRedirect();
         }
 
@@ -393,18 +413,37 @@ class DynamicTestMatrixReportTest extends TestCase
         );
 
         $this->assertIsArray($values['dw_physico_matrix']);
-        $this->assertCount(3, $values['dw_physico_matrix']);
+        // Color + TDS Raw/Finish + pH Raw/Finish = 5 printed rows.
+        $this->assertCount(5, $values['dw_physico_matrix']);
         $this->assertSame('Color (Apparent Color)', $values['dw_physico_matrix'][0]['test']);
         $this->assertSame('Colorimetric Method (2120 B)', $values['dw_physico_matrix'][0]['method']);
         $this->assertSame('10 color units', $values['dw_physico_matrix'][0]['acceptable_values']);
         $this->assertSame('5 (Passed)', $values['dw_physico_matrix'][0]['result']);
-        // Issue 7 package order: Color, TDS, Turbidity, pH — selected subset keeps package order.
+        // Issue 7 package order: Color, TDS, Turbidity, pH — selected subset keeps package order;
+        // DW-03 and DW-02 expand to Raw/Finish sub-rows with shared test name (rowspan on print).
         $this->assertSame('Total Dissolved Solids (mg/L)', $values['dw_physico_matrix'][1]['test']);
-        $this->assertSame('pH', $values['dw_physico_matrix'][2]['test']);
+        $this->assertSame('Total Dissolved Solids (mg/L)', $values['dw_physico_matrix'][2]['test']);
+        $this->assertTrue(\App\Support\DynamicTestMatrix::rowsFormSpanPair(
+            $values['dw_physico_matrix'][1],
+            $values['dw_physico_matrix'][2],
+        ));
+        $this->assertSame('pH', $values['dw_physico_matrix'][3]['test']);
+        $this->assertSame('pH', $values['dw_physico_matrix'][4]['test']);
+        $this->assertTrue(\App\Support\DynamicTestMatrix::rowsFormSpanPair(
+            $values['dw_physico_matrix'][3],
+            $values['dw_physico_matrix'][4],
+        ));
         $this->assertSame('5', $values['dw_physico_matrix'][0]['result_value']);
-
+        $this->assertSame('450', $values['dw_physico_matrix'][1]['result_value']);
+        $this->assertSame('8', $values['dw_physico_matrix'][2]['result_value']);
+        $this->assertSame('7.1', $values['dw_physico_matrix'][3]['result_value']);
+        $this->assertSame('6.0', $values['dw_physico_matrix'][4]['result_value']);
         // Long values wrap and ×10 exponents print as raised text instead of "??".
-        $job->analyses->firstWhere('analysis_type_id', $ph->id)?->update(['result_value' => '4×10⁻⁴']);
+        $job->analyses->firstWhere('analysis_type_id', $ph->id)?->update([
+            'result_raw' => '4×10⁻⁴',
+            'result_finish' => '3×10⁻⁴',
+            'result_value' => 'Raw: 4×10⁻⁴; Finish: 3×10⁻⁴',
+        ]);
         $job = $job->fresh(['analyses.analysisType', 'analyses.assignee', 'packages']);
 
         $report = app(AnalysisResultReportResolver::class)->forJobOrder($job, $admin);
@@ -452,11 +491,14 @@ class DynamicTestMatrixReportTest extends TestCase
         $this->assertSame(['test', 'method', 'result', 'acceptable_values', 'remarks'], $keys);
 
         $rows = \App\Support\DynamicTestMatrix::previewRowsForForm($form->fresh(['analysisPackage', 'analysisTypes']));
+        // Color + TDS Raw/Finish + EC …; Chloride follows pH Raw/Finish.
         $this->assertSame('Color (Apparent Color)', $rows[0]['test']);
-        $this->assertSame('Electrical Conductivity (µS/cm)', $rows[2]['test']);
-        $this->assertSame('Chloride (mg/L)', $rows[5]['test']);
-        $this->assertSame('Argentometric Method'."\n".'4500-Cl- B', $rows[5]['method']);
-        $this->assertSame('250 mg/L', $rows[5]['acceptable_values']);
+        $this->assertSame('Total Dissolved Solids (mg/L)', $rows[1]['test']);
+        $this->assertSame('Total Dissolved Solids (mg/L)', $rows[2]['test']);
+        $this->assertSame('Electrical Conductivity (µS/cm)', $rows[3]['test']);
+        $this->assertSame('Chloride (mg/L)', $rows[7]['test']);
+        $this->assertSame('Argentometric Method'."\n".'4500-Cl- B', $rows[7]['method']);
+        $this->assertSame('250 mg/L', $rows[7]['acceptable_values']);
         $this->assertNotSame('% Fat', $rows[0]['test']);
     }
 
@@ -492,16 +534,24 @@ class DynamicTestMatrixReportTest extends TestCase
         $keys = collect($matrix->table_config['columns'] ?? [])->pluck('key')->all();
         $this->assertSame(['test', 'method', 'result'], $keys);
         $this->assertSame('C', $matrix->table_config['columns'][0]['align'] ?? null);
+        $this->assertFalse($matrix->table_config['stretch_body'] ?? true);
 
         $customer = $revision->fields()->where('name', 'results.customer')->first();
         $this->assertNotNull($customer);
         $this->assertEqualsWithDelta(60.0, (float) $customer->x, 0.01);
         $this->assertEqualsWithDelta(32.7, (float) $customer->y, 0.01);
 
+        // Flowing footer (FO3 pattern): single WW/River block + 4th Certified slot.
+        // Abstracted water uses separate form LSP-7.8-FO2A.
+        $this->assertNotNull($revision->fields()->where('name', 'fo2_notes')->first());
+        $this->assertNull($revision->fields()->where('name', 'fo2_abs_notes')->first());
+        $meta = $revision->fields()->where('name', 'fo2_form_meta')->first();
+        $this->assertNotNull($meta);
+        $this->assertStringContainsString('CHE WW', (string) ($meta->options['static_text'] ?? ''));
+        $this->assertStringContainsString('Rev. 17/Issue 18', (string) ($meta->options['static_text'] ?? ''));
         $certified2 = $revision->fields()->where('name', 'results.analyst_name_4')->first();
         $this->assertNotNull($certified2);
-        $this->assertEqualsWithDelta(126.221, (float) $certified2->x, 0.01);
-        $this->assertEqualsWithDelta(227.009, (float) $certified2->y, 0.01);
+        $this->assertSame('ww_fo2_matrix', $certified2->options['anchor']['below'] ?? null);
 
         $rows = \App\Support\DynamicTestMatrix::previewRowsForForm($form->fresh(['analysisPackage', 'analysisTypes']));
         $this->assertSame('Lab pH', $rows[0]['test']);
@@ -542,6 +592,7 @@ class DynamicTestMatrixReportTest extends TestCase
         $ph = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
         $bod = AnalysisType::query()->where('code', 'WW-02')->firstOrFail();
         $chloride = AnalysisType::query()->where('code', 'SA-06')->firstOrFail();
+        AnalysisType::query()->whereKey([$ph->id, $bod->id, $chloride->id])->update(['requires_pass_fail' => true]);
 
         $this->actingAs($receiving)
             ->post('/intake/job-orders', [
@@ -719,27 +770,42 @@ class DynamicTestMatrixReportTest extends TestCase
         );
 
         // 2+ requested: full Issue 11 list in form order; unrequested rows are dashed.
+        // DW-03 + DW-02 each add one extra Raw/Finish sub-row.
         $rows = $values['dw_old_fo3_matrix'];
         $this->assertIsArray($rows);
-        $this->assertCount(count(\App\Support\OfficialAnalysisCatalog::drinkingWaterOldIssue11TypeCodes()), $rows);
+        // +1 TDS Finish, +1 pH Finish, +2 Residual Chlorine (Chlorinated + Raw).
+        $this->assertCount(
+            count(\App\Support\OfficialAnalysisCatalog::drinkingWaterOldIssue11TypeCodes()) + 4,
+            $rows,
+        );
         $this->assertSame('Color (Apparent Color)', $rows[0]['test']);
         $this->assertSame('Colorimetric Method (2120 B)', $rows[0]['method']);
         $this->assertSame('10 color units', $rows[0]['acceptable_values']);
         $this->assertSame('3 (Passed)', $rows[0]['result']);
         $this->assertSame('3', $rows[0]['result_value']);
         $this->assertSame('Passed', $rows[0]['pass_fail']);
-        $this->assertSame('Chloride (mg/L)', $rows[5]['test']);
-        $this->assertSame('40 (Passed)', $rows[5]['result']);
-        $this->assertSame('Argentometric Method'."\n".'4500-Cl- B', $rows[5]['method']);
-        $this->assertSame('250 mg/L', $rows[5]['acceptable_values']);
-        $this->assertSame('Iron (mg/L)', $rows[10]['test']);
-        $this->assertSame('0.2 (Passed)', $rows[10]['result']);
-
-        $this->assertSame('Electrical Conductivity (µS/cm)', $rows[2]['test']);
+        $this->assertSame('Total Dissolved Solids (mg/L)', $rows[1]['test']);
+        $this->assertSame('Total Dissolved Solids (mg/L)', $rows[2]['test']);
+        $this->assertSame('-', $rows[1]['result']);
         $this->assertSame('-', $rows[2]['result']);
-        $this->assertSame('-', $rows[2]['remarks']);
-        $this->assertNull($rows[2]['pass_fail']);
-        $this->assertNotEmpty($rows[2]['method']);
+        $this->assertSame('Electrical Conductivity (µS/cm)', $rows[3]['test']);
+        $this->assertSame('-', $rows[3]['result']);
+        $this->assertSame('-', $rows[3]['remarks']);
+        $this->assertNull($rows[3]['pass_fail']);
+        $this->assertNotEmpty($rows[3]['method']);
+        $this->assertSame('pH', $rows[5]['test']);
+        $this->assertSame('pH', $rows[6]['test']);
+        $this->assertSame('Chloride (mg/L)', $rows[7]['test']);
+        $this->assertSame('40 (Passed)', $rows[7]['result']);
+        $this->assertSame('Argentometric Method'."\n".'4500-Cl- B', $rows[7]['method']);
+        $this->assertSame('250 mg/L', $rows[7]['acceptable_values']);
+        $this->assertSame('Residual Chlorine (mg/L)', $rows[8]['test']);
+        $this->assertSame('Residual Chlorine (mg/L)', $rows[9]['test']);
+        $this->assertSame('Residual Chlorine (mg/L)', $rows[10]['test']);
+        $this->assertSame('-', $rows[8]['result']);
+        $this->assertSame('-', $rows[10]['result']);
+        $this->assertSame('Iron (mg/L)', $rows[14]['test']);
+        $this->assertSame('0.2 (Passed)', $rows[14]['result']);
 
         $placed = \App\Support\DynamicTestMatrix::placeOutcomeForColumns(
             $rows,
@@ -747,7 +813,7 @@ class DynamicTestMatrixReportTest extends TestCase
         );
         $this->assertSame('3', $placed[0]['result']);
         $this->assertSame('Passed; Pass', $placed[0]['remarks']);
-        $this->assertSame('-', $placed[2]['remarks']);
+        $this->assertSame('-', $placed[3]['remarks']);
 
         $report = app(AnalysisResultReportResolver::class)->forJobOrder($job, $admin);
         $this->assertSame('combined', $report->kind);

@@ -201,19 +201,251 @@ return array (
     ),
     9 => 
     array (
-      'name' => 'results.analyst_name',
-      'label' => 'Analyzed by',
-      'type' => 'text',
+      'name' => 'results.test_methods_references',
+      'label' => 'Test Methods and References',
+      'type' => 'multiline',
       'page' => 1,
-      'x' => 18.53,
-      'y' => 245.985,
-      'w' => 80.0,
-      'h' => 5.0,
+      'x' => 20.0,
+      'y' => 185.0,
+      'w' => 174.5,
+      'h' => 36.0,
       'font_size' => 9.0,
       'font_family' => 'calibri',
       'font_color' => '#000000',
       'align' => 'L',
+      'data_source_key' => null,
+      'options' => 
+      array (
+        'cover' => true,
+        'prefer_static' => true,
+        'anchor' => 
+        array (
+          'below' => 'food_micro_fo26_matrix',
+          'offset_mm' => 2,
+        ),
+        'static_text' => '**Test Methods and References:**
+Aerobic Plate Count - Pour Plate Method, Plate Count Agar (PCA); BAM Online Chapter 3
+Aerobic Plate Count - AOAC International Official Method of Analysis – Method 990.12
+3M PetrifilmTM Rapid Aerobic Count Plates, AOAC Certificate Number 121403
+Total Coliform - Multiple Tube Fermentation Technique; BAM Online
+Fecal Coliform - Multiple Tube Fermentation Technique; BAM Online
+E. coli - Compact Dry Media (AOAC Performance Tested, Cert. #110402)
+S. aureus - Compact Dry Media (AOAC Performance Tested, Cert. #081001)
+Salmonella - 3M Petrifilm Salmonella Express (AOAC Certified)
+Listeria - Reveal 2.0 Test for Listeria (AOAC-RI License No. 041101)
+Yeasts - Pour Plate Method; BAM
+Molds - Pour Plate Method; BAM
+V. parahaemolyticus - Compact Dry Media',
+      ),
+    ),
+    10 => 
+    array (
+      'name' => 'fo26_notes',
+      'label' => 'NOTE',
+      'type' => 'multiline',
+      'page' => 1,
+      'x' => 20.0,
+      'y' => 224.0,
+      'w' => 174.5,
+      'h' => 14.0,
+      'font_size' => 8.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo26_notes',
+      'options' => 
+      array (
+        'cover' => true,
+        'list_style' => 'numbered',
+        'list_indent_mm' => 6,
+        'anchor' => 
+        array (
+          'below' => 'food_micro_fo26_matrix',
+          'offset_mm' => 40,
+        ),
+        'static_text' => 'NOTE :
+1. Result of examination specifically related to samples as received.
+2. Test results shall not be reproduced without the approval of the Laboratory Head.',
+      ),
+    ),
+    11 => 
+    array (
+      'name' => 'fo26_label_analyzed_by',
+      'label' => 'Analyzed by label',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 20.0,
+      'y' => 240.0,
+      'w' => 50.0,
+      'h' => 4.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo26_label_analyzed_by',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'food_micro_fo26_matrix',
+          'offset_mm' => 56,
+        ),
+        'static_text' => 'Analyzed by:',
+      ),
+    ),
+    12 => 
+    array (
+      'name' => 'fo26_label_approved_by',
+      'label' => 'Approved by label',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 120.0,
+      'y' => 240.0,
+      'w' => 50.0,
+      'h' => 4.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo26_label_approved_by',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'food_micro_fo26_matrix',
+          'offset_mm' => 56,
+        ),
+        'static_text' => 'Approved by:',
+      ),
+    ),
+    13 => 
+    array (
+      'name' => 'results.analyst_name',
+      'label' => 'Analyzed by name',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 20.0,
+      'y' => 246.0,
+      'w' => 90.0,
+      'h' => 5.0,
+      'font_size' => 11.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
       'data_source_key' => 'results.analyst_name',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'food_micro_fo26_matrix',
+          'offset_mm' => 62,
+        ),
+        'static_text' => 'Riz Mae Fernandez, RMT',
+        'bold' => true,
+      ),
+    ),
+    14 => 
+    array (
+      'name' => 'fo26_approved_by_name',
+      'label' => 'Approved by name',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 120.0,
+      'y' => 246.0,
+      'w' => 85.0,
+      'h' => 5.0,
+      'font_size' => 11.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo26_approved_by_name',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'food_micro_fo26_matrix',
+          'offset_mm' => 62,
+        ),
+        'static_text' => 'Wendy A. Tayson, RCh, MEnE',
+        'bold' => true,
+      ),
+    ),
+    15 => 
+    array (
+      'name' => 'fo26_role_analyzed',
+      'label' => 'Analyzed by role',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 20.0,
+      'y' => 251.0,
+      'w' => 90.0,
+      'h' => 4.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo26_role_analyzed',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'food_micro_fo26_matrix',
+          'offset_mm' => 67,
+        ),
+        'static_text' => 'Laboratory Analyst',
+      ),
+    ),
+    16 => 
+    array (
+      'name' => 'fo26_role_approved',
+      'label' => 'Approved by role',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 120.0,
+      'y' => 251.0,
+      'w' => 85.0,
+      'h' => 4.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo26_role_approved',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'food_micro_fo26_matrix',
+          'offset_mm' => 67,
+        ),
+        'static_text' => 'Laboratory Head',
+      ),
+    ),
+    17 => 
+    array (
+      'name' => 'fo26_form_meta',
+      'label' => 'Form control footer',
+      'type' => 'multiline',
+      'page' => 1,
+      'x' => 20.0,
+      'y' => 258.0,
+      'w' => 100.0,
+      'h' => 14.0,
+      'font_size' => 7.5,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'fo26_form_meta',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'food_micro_fo26_matrix',
+          'offset_mm' => 74,
+        ),
+        'static_text' => 'NPPC-ADL LSP 7.8 FO26
+Rev 03/Issue 04
+Effectivity Date: 07/15/2026',
+      ),
     ),
   ),
 );

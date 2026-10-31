@@ -13,6 +13,7 @@ use App\Models\Sample;
 use App\Models\User;
 use App\Support\AnalysisResultReport;
 use App\Support\DynamicTestMatrix;
+use App\Support\OfficialAnalysisCatalog;
 use App\Support\ResultPdfFilename;
 use App\Support\SampleControlNumber;
 use Illuminate\Support\Collection;
@@ -213,15 +214,7 @@ class AnalysisResultReportResolver
         if ($standaloneTypeIds !== [] && ! in_array(null, $sampleAnalyses->pluck('analysis_type_id')->all(), true)) {
             $unique = array_values(array_unique($standaloneTypeIds));
             if (count($unique) === count($standaloneTypeIds)) {
-                $exact = ControlledForm::query()
-                    ->with(['analysisTypes', 'currentRevision.fields'])
-                    ->where('category', ControlledFormCategory::AnalysisResult)
-                    ->whereNull('analysis_package_id')
-                    ->where('combination_key', ControlledFormService::combinationKey($unique))
-                    ->whereHas('revisions', fn ($query) => $query->where('status', ControlledFormRevisionStatus::Active))
-                    ->first();
-
-                $form = $exact ?? $this->matchingTypesOnlyMatrixSubsetForm($unique);
+                $form = $this->resolveTypesOnlyResultForm($jobOrder, $unique, $sample);
                 if ($form) {
                     $reports[] = $this->fromControlledForm(
                         $jobOrder,
@@ -243,15 +236,7 @@ class AnalysisResultReportResolver
             if ($typeIds !== [] && ! in_array(null, $typeIds, true)) {
                 $unique = array_values(array_unique(array_map('intval', $typeIds)));
                 if (count($unique) === count($typeIds)) {
-                    $exact = ControlledForm::query()
-                        ->with(['analysisTypes', 'currentRevision.fields'])
-                        ->where('category', ControlledFormCategory::AnalysisResult)
-                        ->whereNull('analysis_package_id')
-                        ->where('combination_key', ControlledFormService::combinationKey($unique))
-                        ->whereHas('revisions', fn ($query) => $query->where('status', ControlledFormRevisionStatus::Active))
-                        ->first();
-
-                    $form = $exact ?? $this->matchingTypesOnlyMatrixSubsetForm($unique);
+                    $form = $this->resolveTypesOnlyResultForm($jobOrder, $unique, $sample);
                     if ($form) {
                         $reports[] = $this->fromControlledForm(
                             $jobOrder,
@@ -311,11 +296,31 @@ class AnalysisResultReportResolver
 
     public function matchingControlledForm(JobOrder $jobOrder): ?ControlledForm
     {
-        $jobOrder->loadMissing(['analyses', 'packages']);
+        $jobOrder->loadMissing(['analyses', 'packages', 'samples']);
 
         $packageForm = $this->matchingPackageControlledForm($jobOrder);
         if ($packageForm) {
             return $packageForm;
+        }
+
+        // Multi-sample JOs repeat the same type IDs once per sample. Job-wide
+        // duplicate checks would reject those and hide Signatories / Send-to-Head
+        // gates even though per-sample preview already resolves a form. Prefer the
+        // first sample's type set (same primary report as forJobOrder).
+        $sample = $jobOrder->samples->first();
+        if ($sample !== null) {
+            $sampleTypeIds = $jobOrder->analyses
+                ->where('sample_id', $sample->id)
+                ->pluck('analysis_type_id')
+                ->all();
+
+            if ($sampleTypeIds !== [] && ! in_array(null, $sampleTypeIds, true)) {
+                $sampleIds = array_map('intval', $sampleTypeIds);
+                $sampleUnique = array_values(array_unique($sampleIds));
+                if (count($sampleUnique) === count($sampleIds)) {
+                    return $this->resolveTypesOnlyResultForm($jobOrder, $sampleUnique, $sample);
+                }
+            }
         }
 
         $typeIds = $jobOrder->analyses->pluck('analysis_type_id')->all();
@@ -329,11 +334,27 @@ class AnalysisResultReportResolver
             return null;
         }
 
+        return $this->resolveTypesOnlyResultForm($jobOrder, $unique);
+    }
+
+    /**
+     * Types-only result form for a sample (or whole JO): FO2/FO2A by kind, else exact key, else subset.
+     *
+     * @param  list<int>  $typeIds
+     */
+    private function resolveTypesOnlyResultForm(JobOrder $jobOrder, array $typeIds, ?Sample $sample = null): ?ControlledForm
+    {
+        $wastewaterPhysico = $this->matchingWastewaterPhysicoForm($jobOrder, $typeIds, $sample);
+        if ($wastewaterPhysico !== null) {
+            return $wastewaterPhysico;
+        }
+
         $exact = ControlledForm::query()
             ->with(['analysisTypes', 'currentRevision.fields'])
             ->where('category', ControlledFormCategory::AnalysisResult)
             ->whereNull('analysis_package_id')
-            ->where('combination_key', ControlledFormService::combinationKey($unique))
+            ->whereNotIn('form_code', ['LSP-7.8-FO2', 'LSP-7.8-FO2A'])
+            ->where('combination_key', ControlledFormService::combinationKey($typeIds))
             ->whereHas('revisions', fn ($query) => $query->where('status', ControlledFormRevisionStatus::Active))
             ->first();
 
@@ -341,7 +362,67 @@ class AnalysisResultReportResolver
             return $exact;
         }
 
-        return $this->matchingTypesOnlyMatrixSubsetForm($unique);
+        return $this->matchingTypesOnlyMatrixSubsetForm($typeIds, $jobOrder);
+    }
+
+    /**
+     * FO2 (WW/River) vs FO2A (Abstracted) share the same type panel; pick by sample description.
+     *
+     * @param  list<int>  $jobTypeIds
+     */
+    private function matchingWastewaterPhysicoForm(JobOrder $jobOrder, array $jobTypeIds, ?Sample $sample = null): ?ControlledForm
+    {
+        $jobOrder->loadMissing('samples');
+
+        $candidates = ControlledForm::query()
+            ->with(['analysisTypes', 'currentRevision.fields'])
+            ->where('category', ControlledFormCategory::AnalysisResult)
+            ->whereNull('analysis_package_id')
+            ->whereIn('form_code', ['LSP-7.8-FO2', 'LSP-7.8-FO2A'])
+            ->whereHas('revisions', fn ($query) => $query->where('status', ControlledFormRevisionStatus::Active))
+            ->get()
+            ->keyBy('form_code');
+
+        if ($candidates->isEmpty()) {
+            return null;
+        }
+
+        $contained = static function (ControlledForm $form) use ($jobTypeIds): bool {
+            $revision = $form->activeRevision() ?? $form->currentRevision;
+            if (! DynamicTestMatrix::revisionUsesMatrix($revision)) {
+                return false;
+            }
+            $allowed = array_fill_keys($form->orderedTypeIds(), true);
+            if ($allowed === []) {
+                return false;
+            }
+            foreach ($jobTypeIds as $typeId) {
+                if (! isset($allowed[$typeId])) {
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+        $fo2 = $candidates->get('LSP-7.8-FO2');
+        $fo2a = $candidates->get('LSP-7.8-FO2A');
+        $description = trim((string) (($sample ?? $jobOrder->samples->first())?->description ?? ''));
+        $wantAbstracted = OfficialAnalysisCatalog::isWastewaterAbstractedKind($description);
+
+        if ($wantAbstracted && $fo2a instanceof ControlledForm && $contained($fo2a)) {
+            return $fo2a;
+        }
+
+        if ($fo2 instanceof ControlledForm && $contained($fo2)) {
+            return $fo2;
+        }
+
+        if ($fo2a instanceof ControlledForm && $contained($fo2a)) {
+            return $fo2a;
+        }
+
+        return null;
     }
 
     /**
@@ -349,7 +430,7 @@ class AnalysisResultReportResolver
      *
      * @param  list<int>  $jobTypeIds
      */
-    private function matchingTypesOnlyMatrixSubsetForm(array $jobTypeIds): ?ControlledForm
+    private function matchingTypesOnlyMatrixSubsetForm(array $jobTypeIds, ?JobOrder $jobOrder = null): ?ControlledForm
     {
         if ($jobTypeIds === []) {
             return null;
@@ -359,6 +440,7 @@ class AnalysisResultReportResolver
             ->with(['analysisTypes', 'currentRevision.fields'])
             ->where('category', ControlledFormCategory::AnalysisResult)
             ->whereNull('analysis_package_id')
+            ->whereNotIn('form_code', ['LSP-7.8-FO2', 'LSP-7.8-FO2A'])
             ->whereHas('revisions', fn ($query) => $query->where('status', ControlledFormRevisionStatus::Active))
             ->whereHas('analysisTypes')
             ->orderBy('id')

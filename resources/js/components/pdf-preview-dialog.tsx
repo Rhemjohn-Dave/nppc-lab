@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import PdfBlobCanvasViewer from '@/components/pdf-blob-canvas-viewer';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -16,7 +15,7 @@ export type PdfPreviewSource = {
     filename: string;
     title?: string;
     allowPrint?: boolean;
-    /** Optional FPDI page metrics so the canvas viewer matches designer/fill. */
+    /** Kept for callers; native iframe preview uses the PDF MediaBox. */
     pageWidthMm?: number | null;
     pageHeightMm?: number | null;
 };
@@ -57,12 +56,9 @@ export default function PdfPreviewDialog({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [objectUrl, setObjectUrl] = useState<string | null>(null);
-    const [blob, setBlob] = useState<Blob | null>(null);
     const [filename, setFilename] = useState('document.pdf');
     const [resolvedTitle, setResolvedTitle] = useState(title);
     const [allowPrint, setAllowPrint] = useState(true);
-    const [pageWidthMm, setPageWidthMm] = useState<number | null>(null);
-    const [pageHeightMm, setPageHeightMm] = useState<number | null>(null);
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
     const objectUrlRef = useRef<string | null>(null);
     const onReadyRef = useRef(onReady);
@@ -81,16 +77,9 @@ export default function PdfPreviewDialog({
             const createdUrl = URL.createObjectURL(source.blob);
             objectUrlRef.current = createdUrl;
             setObjectUrl(createdUrl);
-            setBlob(source.blob);
             setFilename(source.filename);
             setResolvedTitle(source.title || title);
             setAllowPrint(source.allowPrint !== false);
-            setPageWidthMm(
-                typeof source.pageWidthMm === 'number' ? source.pageWidthMm : null,
-            );
-            setPageHeightMm(
-                typeof source.pageHeightMm === 'number' ? source.pageHeightMm : null,
-            );
         } catch (cause: unknown) {
             const message =
                 cause instanceof Error
@@ -98,7 +87,6 @@ export default function PdfPreviewDialog({
                     : 'Could not prepare the PDF preview.';
             setError(message);
             setObjectUrl(null);
-            setBlob(null);
         } finally {
             setLoading(false);
         }
@@ -147,32 +135,40 @@ export default function PdfPreviewDialog({
     }
 
     function print() {
-        // Prefer a hidden iframe of the original blob so print uses native PDF print.
+        // Use the visible native PDF iframe when present; otherwise a hidden one.
         const url = objectUrlRef.current ?? objectUrl;
         if (!url) {
             return;
         }
 
-        let frame = iframeRef.current;
-        if (!frame) {
-            frame = document.createElement('iframe');
-            frame.style.position = 'fixed';
-            frame.style.right = '0';
-            frame.style.bottom = '0';
-            frame.style.width = '0';
-            frame.style.height = '0';
-            frame.style.border = '0';
-            frame.setAttribute('aria-hidden', 'true');
-            document.body.appendChild(frame);
-            iframeRef.current = frame;
+        const visible = iframeRef.current;
+        if (visible?.contentWindow) {
+            try {
+                visible.contentWindow.focus();
+                visible.contentWindow.print();
+                return;
+            } catch {
+                // Fall through to a temporary frame.
+            }
         }
 
+        const frame = document.createElement('iframe');
+        frame.style.position = 'fixed';
+        frame.style.right = '0';
+        frame.style.bottom = '0';
+        frame.style.width = '0';
+        frame.style.height = '0';
+        frame.style.border = '0';
+        frame.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(frame);
         frame.onload = () => {
             try {
-                frame?.contentWindow?.focus();
-                frame?.contentWindow?.print();
+                frame.contentWindow?.focus();
+                frame.contentWindow?.print();
             } catch {
                 // Ignore print abort / cross-origin edge cases.
+            } finally {
+                window.setTimeout(() => frame.remove(), 1000);
             }
         };
         frame.src = url;
@@ -226,13 +222,12 @@ export default function PdfPreviewDialog({
                                     {error}
                                 </div>
                             )}
-                            {!loading && !error && blob && (
-                                <PdfBlobCanvasViewer
-                                    blob={blob}
+                            {!loading && !error && objectUrl && (
+                                <iframe
+                                    ref={iframeRef}
                                     title={resolvedTitle}
-                                    pageWidthMm={pageWidthMm}
-                                    pageHeightMm={pageHeightMm}
-                                    className="max-h-[min(70vh,720px)]"
+                                    src={objectUrl}
+                                    className="h-[min(70vh,720px)] w-full bg-slate-200"
                                 />
                             )}
                         </>

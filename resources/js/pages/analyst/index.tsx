@@ -11,10 +11,15 @@ import {
     canWorkTask,
     encodedResultLabel,
     groupTasksBySample,
+    summarizeRawFinishResults,
+    summarizeResidualChlorineResults,
 } from '@/components/analyst/types';
 import ConfirmDialog from '@/components/confirm-dialog';
 import LimsWorkspace from '@/components/lims/lims-workspace';
 import NavigationLoadingShell from '@/components/loading/navigation-loading-shell';
+import ResultFooterPanel, {
+    type ResultFooterConfig,
+} from '@/components/result-footer-dialog';
 import ResultReportPreview from '@/components/result-report-preview';
 import ResultSignatoryPanel, {
     type ResultSignatoryConfig,
@@ -42,6 +47,7 @@ type Props = {
         returned: number;
         in_progress: number;
         assigned: number;
+        ready_to_submit?: number;
         completed: number;
     };
     jobs: {
@@ -122,6 +128,13 @@ function emptyMessage(filters: Props['filters']): {
         };
     }
 
+    if (filters.status === 'ready_to_submit') {
+        return {
+            title: 'Nothing ready for Head',
+            body: 'Fully encoded job orders you can send to Head will appear here.',
+        };
+    }
+
     return {
         title: "You're all caught up",
         body: 'There are no laboratory tests requiring your attention.',
@@ -199,15 +212,26 @@ export default function AnalystIndex({
         null,
     );
     const [editSignatorySaving, setEditSignatorySaving] = useState(false);
+    const [footerJobId, setFooterJobId] = useState<number | null>(null);
+    const [footerContinueSubmit, setFooterContinueSubmit] = useState(false);
+    const [footerError, setFooterError] = useState<string | null>(null);
+    const [footerSaving, setFooterSaving] = useState(false);
     const { isRefreshing } = useInertiaNavigation();
     const form = useForm({
         performed_at: '',
         result_value: '',
+        result_raw: '',
+        result_finish: '',
+        result_chlorinated: '',
         result_pass_fail: '',
         result_measurement: '',
         result_unit: '',
         result_remarks: '',
+        result_remarks_raw: '',
+        result_remarks_finish: '',
+        result_remarks_chlorinated: '',
         result_method: '',
+        accreditation_footnote: '',
     });
 
     const groups = useMemo(() => {
@@ -256,7 +280,8 @@ export default function AnalystIndex({
         Boolean(sampleCompletePending) ||
         discardConfirm ||
         Boolean(submitSignatoryJobId) ||
-        Boolean(editSignatoryJobId);
+        Boolean(editSignatoryJobId) ||
+        Boolean(footerJobId);
 
     useEffect(() => {
         setQuery(filters.q ?? '');
@@ -329,6 +354,9 @@ export default function AnalystIndex({
             if (
                 refreshed.performed_at !== active?.performed_at ||
                 refreshed.result_value !== active?.result_value ||
+                refreshed.result_raw !== active?.result_raw ||
+                refreshed.result_finish !== active?.result_finish ||
+                refreshed.result_chlorinated !== active?.result_chlorinated ||
                 refreshed.status !== active?.status
             ) {
                 loadTaskIntoForm(refreshed);
@@ -388,24 +416,35 @@ export default function AnalystIndex({
         setConfirmComplete(false);
         setDiscardConfirm(false);
         form.clearErrors();
-        form.setData({
+        const payload = {
             performed_at: task.performed_at ?? '',
             result_value: task.result_value ?? '',
+            result_raw: task.result_raw ?? '',
+            result_finish: task.result_finish ?? '',
+            result_chlorinated: task.result_chlorinated ?? '',
             result_pass_fail: task.result_pass_fail ?? '',
             result_measurement: task.result_measurement ?? '',
             result_unit: task.result_unit ?? '',
             result_remarks: task.result_remarks ?? '',
+            result_remarks_raw:
+                task.result_remarks_raw ??
+                (task.uses_raw_finish ? (task.result_remarks ?? '') : ''),
+            result_remarks_finish:
+                task.result_remarks_finish ??
+                (task.uses_residual_chlorine
+                    ? (task.result_remarks ?? '')
+                    : ''),
+            result_remarks_chlorinated: task.result_remarks_chlorinated ?? '',
             result_method: task.result_method ?? task.procedure_method ?? '',
-        });
-        form.setDefaults({
-            performed_at: task.performed_at ?? '',
-            result_value: task.result_value ?? '',
-            result_pass_fail: task.result_pass_fail ?? '',
-            result_measurement: task.result_measurement ?? '',
-            result_unit: task.result_unit ?? '',
-            result_remarks: task.result_remarks ?? '',
-            result_method: task.result_method ?? task.procedure_method ?? '',
-        });
+            accreditation_footnote: task.supports_accreditation_footnote
+                ? task.accreditation_footnote === '' ||
+                  task.accreditation_footnote == null
+                    ? 'none'
+                    : task.accreditation_footnote
+                : '',
+        };
+        form.setData(payload);
+        form.setDefaults(payload);
     }
 
     function openTask(task: AnalystTask) {
@@ -619,18 +658,82 @@ export default function AnalystIndex({
             active.requires_pass_fail === true
                 ? form.data.result_pass_fail
                 : '';
-        const formattedValue = formatScientificResult(form.data.result_value);
-        if (formattedValue !== form.data.result_value) {
+        const usesRawFinish = active.uses_raw_finish === true;
+        const usesResidualCl = active.uses_residual_chlorine === true;
+        const formattedRaw = usesRawFinish
+            ? formatScientificResult(form.data.result_raw)
+            : '';
+        const formattedFinish =
+            usesRawFinish || usesResidualCl
+                ? formatScientificResult(form.data.result_finish)
+                : '';
+        const formattedChlorinated = usesResidualCl
+            ? formatScientificResult(form.data.result_chlorinated)
+            : '';
+        const formattedValue = usesRawFinish
+            ? summarizeRawFinishResults(formattedRaw, formattedFinish)
+            : usesResidualCl
+              ? summarizeResidualChlorineResults(
+                    formattedFinish,
+                    formattedChlorinated,
+                )
+              : formatScientificResult(form.data.result_value);
+        if (usesRawFinish) {
+            if (formattedRaw !== form.data.result_raw) {
+                form.setData('result_raw', formattedRaw);
+            }
+            if (formattedFinish !== form.data.result_finish) {
+                form.setData('result_finish', formattedFinish);
+            }
+            if (formattedValue !== form.data.result_value) {
+                form.setData('result_value', formattedValue);
+            }
+        } else if (usesResidualCl) {
+            if (formattedFinish !== form.data.result_finish) {
+                form.setData('result_finish', formattedFinish);
+            }
+            if (formattedChlorinated !== form.data.result_chlorinated) {
+                form.setData('result_chlorinated', formattedChlorinated);
+            }
+            if (formattedValue !== form.data.result_value) {
+                form.setData('result_value', formattedValue);
+            }
+        } else if (formattedValue !== form.data.result_value) {
             form.setData('result_value', formattedValue);
         }
         const snapshot = {
             performed_at: form.data.performed_at,
             result_value: formattedValue,
+            result_raw: usesRawFinish ? formattedRaw : '',
+            result_finish:
+                usesRawFinish || usesResidualCl ? formattedFinish : '',
+            result_chlorinated: usesResidualCl ? formattedChlorinated : '',
             result_pass_fail: passFail,
             result_measurement: form.data.result_measurement,
             result_unit: form.data.result_unit,
-            result_remarks: form.data.result_remarks,
+            result_remarks: usesRawFinish
+                ? summarizeRawFinishResults(
+                      form.data.result_remarks_raw,
+                      form.data.result_remarks_finish,
+                  )
+                : usesResidualCl
+                  ? summarizeResidualChlorineResults(
+                        form.data.result_remarks_finish,
+                        form.data.result_remarks_chlorinated,
+                    )
+                  : form.data.result_remarks,
+            result_remarks_raw: usesRawFinish
+                ? form.data.result_remarks_raw
+                : '',
+            result_remarks_finish:
+                usesRawFinish || usesResidualCl
+                    ? form.data.result_remarks_finish
+                    : '',
+            result_remarks_chlorinated: usesResidualCl
+                ? form.data.result_remarks_chlorinated
+                : '',
             result_method: form.data.result_method,
+            accreditation_footnote: form.data.accreditation_footnote,
         };
 
         draftInFlight.current = true;
@@ -703,16 +806,44 @@ export default function AnalystIndex({
                     return false;
                 }
                 if (active?.id === task.id) {
-                    return (
-                        !form.data.performed_at.trim() ||
-                        !form.data.result_value.trim()
-                    );
+                    const hasPerformed =
+                        form.data.performed_at.trim() !== '' ||
+                        (task.status === 'returned' &&
+                            (task.performed_at ?? '').trim() !== '');
+                    if (!hasPerformed) {
+                        return true;
+                    }
+                    if (task.uses_raw_finish === true) {
+                        return (
+                            !form.data.result_raw.trim() &&
+                            !form.data.result_finish.trim()
+                        );
+                    }
+                    if (task.uses_residual_chlorine === true) {
+                        return (
+                            !form.data.result_finish.trim() &&
+                            !form.data.result_chlorinated.trim()
+                        );
+                    }
+                    return !form.data.result_value.trim();
                 }
 
-                return (
-                    !(task.performed_at ?? '').trim() ||
-                    !(task.result_value ?? '').trim()
-                );
+                if (!(task.performed_at ?? '').trim()) {
+                    return true;
+                }
+                if (task.uses_raw_finish === true) {
+                    return (
+                        !(task.result_raw ?? '').trim() &&
+                        !(task.result_finish ?? '').trim()
+                    );
+                }
+                if (task.uses_residual_chlorine === true) {
+                    return (
+                        !(task.result_finish ?? '').trim() &&
+                        !(task.result_chlorinated ?? '').trim()
+                    );
+                }
+                return !(task.result_value ?? '').trim();
             })
             .map((task) => {
                 if (!multiSample) {
@@ -774,7 +905,11 @@ export default function AnalystIndex({
 
         if (
             active.is_sample_preparation !== true &&
-            !form.data.performed_at.trim()
+            !form.data.performed_at.trim() &&
+            !(
+                active.status === 'returned' &&
+                (active.performed_at ?? '').trim() !== ''
+            )
         ) {
             form.setError(
                 'performed_at',
@@ -801,9 +936,57 @@ export default function AnalystIndex({
             active.requires_pass_fail === true
                 ? form.data.result_pass_fail
                 : '';
+        const usesRawFinish = active.uses_raw_finish === true;
+        const usesResidualCl = active.uses_residual_chlorine === true;
+        const formattedRaw = usesRawFinish
+            ? formatScientificResult(form.data.result_raw)
+            : form.data.result_raw;
+        const formattedFinish =
+            usesRawFinish || usesResidualCl
+                ? formatScientificResult(form.data.result_finish)
+                : form.data.result_finish;
+        const formattedChlorinated = usesResidualCl
+            ? formatScientificResult(form.data.result_chlorinated)
+            : form.data.result_chlorinated;
+        const formattedValue = usesRawFinish
+            ? summarizeRawFinishResults(formattedRaw, formattedFinish)
+            : usesResidualCl
+              ? summarizeResidualChlorineResults(
+                    formattedFinish,
+                    formattedChlorinated,
+                )
+              : formatScientificResult(form.data.result_value);
+
+        const remarksSummary = usesRawFinish
+            ? summarizeRawFinishResults(
+                  form.data.result_remarks_raw,
+                  form.data.result_remarks_finish,
+              )
+            : usesResidualCl
+              ? summarizeResidualChlorineResults(
+                    form.data.result_remarks_finish,
+                    form.data.result_remarks_chlorinated,
+                )
+              : form.data.result_remarks;
 
         form.transform((data) => ({
             ...data,
+            result_value: formattedValue,
+            result_raw: usesRawFinish ? formattedRaw : '',
+            result_finish:
+                usesRawFinish || usesResidualCl ? formattedFinish : '',
+            result_chlorinated: usesResidualCl ? formattedChlorinated : '',
+            result_remarks: remarksSummary,
+            result_remarks_raw: usesRawFinish
+                ? form.data.result_remarks_raw
+                : '',
+            result_remarks_finish:
+                usesRawFinish || usesResidualCl
+                    ? form.data.result_remarks_finish
+                    : '',
+            result_remarks_chlorinated: usesResidualCl
+                ? form.data.result_remarks_chlorinated
+                : '',
             result_pass_fail: passFail,
         }));
 
@@ -814,12 +997,31 @@ export default function AnalystIndex({
                 setSavedJustNow(true);
                 form.setDefaults({
                     performed_at: form.data.performed_at,
-                    result_value: form.data.result_value,
+                    result_value: formattedValue,
+                    result_raw: usesRawFinish ? formattedRaw : '',
+                    result_finish:
+                        usesRawFinish || usesResidualCl
+                            ? formattedFinish
+                            : '',
+                    result_chlorinated: usesResidualCl
+                        ? formattedChlorinated
+                        : '',
                     result_pass_fail: passFail,
                     result_measurement: form.data.result_measurement,
                     result_unit: form.data.result_unit,
-                    result_remarks: form.data.result_remarks,
+                    result_remarks: remarksSummary,
+                    result_remarks_raw: usesRawFinish
+                        ? form.data.result_remarks_raw
+                        : '',
+                    result_remarks_finish:
+                        usesRawFinish || usesResidualCl
+                            ? form.data.result_remarks_finish
+                            : '',
+                    result_remarks_chlorinated: usesResidualCl
+                        ? form.data.result_remarks_chlorinated
+                        : '',
                     result_method: form.data.result_method,
+                    accreditation_footnote: form.data.accreditation_footnote,
                 });
             },
             onError: () => {
@@ -883,7 +1085,7 @@ export default function AnalystIndex({
         });
     }
 
-    function submitJob(jobId: number) {
+    function proceedSubmitAfterFooter(jobId: number) {
         const consolidation = consolidationsById.get(jobId);
         if (consolidation?.signatory) {
             setSubmitSignatoryError(null);
@@ -897,6 +1099,96 @@ export default function AnalystIndex({
             {},
             { preserveScroll: true },
         );
+    }
+
+    function submitJob(jobId: number) {
+        const consolidation = consolidationsById.get(jobId);
+        if (consolidation?.footer?.can_edit) {
+            setFooterError(null);
+            setFooterContinueSubmit(true);
+            setFooterJobId(jobId);
+
+            return;
+        }
+
+        proceedSubmitAfterFooter(jobId);
+    }
+
+    function openEditFooter(jobId: number) {
+        setFooterError(null);
+        setFooterContinueSubmit(false);
+        setFooterJobId(jobId);
+    }
+
+    function csrfToken(): string | undefined {
+        const match = document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/);
+        return match ? decodeURIComponent(match[1]) : undefined;
+    }
+
+    async function confirmFooter(values: {
+        lab_conditions: string;
+        references: string;
+        notes: string;
+    }) {
+        const config = footerConfig;
+        if (!footerJobId || !config?.save_url) {
+            return;
+        }
+
+        setFooterSaving(true);
+        setFooterError(null);
+
+        try {
+            const response = await fetch(config.save_url, {
+                method: 'PUT',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    ...(csrfToken() ? { 'X-XSRF-TOKEN': csrfToken() } : {}),
+                },
+                body: JSON.stringify(values),
+            });
+
+            const payload = (await response.json().catch(() => null)) as {
+                message?: string;
+                errors?: Record<string, string[]>;
+            } | null;
+
+            if (!response.ok) {
+                const firstError = payload?.errors
+                    ? Object.values(payload.errors)[0]?.[0]
+                    : null;
+                throw new Error(
+                    firstError ||
+                        payload?.message ||
+                        'Could not save footer notes.',
+                );
+            }
+
+            const continueSubmit = footerContinueSubmit;
+            const jobId = footerJobId;
+            setFooterJobId(null);
+            setFooterContinueSubmit(false);
+
+            router.reload({
+                only: ['consolidations', 'releasedPrints'],
+                preserveScroll: true,
+                onFinish: () => {
+                    if (continueSubmit && jobId) {
+                        proceedSubmitAfterFooter(jobId);
+                    }
+                },
+            });
+        } catch (cause: unknown) {
+            setFooterError(
+                cause instanceof Error
+                    ? cause.message
+                    : 'Could not save footer notes.',
+            );
+        } finally {
+            setFooterSaving(false);
+        }
     }
 
     function confirmSubmitWithSignatories(signatories: ResultSignatoryRow[]) {
@@ -946,8 +1238,24 @@ export default function AnalystIndex({
             return null;
         }
 
-        return releasedById.get(editSignatoryJobId)?.signatory ?? null;
-    }, [editSignatoryJobId, releasedById]);
+        return (
+            consolidationsById.get(editSignatoryJobId)?.signatory ??
+            releasedById.get(editSignatoryJobId)?.signatory ??
+            null
+        );
+    }, [editSignatoryJobId, consolidationsById, releasedById]);
+
+    const footerConfig: ResultFooterConfig | null = useMemo(() => {
+        if (!footerJobId) {
+            return null;
+        }
+
+        return (
+            consolidationsById.get(footerJobId)?.footer ??
+            releasedById.get(footerJobId)?.footer ??
+            null
+        );
+    }, [footerJobId, consolidationsById, releasedById]);
 
     function openEditSignatories(jobId: number) {
         setEditSignatoryError(null);
@@ -995,7 +1303,10 @@ export default function AnalystIndex({
             }
 
             setEditSignatoryJobId(null);
-            router.reload({ only: ['releasedPrints'], preserveScroll: true });
+            router.reload({
+                only: ['consolidations', 'releasedPrints'],
+                preserveScroll: true,
+            });
         } catch {
             setEditSignatoryError('Could not save printed analyst details.');
         } finally {
@@ -1035,10 +1346,12 @@ export default function AnalystIndex({
 
     const needsAction =
         counts.needs_action ?? counts.assigned + counts.returned;
+    const readyToSubmit = counts.ready_to_submit ?? 0;
     const kpiTotal = Math.max(
         counts.all ||
             needsAction +
                 counts.in_progress +
+                readyToSubmit +
                 counts.returned +
                 counts.completed,
         1,
@@ -1062,6 +1375,14 @@ export default function AnalystIndex({
             share: Math.round((counts.in_progress / kpiTotal) * 100),
         },
         {
+            id: 'ready_to_submit',
+            label: 'Ready for Head',
+            value: readyToSubmit,
+            unit: 'Fully encoded — send to Head',
+            tone: 'info' as const,
+            share: Math.round((readyToSubmit / kpiTotal) * 100),
+        },
+        {
             id: 'returned',
             label: 'Returned',
             value: counts.returned,
@@ -1074,7 +1395,7 @@ export default function AnalystIndex({
             id: 'completed',
             label: 'Completed',
             value: counts.completed,
-            unit: 'Sent to Section Head',
+            unit: 'Encoded results',
             tone: 'success' as const,
             share: Math.round((counts.completed / kpiTotal) * 100),
         },
@@ -1154,6 +1475,7 @@ export default function AnalystIndex({
                             }}
                             onSendToHead={submitJob}
                             onEditSignatories={openEditSignatories}
+                            onEditFooter={openEditFooter}
                         />
                     </div>
                 ) : (
@@ -1218,6 +1540,9 @@ export default function AnalystIndex({
                     ).analysis ||
                     form.errors.performed_at ||
                     form.errors.result_value ||
+                    form.errors.result_raw ||
+                    form.errors.result_finish ||
+                    form.errors.result_chlorinated ||
                     form.errors.result_pass_fail ||
                     form.errors.result_method ||
                     form.errors.result_remarks ||
@@ -1247,6 +1572,13 @@ export default function AnalystIndex({
                             <dd className="font-medium">
                                 {encodedResultLabel({
                                     result_value: form.data.result_value,
+                                    result_raw: form.data.result_raw,
+                                    result_finish: form.data.result_finish,
+                                    result_chlorinated:
+                                        form.data.result_chlorinated,
+                                    uses_raw_finish: active.uses_raw_finish,
+                                    uses_residual_chlorine:
+                                        active.uses_residual_chlorine,
                                     result_pass_fail:
                                         active.requires_pass_fail === true
                                             ? form.data.result_pass_fail
@@ -1293,7 +1625,19 @@ export default function AnalystIndex({
                 jobReference={selectedGroup?.job.reference_no}
                 samples={groupTasksBySample(selectedGroup?.tasks ?? [])}
                 activeTaskId={active?.id ?? null}
-                formResultValue={form.data.result_value}
+                formResultValue={
+                    active?.uses_raw_finish === true
+                        ? summarizeRawFinishResults(
+                              form.data.result_raw,
+                              form.data.result_finish,
+                          )
+                        : active?.uses_residual_chlorine === true
+                          ? summarizeResidualChlorineResults(
+                                form.data.result_finish,
+                                form.data.result_chlorinated,
+                            )
+                          : form.data.result_value
+                }
             />
 
             <ConfirmDialog
@@ -1313,6 +1657,40 @@ export default function AnalystIndex({
                 variant="destructive"
                 onConfirm={discardAndContinue}
             />
+
+            <Dialog
+                open={Boolean(footerJobId && footerConfig)}
+                onOpenChange={(open) => {
+                    if (!open && !footerSaving) {
+                        setFooterJobId(null);
+                        setFooterContinueSubmit(false);
+                        setFooterError(null);
+                    }
+                }}
+            >
+                <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl">
+                    {footerConfig && (
+                        <ResultFooterPanel
+                            config={footerConfig}
+                            submitting={footerSaving}
+                            error={footerError}
+                            confirmLabel={
+                                footerContinueSubmit
+                                    ? 'Save notes & continue'
+                                    : 'Save footer notes'
+                            }
+                            onCancel={() => {
+                                if (!footerSaving) {
+                                    setFooterJobId(null);
+                                    setFooterContinueSubmit(false);
+                                    setFooterError(null);
+                                }
+                            }}
+                            onConfirm={confirmFooter}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
 
             <Dialog
                 open={Boolean(submitSignatoryJobId && submitSignatoryConfig)}

@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import PdfPreviewDialog, {
     type PdfPreviewSource,
 } from '@/components/pdf-preview-dialog';
+import ResultFooterPanel, {
+    type ResultFooterConfig,
+} from '@/components/result-footer-dialog';
 import ResultSignatoryPanel, {
     type ResultSignatoryConfig,
     type ResultSignatoryRow,
@@ -34,11 +37,13 @@ type Manifest = {
     template_url?: string | null;
     pdf_url?: string | null;
     signatory?: ResultSignatoryConfig | null;
+    footer?: ResultFooterConfig | null;
     reports?: ResultReportTab[];
 };
 
 type LoadedReport = PdfPreviewSource & {
     signatory?: ResultSignatoryConfig | null;
+    footer?: ResultFooterConfig | null;
     reports?: ResultReportTab[];
     sample_id?: number | null;
     form_id?: number | null;
@@ -109,6 +114,7 @@ export async function loadResultReport(reportUrl: string): Promise<LoadedReport>
                 title: manifest.title,
                 allowPrint: Boolean(manifest.can_print),
                 signatory: manifest.signatory ?? null,
+                footer: manifest.footer ?? null,
                 reports,
                 sample_id: manifest.sample_id ?? null,
                 form_id: manifest.form_id ?? null,
@@ -139,6 +145,7 @@ export async function loadResultReport(reportUrl: string): Promise<LoadedReport>
             title: manifest.title,
             allowPrint: Boolean(manifest.can_print),
             signatory: manifest.signatory ?? null,
+            footer: manifest.footer ?? null,
             reports,
             sample_id: manifest.sample_id ?? null,
             form_id: manifest.form_id ?? null,
@@ -164,6 +171,7 @@ export async function loadResultReport(reportUrl: string): Promise<LoadedReport>
         title: manifest.title,
         allowPrint: Boolean(manifest.can_print),
         signatory: manifest.signatory ?? null,
+        footer: manifest.footer ?? null,
         reports,
         sample_id: manifest.sample_id ?? null,
         form_id: manifest.form_id ?? null,
@@ -190,6 +198,10 @@ export default function ResultReportPreview({
     const [signatoryOpen, setSignatoryOpen] = useState(false);
     const [signatoryError, setSignatoryError] = useState<string | null>(null);
     const [signatorySaving, setSignatorySaving] = useState(false);
+    const [footer, setFooter] = useState<ResultFooterConfig | null>(null);
+    const [footerOpen, setFooterOpen] = useState(false);
+    const [footerError, setFooterError] = useState<string | null>(null);
+    const [footerSaving, setFooterSaving] = useState(false);
     const [allowPrint, setAllowPrint] = useState(false);
     const [tabs, setTabs] = useState<ResultReportTab[]>([]);
     const [selectedTabUrl, setSelectedTabUrl] = useState<string | null>(null);
@@ -202,6 +214,7 @@ export default function ResultReportPreview({
     const canEditSignatories = Boolean(
         signatory?.save_url || signatory?.can_edit,
     );
+    const canEditFooter = Boolean(footer?.save_url || footer?.can_edit);
 
     const activeReportUrl = selectedTabUrl ?? reportUrl;
 
@@ -212,6 +225,7 @@ export default function ResultReportPreview({
 
         const source = await loadResultReport(activeReportUrl);
         setSignatory(source.signatory ?? null);
+        setFooter(source.footer ?? null);
         setAllowPrint(Boolean(source.allowPrint));
         setActiveSampleId(
             typeof source.sample_id === 'number' ? source.sample_id : null,
@@ -221,6 +235,7 @@ export default function ResultReportPreview({
         );
         // Signatories are required at Send to Head; preview does not auto-prompt.
         setSignatoryOpen(false);
+        setFooterOpen(false);
 
         if ((source.reports?.length ?? 0) > 1) {
             setTabs(source.reports ?? []);
@@ -242,6 +257,9 @@ export default function ResultReportPreview({
             setSignatoryOpen(false);
             setSignatoryError(null);
             setSignatory(null);
+            setFooterOpen(false);
+            setFooterError(null);
+            setFooter(null);
             setAllowPrint(false);
             setTabs([]);
             setSelectedTabUrl(null);
@@ -319,6 +337,77 @@ export default function ResultReportPreview({
         }
     }
 
+    async function saveFooter(values: {
+        lab_conditions: string;
+        references: string;
+        notes: string;
+    }) {
+        if (!footer?.save_url) {
+            throw new Error('Footer save URL is missing.');
+        }
+
+        const token = csrfToken();
+        const response = await fetch(footer.save_url, {
+            method: 'PUT',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                ...(token ? { 'X-XSRF-TOKEN': token } : {}),
+            },
+            body: JSON.stringify(values),
+        });
+
+        const payload = (await response.json().catch(() => null)) as {
+            message?: string;
+            errors?: Record<string, string[]>;
+            footer?: ResultFooterConfig;
+        } | null;
+
+        if (!response.ok) {
+            const firstError = payload?.errors
+                ? Object.values(payload.errors)[0]?.[0]
+                : null;
+            throw new Error(
+                firstError || payload?.message || 'Could not save footer notes.',
+            );
+        }
+
+        if (payload?.footer) {
+            setFooter(payload.footer);
+        } else {
+            setFooter((current) =>
+                current ? { ...current, ...values } : current,
+            );
+        }
+    }
+
+    async function confirmFooter(values: {
+        lab_conditions: string;
+        references: string;
+        notes: string;
+    }) {
+        setFooterSaving(true);
+        setFooterError(null);
+
+        try {
+            await saveFooter(values);
+            setFooterOpen(false);
+
+            if (reloadPreviewRef.current) {
+                await reloadPreviewRef.current();
+            }
+        } catch (cause: unknown) {
+            setFooterError(
+                cause instanceof Error
+                    ? cause.message
+                    : 'Could not save footer notes.',
+            );
+        } finally {
+            setFooterSaving(false);
+        }
+    }
+
     function requestExport(action: 'download' | 'print') {
         // Analyst may confirm missing name/PRC at print; Head never enters them.
         if (canEditSignatories && signatory && !signatory.confirmed) {
@@ -338,8 +427,19 @@ export default function ResultReportPreview({
         }
 
         pendingActionRef.current = 'reload';
+        setFooterOpen(false);
         setSignatoryError(null);
         setSignatoryOpen(true);
+    }
+
+    function requestEditFooter() {
+        if (!canEditFooter) {
+            return;
+        }
+
+        setSignatoryOpen(false);
+        setFooterError(null);
+        setFooterOpen(true);
     }
 
     return (
@@ -410,10 +510,20 @@ export default function ResultReportPreview({
             }}
             footerExtra={
                 <>
+                    {canEditFooter && footer && !footerOpen && !signatoryOpen ? (
+                        <button
+                            type="button"
+                            className="text-sm text-nppc-900 underline-offset-2 hover:underline"
+                            onClick={requestEditFooter}
+                        >
+                            Edit footer notes
+                        </button>
+                    ) : null}
                     {canEditSignatories &&
                     signatory &&
                     allowPrint &&
-                    !signatoryOpen ? (
+                    !signatoryOpen &&
+                    !footerOpen ? (
                         <button
                             type="button"
                             className="text-sm text-nppc-900 underline-offset-2 hover:underline"
@@ -451,6 +561,17 @@ export default function ResultReportPreview({
                             pendingActionRef.current = null;
                         }}
                         onConfirm={confirmSignatories}
+                    />
+                ) : canEditFooter && footer && footerOpen ? (
+                    <ResultFooterPanel
+                        config={footer}
+                        submitting={footerSaving}
+                        error={footerError}
+                        onCancel={() => {
+                            setFooterOpen(false);
+                            setFooterError(null);
+                        }}
+                        onConfirm={confirmFooter}
                     />
                 ) : null
             }

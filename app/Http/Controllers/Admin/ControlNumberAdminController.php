@@ -21,7 +21,7 @@ class ControlNumberAdminController extends Controller
     public function update(Request $request, ReferenceNumberService $referenceNumbers): RedirectResponse
     {
         $data = $request->validate([
-            'next_number' => ['required', 'integer', 'min:1', 'max:9999'],
+            'next_number' => ['required', 'integer', 'min:1', 'max:99999999'],
         ]);
 
         $nextReference = $referenceNumbers->setNextNumber((int) $data['next_number']);

@@ -137,6 +137,12 @@ class IntakeController extends Controller
                 'other_classification_options' => $this->otherClassificationOptions(),
                 'wastewater_sources' => OfficialAnalysisCatalog::potabilitySampleSources(),
                 'aqua_sources' => OfficialAnalysisCatalog::aquaSampleSources(),
+                'wastewater_kinds' => OfficialAnalysisCatalog::wastewaterKinds(),
+                'wastewater_fo2_default_codes' => [
+                    'Wastewater' => OfficialAnalysisCatalog::wastewaterFo2DefaultTypeCodes('Wastewater'),
+                    'River water' => OfficialAnalysisCatalog::wastewaterFo2DefaultTypeCodes('River water'),
+                    'Abstracted water' => OfficialAnalysisCatalog::wastewaterFo2DefaultTypeCodes('Abstracted water'),
+                ],
             ],
         ]);
     }

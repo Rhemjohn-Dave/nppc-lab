@@ -5,10 +5,13 @@ namespace Tests\Unit;
 use App\Models\ControlledForm;
 use App\Models\JobOrder;
 use App\Support\ResultSignatories;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ResultSignatoriesTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_format_line_appends_prc_when_present(): void
     {
         $this->assertSame('Ana Analyst', ResultSignatories::formatLine([
@@ -50,6 +53,20 @@ class ResultSignatoriesTest extends TestCase
         $this->assertSame('Noted', $bag['name_2']);
         $this->assertSame('Cert1', $bag['name_3']);
         $this->assertSame('Cert2', $bag['name_4']);
+    }
+
+    public function test_fo2a_uses_three_signatory_slots(): void
+    {
+        $this->seed();
+
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2A')->firstOrFail();
+
+        $this->assertSame(3, ResultSignatories::slotsFor($form));
+        $this->assertSame([
+            'Reviewed by',
+            'Certified Correct',
+            'Noted By',
+        ], ResultSignatories::slotLabels($form));
     }
 
     public function test_normalize_scales_to_configured_slots(): void

@@ -438,14 +438,20 @@ class ControlledFormService
         }
 
         $key = self::combinationKey($typeIds);
-        $taken = ControlledForm::query()
+        $query = ControlledForm::query()
             ->where('category', ControlledFormCategory::AnalysisResult)
             ->whereNull('analysis_package_id')
             ->where('combination_key', $key)
-            ->where('id', '!=', $form->id)
-            ->exists();
+            ->where('id', '!=', $form->id);
 
-        if ($taken) {
+        // FO2 (WW/River) and FO2A (Abstracted) intentionally share the Issue 18
+        // type panel; AnalysisResultReportResolver picks by sample.description.
+        $wwPhysicoSiblings = ['LSP-7.8-FO2', 'LSP-7.8-FO2A'];
+        if (in_array($form->form_code, $wwPhysicoSiblings, true)) {
+            $query->whereNotIn('form_code', $wwPhysicoSiblings);
+        }
+
+        if ($query->exists()) {
             throw ValidationException::withMessages([
                 'analysis_type_ids' => 'Another analysis result form is already bound to this exact set of tests.',
             ]);
@@ -542,9 +548,15 @@ class ControlledFormService
                     default => ControlledFormFieldType::Text,
                 };
 
-            $dataSource = isset($field['data_source_key']) && is_string($field['data_source_key']) && $field['data_source_key'] !== ''
-                ? $field['data_source_key']
-                : ($isRfaBlueprint ? $this->rfaDataSource($name) : $name);
+            // Explicit null/empty clears the binding; omitting the key defaults to field name
+            // (or RFA aliases). Needed for prefer_static chrome that must ignore the value bag.
+            if (array_key_exists('data_source_key', $field)) {
+                $dataSource = is_string($field['data_source_key']) && $field['data_source_key'] !== ''
+                    ? $field['data_source_key']
+                    : null;
+            } else {
+                $dataSource = $isRfaBlueprint ? $this->rfaDataSource($name) : $name;
+            }
 
             if ($type === ControlledFormFieldType::DynamicTestMatrix) {
                 $dataSource = null;

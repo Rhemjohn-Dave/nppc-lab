@@ -21,7 +21,7 @@ type Props = {
 
 /**
  * Fit-to-width multi-page PDF viewer using pdf.js canvases.
- * Avoids browser iframe letterboxing that made controlled-form previews look tiny.
+ * Same path as Result Report / test results preview.
  */
 export default function PdfBlobCanvasViewer({
     blob,

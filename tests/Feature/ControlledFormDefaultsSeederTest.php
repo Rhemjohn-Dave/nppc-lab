@@ -65,16 +65,20 @@ class ControlledFormDefaultsSeederTest extends TestCase
         $this->assertSame(ControlledFormRevisionStatus::Active, $form->revisions()->first()?->status);
     }
 
-    public function test_defaults_seeder_restores_milk_seed_pdf_over_designer_upload(): void
+    public function test_defaults_seeder_preserves_milk_designer_upload(): void
     {
         $this->seed();
 
         $form = ControlledForm::query()->where('form_code', 'LSP-7.8-F016-MILK')->firstOrFail();
         $revision = $form->revisions()->firstOrFail();
         $this->assertTrue($revision->hasCanonicalPdf());
+        $this->assertContains(
+            'LSP-7.8-F016-MILK',
+            ControlledFormDefaultsSeeder::REFERENCE_ONLY_PDF_FORMS,
+        );
 
-        $seedPdf = resource_path('forms/official/'.ExportControlledFormBlueprintsCommand::TARGETS['LSP-7.8-F016-MILK']['pdf']);
-        $this->assertSame(md5_file($seedPdf), md5_file($revision->canonicalAbsolutePath()));
+        $beforePath = $revision->canonicalAbsolutePath();
+        $beforeHash = md5_file($beforePath);
 
         $revision->sha256 = 'designer-fake-sha';
         $revision->save();
@@ -82,8 +86,8 @@ class ControlledFormDefaultsSeederTest extends TestCase
         $this->seed(ControlledFormDefaultsSeeder::class);
 
         $revision = $form->fresh()->revisions()->firstOrFail();
-        $this->assertNotSame('designer-fake-sha', $revision->sha256);
-        $this->assertSame(md5_file($seedPdf), md5_file($revision->canonicalAbsolutePath()));
+        $this->assertSame('designer-fake-sha', $revision->sha256);
+        $this->assertSame($beforeHash, md5_file($revision->canonicalAbsolutePath()));
         $this->assertSame(ControlledFormRevisionStatus::Active, $revision->status);
     }
 }

@@ -31,7 +31,12 @@ import {
 } from '@/components/ui/sidebar';
 import type { NavItem } from '@/types';
 
-export function AppSidebar() {
+type AppSidebarProps = {
+    /** Form Designer uses offcanvas so collapse fully clears the canvas. */
+    collapsible?: 'icon' | 'offcanvas';
+};
+
+export function AppSidebar({ collapsible = 'icon' }: AppSidebarProps) {
     const { auth, canAccessHistory } = usePage().props as {
         auth: { user?: { roles?: string[] } | null };
         canAccessHistory?: boolean;
@@ -176,7 +181,7 @@ export function AppSidebar() {
 
     return (
         <Sidebar
-            collapsible="icon"
+            collapsible={collapsible}
             variant="inset"
             className="z-20 border-r border-slate-200 bg-white"
         >

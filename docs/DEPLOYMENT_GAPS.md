@@ -95,9 +95,9 @@ Head show and History show fetch/embed controlled PDFs on page load. UI performa
 
 **Evidence:** `resources/js/pages/head/show.tsx`, `resources/js/pages/history/show.tsx`, `docs/UI_PERFORMANCE.md`
 
-### 12. Queue realtime is a silent no-op without Reverb
+### 12. Queue realtime without Reverb falls back to polling
 
-If Echo/Reverb is unset, `useLabQueueRealtime` does nothing with no UI warning. Boards will not live-update; staff may think the app is broken.
+If Echo/Reverb is unset (`VITE_REVERB_APP_KEY` missing from the built assets), `LabQueueRealtime` shows an offline banner and polls every 30s instead of a silent no-op. Instant updates still require Reverb; header bell push also needs it.
 
 **Evidence:** `resources/js/hooks/use-lab-queue-realtime.ts`, `resources/js/app.tsx`, `docs/DEPLOY.md`
 

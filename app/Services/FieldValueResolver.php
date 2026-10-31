@@ -10,6 +10,7 @@ use App\Models\ControlledFormRevision;
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
 use App\Support\DynamicTestMatrix;
+use App\Support\OfficialAnalysisCatalog;
 use App\Support\ResultSignatories;
 use App\Support\SampleControlNumber;
 use DateTimeInterface;
@@ -57,6 +58,24 @@ class FieldValueResolver
         // FO4 Sample Description prints the job classification (e.g. Wastewater), not FO5 sterile-bottle text.
         if (($form?->form_code ?? null) === 'LSP-7.8-FO4') {
             $bag['results.sample_description'] = $this->listedOrSpecified($jobOrder->classification);
+        }
+
+        // FO2 / FO2A Sample Description prints the wastewater kind stored on the sample.
+        // Footer defaults follow form/kind; analyst result_footer overrides when set.
+        if (in_array($form?->form_code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A'], true)) {
+            $fo2Description = trim((string) (
+                ($focusSample?->description ?? null)
+                ?: ($jobOrder->samples->first()?->description ?? '')
+            ));
+            if ($fo2Description !== '') {
+                $bag['results.sample_description'] = $fo2Description;
+            }
+            $this->putFo2FooterBag(
+                $bag,
+                $fo2Description !== '' ? $fo2Description : null,
+                $form?->form_code,
+                $jobOrder,
+            );
         }
 
         if ($orderedAnalyses !== null) {
@@ -191,7 +210,45 @@ class FieldValueResolver
             return $bag;
         }
 
-        return $this->mapFields($revision, $bag, $jobOrder);
+        $mapped = $this->mapFields($revision, $bag, $jobOrder);
+        if (isset($bag['fo2_footer_variant'])) {
+            $mapped['fo2_footer_variant'] = $bag['fo2_footer_variant'];
+        }
+
+        return $mapped;
+    }
+
+    /**
+     * FO2 / FO2A flowing footer bag keys (designer-owned; analyst result_footer overrides).
+     *
+     * @param  array<string, mixed>  $bag
+     */
+    private function putFo2FooterBag(
+        array &$bag,
+        ?string $description,
+        ?string $formCode = null,
+        ?JobOrder $jobOrder = null,
+    ): void {
+        $variant = ($formCode === 'LSP-7.8-FO2A' || OfficialAnalysisCatalog::isWastewaterAbstractedKind($description))
+            ? 'abstracted'
+            : 'full';
+        $bag['fo2_footer_variant'] = $variant;
+        $bag['fo2_lab_conditions'] = OfficialAnalysisCatalog::fo2LabConditionsText($variant);
+        $bag['fo2_references'] = OfficialAnalysisCatalog::fo2ReferencesText();
+        $bag['fo2_notes'] = $variant === 'abstracted'
+            ? OfficialAnalysisCatalog::fo2AbstractedNotesText()
+            : OfficialAnalysisCatalog::fo2FullNotesText();
+
+        $footer = is_array($jobOrder?->result_footer) ? $jobOrder->result_footer : [];
+        foreach (['lab_conditions', 'references', 'notes'] as $key) {
+            $override = trim((string) ($footer[$key] ?? ''));
+            if ($override !== '') {
+                $bag['fo2_'.$key] = $override;
+            }
+        }
+
+        // Cover rect draws white only — keep a non-empty value so fill runs.
+        $bag['fo2_footer_cover'] = ' ';
     }
 
     /**
@@ -425,13 +482,30 @@ class FieldValueResolver
             $bag['test_2_result'] = '16';
         }
 
+        if (in_array($revision->form?->form_code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A'], true)) {
+            $sampleKind = $revision->form?->form_code === 'LSP-7.8-FO2A'
+                ? 'Abstracted water'
+                : 'Wastewater';
+            $bag['results.sample_description'] = $sampleKind;
+            $this->putFo2FooterBag($bag, $sampleKind, $revision->form?->form_code, null);
+        }
+
         foreach ($revision->fields as $field) {
             if ($field->field_type === ControlledFormFieldType::DynamicTestMatrix) {
-                $bag[$field->name] = DynamicTestMatrix::previewRowsForForm($revision->form);
+                $config = is_array($field->table_config) ? $field->table_config : [];
+                $bag[$field->name] = DynamicTestMatrix::previewRowsForDesignerConfig(
+                    $config,
+                    DynamicTestMatrix::previewRowsForForm($revision->form),
+                );
             }
         }
 
-        return $this->mapFields($revision, $bag, null);
+        $mapped = $this->mapFields($revision, $bag, null);
+        if (isset($bag['fo2_footer_variant'])) {
+            $mapped['fo2_footer_variant'] = $bag['fo2_footer_variant'];
+        }
+
+        return $mapped;
     }
 
     /**

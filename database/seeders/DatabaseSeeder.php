@@ -588,9 +588,25 @@ class DatabaseSeeder extends Seeder
                 ],
             );
 
-            if (in_array($meta['form_code'] ?? null, ['LSP-7.8-FO37', 'LSP-7.8-FO3', 'LSP-7.8-FO26', 'LSP-7.8-FO27', 'LSP-7.8-F016-MILK', 'LSP-7.8-F016-PROX'], true)) {
+            if (in_array($meta['form_code'] ?? null, ['LSP-7.8-FO37', 'LSP-7.8-FO3', 'LSP-7.8-F016-PROX'], true)) {
                 $form->fill([
                     'analyst_signatory_slots' => 2,
+                    'analyst_require_prc' => true,
+                ])->save();
+            }
+
+            // FO26 / FO27 Issue 4: one Analyzed-by + static Laboratory Head; no PRC on sheet.
+            if (in_array($meta['form_code'] ?? null, ['LSP-7.8-FO26', 'LSP-7.8-FO27'], true)) {
+                $form->fill([
+                    'analyst_signatory_slots' => 1,
+                    'analyst_require_prc' => false,
+                ])->save();
+            }
+
+            // F016-MILK / F016-NO2: one Analyzed-by (Ferresa) + PRC; Approved by static Wendy + PRC.
+            if (in_array($meta['form_code'] ?? null, ['LSP-7.8-F016-MILK', 'LSP-7.8-F016-NO2'], true)) {
+                $form->fill([
+                    'analyst_signatory_slots' => 1,
                     'analyst_require_prc' => true,
                 ])->save();
             }
@@ -598,6 +614,13 @@ class DatabaseSeeder extends Seeder
             if (($meta['form_code'] ?? null) === 'LSP-7.8-FO2') {
                 $form->fill([
                     'analyst_signatory_slots' => 4,
+                    'analyst_require_prc' => true,
+                ])->save();
+            }
+
+            if (($meta['form_code'] ?? null) === 'LSP-7.8-FO2A') {
+                $form->fill([
+                    'analyst_signatory_slots' => 3,
                     'analyst_require_prc' => true,
                 ])->save();
             }
@@ -665,7 +688,7 @@ class DatabaseSeeder extends Seeder
             }
 
             if (
-                in_array($meta['form_code'] ?? null, ['LSP-7.8-FO37', 'LSP-7.8-FO3', 'LSP-7.8-FO2', 'LSP-7.8-FO26', 'LSP-7.8-FO27', 'LSP-7.8-F016-MILK', 'LSP-7.8-F016-PROX'], true)
+                in_array($meta['form_code'] ?? null, ['LSP-7.8-FO37', 'LSP-7.8-FO3', 'LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO26', 'LSP-7.8-FO27', 'LSP-7.8-F016-MILK', 'LSP-7.8-F016-PROX', 'LSP-7.8-F016-NO2'], true)
                 && $revision->hasCanonicalPdf()
                 && $revision->fields()->exists()
                 && $revision->status !== \App\Enums\ControlledFormRevisionStatus::Active

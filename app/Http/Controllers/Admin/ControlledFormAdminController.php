@@ -265,17 +265,30 @@ class ControlledFormAdminController extends Controller
 
         $matrixPreviewRows = collect(
             DynamicTestMatrix::previewRowsForForm($controlledForm),
-        )->map(fn (array $row) => [
-            'test' => (string) ($row['test'] ?? ''),
-            'test_method' => (string) ($row['test_method'] ?? ''),
-            'test_detail' => (string) ($row['test_detail'] ?? ''),
-            'method' => (string) ($row['method'] ?? ''),
-            'acceptable_values' => (string) ($row['acceptable_values'] ?? ''),
-            'result' => (string) ($row['result'] ?? ''),
-            'remarks' => (string) ($row['remarks'] ?? ''),
-            'control_no' => (string) ($row['control_no'] ?? ''),
-            'sample_description' => (string) ($row['sample_description'] ?? ''),
-        ])->values()->all();
+        )->map(function (array $row) {
+            $mapped = [
+                'test' => (string) ($row['test'] ?? ''),
+                'test_method' => (string) ($row['test_method'] ?? ''),
+                'test_detail' => (string) ($row['test_detail'] ?? ''),
+                'method' => (string) ($row['method'] ?? ''),
+                'acceptable_values' => (string) ($row['acceptable_values'] ?? ''),
+                'result' => (string) ($row['result'] ?? ''),
+                'remarks' => (string) ($row['remarks'] ?? ''),
+                'control_no' => (string) ($row['control_no'] ?? ''),
+                'sample_description' => (string) ($row['sample_description'] ?? ''),
+            ];
+
+            $group = trim((string) ($row['row_span_group'] ?? ''));
+            $role = strtolower(trim((string) ($row['row_span_role'] ?? '')));
+            if ($group !== '') {
+                $mapped['row_span_group'] = $group;
+            }
+            if (in_array($role, ['start', 'continue'], true)) {
+                $mapped['row_span_role'] = $role;
+            }
+
+            return $mapped;
+        })->values()->all();
 
         return Inertia::render('admin/form-designer', [
             'form' => $this->serializeForm($controlledForm, false),

@@ -2,7 +2,7 @@
 
 /**
  * Field blueprint for LSP-7.8-F016-MILK.
- * Captured from Form Designer ACTIVE revision 03
+ * Captured from Form Designer ACTIVE revision 02
  * via `php artisan controlled-forms:export-blueprints`.
  */
 
@@ -160,6 +160,7 @@ return array (
         'test_name_bold' => true,
         'header_bold' => true,
         'method_font_size' => 9,
+        'stretch_body' => false,
         'preview_data' => 
         array (
           0 => 
@@ -197,35 +198,261 @@ return array (
     ),
     7 => 
     array (
-      'name' => 'results.analyst_name',
-      'label' => 'Analyst name (slot 1)',
-      'type' => 'signature',
+      'name' => 'milk_f016_notes',
+      'label' => 'NOTES',
+      'type' => 'multiline',
       'page' => 1,
-      'x' => 19.636,
-      'y' => 198.804,
-      'w' => 45.88,
+      'x' => 39.285,
+      'y' => 168.0,
+      'w' => 142.162,
+      'h' => 14.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'milk_f016_notes',
+      'options' => 
+      array (
+        'cover' => true,
+        'list_style' => 'numbered',
+        'list_indent_mm' => 6,
+        'anchor' => 
+        array (
+          'below' => 'milk_f016_matrix',
+          'offset_mm' => 2,
+        ),
+        'static_text' => 'NOTES :
+1. Results of examination specifically related to samples as received.
+2. Test results shall not be reproduced without the approval of the Laboratory Head.',
+      ),
+    ),
+    8 => 
+    array (
+      'name' => 'milk_f016_label_analyzed_by',
+      'label' => 'Analyzed by label',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 39.285,
+      'y' => 186.0,
+      'w' => 50.0,
+      'h' => 4.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'milk_f016_label_analyzed_by',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'milk_f016_matrix',
+          'offset_mm' => 20,
+        ),
+        'static_text' => 'Analyzed by:',
+      ),
+    ),
+    9 => 
+    array (
+      'name' => 'milk_f016_label_approved_by',
+      'label' => 'Approved by label',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 120.0,
+      'y' => 186.0,
+      'w' => 50.0,
+      'h' => 4.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'milk_f016_label_approved_by',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'milk_f016_matrix',
+          'offset_mm' => 20,
+        ),
+        'static_text' => 'Approved by:',
+      ),
+    ),
+    10 => 
+    array (
+      'name' => 'results.analyst_name',
+      'label' => 'Analyzed by name',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 39.285,
+      'y' => 192.0,
+      'w' => 80.0,
       'h' => 5.0,
-      'font_size' => 12.0,
+      'font_size' => 10.0,
       'font_family' => 'times',
       'font_color' => '#000000',
       'align' => 'L',
       'data_source_key' => 'results.analyst_name',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'milk_f016_matrix',
+          'offset_mm' => 26,
+        ),
+        'static_text' => 'Ferresa Mae O. Caberoy, RCh',
+      ),
     ),
-    8 => 
+    11 => 
     array (
-      'name' => 'results.analyst_prc',
-      'label' => 'Analyst PRC (slot 1)',
+      'name' => 'milk_f016_approved_by_name',
+      'label' => 'Approved by name',
       'type' => 'text',
       'page' => 1,
-      'x' => 49.969,
-      'y' => 208.174,
-      'w' => 28.319,
+      'x' => 120.0,
+      'y' => 192.0,
+      'w' => 85.0,
       'h' => 5.0,
-      'font_size' => 12.0,
+      'font_size' => 10.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'milk_f016_approved_by_name',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'milk_f016_matrix',
+          'offset_mm' => 26,
+        ),
+        'static_text' => 'Wendy A. Tayson, RCh, MEE',
+      ),
+    ),
+    12 => 
+    array (
+      'name' => 'milk_f016_role_analyzed',
+      'label' => 'Analyzed by role',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 39.285,
+      'y' => 197.0,
+      'w' => 80.0,
+      'h' => 4.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'milk_f016_role_analyzed',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'milk_f016_matrix',
+          'offset_mm' => 31,
+        ),
+        'static_text' => 'Laboratory Analyst',
+      ),
+    ),
+    13 => 
+    array (
+      'name' => 'milk_f016_role_approved',
+      'label' => 'Approved by role',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 120.0,
+      'y' => 197.0,
+      'w' => 85.0,
+      'h' => 4.0,
+      'font_size' => 9.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'milk_f016_role_approved',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'milk_f016_matrix',
+          'offset_mm' => 31,
+        ),
+        'static_text' => 'Laboratory Head',
+      ),
+    ),
+    14 => 
+    array (
+      'name' => 'results.analyst_prc',
+      'label' => 'Analyzed by PRC',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 39.285,
+      'y' => 201.0,
+      'w' => 80.0,
+      'h' => 4.0,
+      'font_size' => 8.0,
       'font_family' => 'times',
       'font_color' => '#000000',
       'align' => 'L',
       'data_source_key' => 'results.analyst_prc',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'milk_f016_matrix',
+          'offset_mm' => 35,
+        ),
+        'static_text' => 'PRC License No. 16125',
+      ),
+    ),
+    15 => 
+    array (
+      'name' => 'milk_f016_lic_approved',
+      'label' => 'Approved by license',
+      'type' => 'text',
+      'page' => 1,
+      'x' => 120.0,
+      'y' => 201.0,
+      'w' => 85.0,
+      'h' => 4.0,
+      'font_size' => 8.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'milk_f016_lic_approved',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'milk_f016_matrix',
+          'offset_mm' => 35,
+        ),
+        'static_text' => 'PRC License No. 15131',
+      ),
+    ),
+    16 => 
+    array (
+      'name' => 'milk_f016_form_meta',
+      'label' => 'Form control footer',
+      'type' => 'multiline',
+      'page' => 1,
+      'x' => 20.0,
+      'y' => 210.0,
+      'w' => 100.0,
+      'h' => 16.0,
+      'font_size' => 7.0,
+      'font_family' => 'times',
+      'font_color' => '#000000',
+      'align' => 'L',
+      'data_source_key' => 'milk_f016_form_meta',
+      'options' => 
+      array (
+        'anchor' => 
+        array (
+          'below' => 'milk_f016_matrix',
+          'offset_mm' => 50,
+        ),
+        'static_text' => 'NPPC ADL
+LSP 7.8 F016
+Rev 05 / Issue 06
+Effectivity Date: 07/15/2026',
+      ),
     ),
   ),
 );

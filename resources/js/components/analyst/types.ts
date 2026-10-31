@@ -24,12 +24,26 @@ export type AnalystTask = {
     category_label?: string | null;
     status: string;
     status_label: string;
+    analysis_type_code?: string | null;
+    /** DW-02/DW-03: separate Raw / Finish measurements. */
+    uses_raw_finish?: boolean;
+    /** DW-05: Finish + Chlorinated (Raw Results always "-"). */
+    uses_residual_chlorine?: boolean;
     result_value?: string | null;
+    result_raw?: string | null;
+    result_finish?: string | null;
+    result_chlorinated?: string | null;
     result_pass_fail?: string | null;
     result_measurement?: string | null;
     result_unit?: string | null;
     result_remarks?: string | null;
+    result_remarks_raw?: string | null;
+    result_remarks_finish?: string | null;
+    result_remarks_chlorinated?: string | null;
     result_method?: string | null;
+    /** FO2/FO2A Notes mark: null = catalog default, '' = none, *, **, ***. */
+    accreditation_footnote?: string | null;
+    supports_accreditation_footnote?: boolean;
     performed_at?: string | null;
     procedure_method?: string | null;
     result_mode?: 'value' | 'pass_fail';
@@ -67,6 +81,14 @@ export type ResultSignatoryConfig = {
     save_url?: string | null;
 };
 
+export type ResultFooterConfig = {
+    lab_conditions: string;
+    references: string;
+    notes: string;
+    save_url?: string | null;
+    can_edit?: boolean;
+};
+
 export type Consolidation = {
     id: number;
     reference_no: string;
@@ -78,6 +100,7 @@ export type Consolidation = {
     missing: string[];
     review_notes?: string | null;
     signatory?: ResultSignatoryConfig | null;
+    footer?: ResultFooterConfig | null;
     lines: Array<{
         id: number;
         name: string;
@@ -99,6 +122,7 @@ export type ReleasedPrint = {
     print_url: string | null;
     preview_url?: string | null;
     signatory?: ResultSignatoryConfig | null;
+    footer?: ResultFooterConfig | null;
 };
 
 export type JobGroup = {
@@ -156,28 +180,96 @@ export function statusDisplay(status: string): { icon: string; label: string } {
     }
 }
 
+export function summarizeRawFinishResults(
+    raw?: string | null,
+    finish?: string | null,
+): string {
+    const parts: string[] = [];
+    const rawText = (raw ?? '').trim();
+    const finishText = (finish ?? '').trim();
+    if (rawText) {
+        parts.push(`Raw: ${rawText}`);
+    }
+    if (finishText) {
+        parts.push(`Finish: ${finishText}`);
+    }
+    return parts.join('; ');
+}
+
+export function summarizeResidualChlorineResults(
+    finish?: string | null,
+    chlorinated?: string | null,
+): string {
+    const parts: string[] = [];
+    const finishText = (finish ?? '').trim();
+    const chlorinatedText = (chlorinated ?? '').trim();
+    if (finishText) {
+        parts.push(`Finish: ${finishText}`);
+    }
+    if (chlorinatedText) {
+        parts.push(`Chlorinated: ${chlorinatedText}`);
+    }
+    return parts.join('; ');
+}
+
 export function encodedResultLabel(task: {
     result_value?: string | null;
+    result_raw?: string | null;
+    result_finish?: string | null;
+    result_chlorinated?: string | null;
+    uses_raw_finish?: boolean;
+    uses_residual_chlorine?: boolean;
     result_pass_fail?: string | null;
     result_measurement?: string | null;
     result_unit?: string | null;
     requires_pass_fail?: boolean;
 }): string {
-    const measured = [task.result_value, task.result_unit]
-        .map((part) => (part ?? '').trim())
-        .filter(Boolean)
-        .join(' ');
+    const measured =
+        task.uses_raw_finish === true
+            ? summarizeRawFinishResults(task.result_raw, task.result_finish) ||
+              (task.result_value ?? '').trim()
+            : task.uses_residual_chlorine === true
+              ? summarizeResidualChlorineResults(
+                    task.result_finish,
+                    task.result_chlorinated,
+                ) || (task.result_value ?? '').trim()
+              : [task.result_value, task.result_unit]
+                    .map((part) => (part ?? '').trim())
+                    .filter(Boolean)
+                    .join(' ');
+    const withUnit =
+        (task.uses_raw_finish === true ||
+            task.uses_residual_chlorine === true) &&
+        measured &&
+        (task.result_unit ?? '').trim()
+            ? `${measured} ${task.result_unit!.trim()}`
+            : measured;
     const passFail =
         task.requires_pass_fail === true
             ? (task.result_pass_fail ?? '').trim()
             : '';
 
-    return [measured, passFail].filter(Boolean).join(' · ');
+    return [withUnit, passFail].filter(Boolean).join(' · ');
 }
 
 /** True when the analyst has saved a draft/complete quantitative result. */
 export function hasEncodedResult(task: AnalystTask): boolean {
-    return task.is_sample_preparation === true || Boolean(task.result_value?.trim());
+    if (task.is_sample_preparation === true) {
+        return true;
+    }
+    if (task.uses_raw_finish === true) {
+        return (
+            Boolean(task.result_raw?.trim()) ||
+            Boolean(task.result_finish?.trim())
+        );
+    }
+    if (task.uses_residual_chlorine === true) {
+        return (
+            Boolean(task.result_finish?.trim()) ||
+            Boolean(task.result_chlorinated?.trim())
+        );
+    }
+    return Boolean(task.result_value?.trim());
 }
 
 export function taskActionLabel(task: AnalystTask): string {

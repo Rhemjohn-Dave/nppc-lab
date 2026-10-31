@@ -57,6 +57,12 @@ class NitriteFormBlueprintTest extends TestCase
         $this->assertSame('Spectrophotometric Method', $columns[2]['sublabel'] ?? null);
         $this->assertFalse($matrix->table_config['stretch_body'] ?? true);
 
+        $this->assertSame(1, (int) $form->analyst_signatory_slots);
+        $this->assertTrue((bool) $form->analyst_require_prc);
+        $this->assertNotNull($revision->fields()->where('name', 'no2_f016_max_level')->first());
+        $this->assertNotNull($revision->fields()->where('name', 'no2_f016_notes')->first());
+        $this->assertNotNull($revision->fields()->where('name', 'no2_f016_form_meta')->first());
+
         $this->assertTrue($revision->hasCanonicalPdf());
         $this->assertSame(
             'Spectrophotometric Method',

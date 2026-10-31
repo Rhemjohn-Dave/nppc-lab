@@ -124,6 +124,7 @@ class ReferenceNumberService
 
     private function format(string $year, int $number): string
     {
-        return sprintf('%s-%04d', $year, $number);
+        // Pad to at least 4 digits (26-0005); from 10000 onward grow naturally (26-10000).
+        return $year.'-'.str_pad((string) $number, 4, '0', STR_PAD_LEFT);
     }
 }

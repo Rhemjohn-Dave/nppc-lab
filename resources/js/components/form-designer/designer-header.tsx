@@ -114,7 +114,7 @@ export default function DesignerHeader({
     }
 
     return (
-        <header className="relative z-20 shrink-0 border-b bg-white shadow-sm">
+        <header className="relative z-10 shrink-0 border-b bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 lg:px-4">
                 <div className="flex min-w-0 items-center gap-2">
                     <SidebarTrigger

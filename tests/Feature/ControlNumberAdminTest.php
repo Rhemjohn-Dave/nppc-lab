@@ -33,6 +33,27 @@ class ControlNumberAdminTest extends TestCase
         $this->assertSame(sprintf('%s-0500', $year), $reference);
     }
 
+    public function test_admin_can_set_next_control_number_beyond_four_digits(): void
+    {
+        $this->seed();
+
+        $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
+        $year = now()->format('y');
+
+        $this->actingAs($admin)
+            ->put('/admin/control-number', ['next_number' => 10000])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('reference_counters', [
+            'year' => $year,
+            'last_number' => 9999,
+        ]);
+
+        $reference = app(ReferenceNumberService::class)->next();
+        $this->assertSame(sprintf('%s-10000', $year), $reference);
+    }
+
     public function test_admin_cannot_set_next_below_highest_issued(): void
     {
         $this->seed();

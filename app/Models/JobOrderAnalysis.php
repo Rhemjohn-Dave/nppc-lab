@@ -21,11 +21,18 @@ use Illuminate\Support\Carbon;
  * @property JobOrderAnalysisStatus $status
  * @property int|null $assigned_to
  * @property string|null $result_value
+ * @property string|null $result_raw
+ * @property string|null $result_finish
+ * @property string|null $result_chlorinated
  * @property string|null $result_pass_fail
  * @property string|null $result_measurement
  * @property string|null $result_unit
  * @property string|null $result_remarks
+ * @property string|null $result_remarks_raw
+ * @property string|null $result_remarks_finish
+ * @property string|null $result_remarks_chlorinated
  * @property string|null $result_method
+ * @property string|null $accreditation_footnote
  * @property Carbon|null $performed_at
  * @property Carbon|null $completed_at
  * @property-read JobOrder $jobOrder
@@ -48,11 +55,18 @@ class JobOrderAnalysis extends Model
         'status',
         'assigned_to',
         'result_value',
+        'result_raw',
+        'result_finish',
+        'result_chlorinated',
         'result_pass_fail',
         'result_measurement',
         'result_unit',
         'result_remarks',
+        'result_remarks_raw',
+        'result_remarks_finish',
+        'result_remarks_chlorinated',
         'result_method',
+        'accreditation_footnote',
         'performed_at',
         'completed_at',
     ];

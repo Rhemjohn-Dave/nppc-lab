@@ -25,11 +25,16 @@ import { useEffect, useMemo, useState } from 'react';
 type FormData = {
     performed_at: string;
     result_value: string;
+    result_raw: string;
+    result_finish: string;
     result_pass_fail: string;
     result_measurement: string;
     result_unit: string;
     result_remarks: string;
+    result_remarks_raw: string;
+    result_remarks_finish: string;
     result_method: string;
+    accreditation_footnote: string;
 };
 
 type FormErrors = Partial<Record<keyof FormData | 'analysis', string>>;
@@ -62,6 +67,7 @@ type Props = {
     onPreview: (url: string) => void;
     onSendToHead: (jobId: number) => void;
     onEditSignatories?: (jobId: number) => void;
+    onEditFooter?: (jobId: number) => void;
 };
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -103,6 +109,7 @@ export default function AnalystEncodingStudio({
     onPreview,
     onSendToHead,
     onEditSignatories,
+    onEditFooter,
 }: Props) {
     const { setOpen: setSidebarOpen, open: sidebarOpen } = useSidebar();
     const [distractionFree, setDistractionFree] = useState(false);
@@ -132,6 +139,13 @@ export default function AnalystEncodingStudio({
             tasks.some((t) => t.report?.can_preview),
     );
     const canSend = Boolean(consolidation?.can_submit);
+    const canEditFooter = Boolean(
+        consolidation?.footer?.can_edit || releasedPrint?.footer?.can_edit,
+    );
+    const canEditSignatories = Boolean(
+        consolidation?.signatory?.can_edit ||
+            releasedPrint?.signatory?.can_edit,
+    );
 
     const sampleGroups = useMemo(() => groupTasksBySample(tasks), [tasks]);
 
@@ -592,13 +606,23 @@ export default function AnalystEncodingStudio({
                                 {draftSaving ? 'Saving…' : 'Save Draft'}
                             </Button>
                         ) : null}
-                        {releasedPrint?.signatory?.can_edit &&
-                        onEditSignatories ? (
+                        {canEditFooter && onEditFooter ? (
                             <Button
                                 type="button"
-                                variant="ghost"
+                                variant="outline"
                                 size="sm"
-                                className="h-9 text-xs"
+                                className="h-9 border-slate-200 text-xs shadow-xs"
+                                onClick={() => onEditFooter(job.id)}
+                            >
+                                Edit notes
+                            </Button>
+                        ) : null}
+                        {canEditSignatories && onEditSignatories ? (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-9 border-slate-200 text-xs shadow-xs"
                                 onClick={() => onEditSignatories(job.id)}
                             >
                                 Signatories

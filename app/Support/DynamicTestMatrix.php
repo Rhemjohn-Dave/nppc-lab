@@ -87,7 +87,7 @@ class DynamicTestMatrix
             return self::drinkingWaterPhysicoConfig();
         }
 
-        if ($resolvedFormCode === 'LSP-7.8-FO2') {
+        if (in_array($resolvedFormCode, ['LSP-7.8-FO2', 'LSP-7.8-FO2A'], true)) {
             return self::wastewaterPhysicoConfig();
         }
 
@@ -133,8 +133,8 @@ class DynamicTestMatrix
             unset($tableConfig['method_font_size']);
         }
 
-        $isFo2Matrix = $fieldName === 'ww_fo2_matrix'
-            || $form?->form_code === 'LSP-7.8-FO2';
+        $isFo2Matrix = in_array($fieldName, ['ww_fo2_matrix', 'ww_fo2a_matrix'], true)
+            || in_array($form?->form_code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A'], true);
         $isWaMatrix = $fieldName === 'water_activity_f016_matrix'
             || $form?->form_code === 'LSP-7.8-F016-WA';
         $isCapMatrix = $fieldName === 'chloramphenicol_f016_matrix'
@@ -210,6 +210,11 @@ class DynamicTestMatrix
 
         // Residue sheets: keep official headers; do not force designer preview_data placeholders.
         if ($isLockedResidueMatrix && array_key_exists('stretch_body', $preset)) {
+            $merged['stretch_body'] = $preset['stretch_body'];
+        }
+
+        // FO2 flowing footer (notes/signatories) anchors under natural matrix height.
+        if ($isFo2Matrix && array_key_exists('stretch_body', $preset)) {
             $merged['stretch_body'] = $preset['stretch_body'];
         }
 
@@ -290,6 +295,61 @@ class DynamicTestMatrix
     }
 
     /**
+     * Same row set the Form Designer canvas uses (mirrors resources/js matrixPreviewData).
+     * Keeps sample PDF preview height / anchored footers aligned with the designer.
+     *
+     * @param  array<string, mixed>  $config
+     * @param  list<array<string, mixed>>  $baseRows  Catalog/package rows from previewRowsForForm
+     * @return list<array<string, mixed>>
+     */
+    public static function previewRowsForDesignerConfig(array $config, array $baseRows): array
+    {
+        $stored = [];
+        foreach (is_array($config['preview_data'] ?? null) ? $config['preview_data'] : [] as $row) {
+            if (is_array($row)) {
+                $stored[] = $row;
+            }
+        }
+
+        $source = $baseRows !== [] ? $baseRows : self::sampleRows();
+        // Prefer catalog/package length when preview_rows is stale/smaller (e.g. FO3 gained Cl rows).
+        $desired = isset($config['preview_rows']) && is_numeric($config['preview_rows']) && (int) $config['preview_rows'] > 0
+            ? max((int) $config['preview_rows'], count($source))
+            : max(count($source), count($stored));
+
+        $count = min($desired, max(count($source), count($stored) > 0 ? count($stored) : count($source)));
+        $preserveKeys = [
+            'test',
+            'test_method',
+            'method',
+            'acceptable_values',
+            'test_detail',
+            'row_span_group',
+            'row_span_role',
+        ];
+
+        $rows = [];
+        for ($index = 0; $index < $count; $index++) {
+            $base = is_array($source[$index] ?? null) ? $source[$index] : [];
+            $override = is_array($stored[$index] ?? null) ? $stored[$index] : [];
+            $merged = $base;
+
+            foreach ($override as $key => $value) {
+                $key = (string) $key;
+                $empty = $value === null || (is_string($value) && trim($value) === '');
+                if ($empty && in_array($key, $preserveKeys, true)) {
+                    continue;
+                }
+                $merged[$key] = $value === null ? '' : (is_scalar($value) ? (string) $value : $value);
+            }
+
+            $rows[] = self::sanitizeRawFinishAcceptableValues($merged);
+        }
+
+        return $rows;
+    }
+
+    /**
      * Whether a types-only form should render as a dynamic matrix (no package layout flag).
      */
     public static function formUsesMatrix(?ControlledForm $form, ?ControlledFormRevision $revision = null): bool
@@ -346,31 +406,199 @@ class DynamicTestMatrix
         );
 
         $rows = collect($orderedTypeIds)
-            ->map(function (int $typeId) use ($byId): ?array {
+            ->flatMap(function (int $typeId) use ($byId): array {
                 $type = $byId->get($typeId);
                 if (! $type instanceof AnalysisType || $type->isSamplePreparation()) {
-                    return null;
+                    return [];
                 }
 
-                $method = self::methodForAnalysisType($type);
-
-                return [
-                    'test' => (string) $type->name,
-                    'test_method' => $method,
-                    'test_detail' => self::testDetailForType($type),
-                    'method' => $method,
-                    'acceptable_values' => self::acceptableValuesForAnalysisType($type),
-                    'result' => '',
-                    'sample_1' => '',
-                    'sample_2' => null,
-                    'remarks' => null,
-                ];
+                return self::previewRowsForAnalysisType($type);
             })
-            ->filter()
             ->values()
             ->all();
 
         return $rows !== [] ? $rows : self::sampleRows();
+    }
+
+    /**
+     * @return list<array{test: string, test_method?: string|null, method?: string|null, acceptable_values?: string|null, result?: string|null, sample_1?: string|null, sample_2?: string|null, remarks?: string|null}>
+     */
+    private static function previewRowsForAnalysisType(AnalysisType $type): array
+    {
+        $method = self::methodForAnalysisType($type);
+        $detail = self::testDetailForType($type);
+
+        if (OfficialAnalysisCatalog::usesRawFinishResults($type->code)) {
+            return self::previewVariantRows(
+                (string) $type->code,
+                (string) $type->name,
+                $method,
+                $detail,
+                ['raw', 'finish'],
+            );
+        }
+
+        if (OfficialAnalysisCatalog::usesResidualChlorineResults($type->code)) {
+            return self::previewVariantRows(
+                (string) $type->code,
+                (string) $type->name,
+                $method,
+                $detail,
+                ['finish', 'chlorinated', 'raw'],
+                rawResultDash: true,
+            );
+        }
+
+        $testName = (string) $type->name;
+        if (OfficialAnalysisCatalog::isWastewaterPhysicoPanelCode($type->code)) {
+            $testName = OfficialAnalysisCatalog::wastewaterTestLabelWithFootnote(
+                $testName,
+                OfficialAnalysisCatalog::wastewaterAccreditationFootnoteTier($type->code),
+            );
+        }
+
+        return [[
+            'test' => $testName,
+            'test_method' => $method,
+            'test_detail' => $detail,
+            'method' => $method,
+            'acceptable_values' => self::acceptableValuesForAnalysisType($type),
+            'result' => '',
+            'sample_1' => '',
+            'sample_2' => null,
+            'remarks' => null,
+        ]];
+    }
+
+    /**
+     * @param  list<string>  $variants
+     * @return list<array<string, mixed>>
+     */
+    private static function previewVariantRows(
+        string $code,
+        string $baseName,
+        ?string $method,
+        ?string $detail,
+        array $variants,
+        bool $rawResultDash = false,
+    ): array {
+        $group = 'preview-'.strtolower($code);
+        $rows = [];
+        foreach ($variants as $index => $key) {
+            $isStart = $index === 0;
+            $isRawDash = $rawResultDash && $key === 'raw';
+            $rows[] = [
+                'test' => $baseName,
+                'test_method' => $method,
+                'test_detail' => $isStart ? $detail : null,
+                'method' => $method,
+                'acceptable_values' => OfficialAnalysisCatalog::acceptableValuesForCodeVariant($code, $key),
+                'result' => $isRawDash ? '-' : '',
+                'sample_1' => $isRawDash ? '-' : '',
+                'sample_2' => null,
+                'remarks' => null,
+                'row_span_group' => $group,
+                'row_span_role' => $isStart ? 'start' : 'continue',
+                'row_variant' => $key,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Columns that visually rowspan across a Raw/Finish pair (no mid horizontal rule).
+     *
+     * @return list<string>
+     */
+    public static function rowSpanColumnKeys(): array
+    {
+        // Results + Acceptable Values + Remarks stay split (Raw / Finish); Test/Method rowspan.
+        return ['test', 'method'];
+    }
+
+    public static function isRowSpanColumnKey(string $key): bool
+    {
+        return in_array($key, self::rowSpanColumnKeys(), true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    public static function rowSpanGroup(array $row): ?string
+    {
+        $group = trim((string) ($row['row_span_group'] ?? ''));
+
+        return $group !== '' ? $group : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    public static function rowSpanRole(array $row): ?string
+    {
+        $role = strtolower(trim((string) ($row['row_span_role'] ?? '')));
+
+        return in_array($role, ['start', 'continue'], true) ? $role : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $start
+     * @param  array<string, mixed>  $continue
+     */
+    public static function rowsFormSpanPair(array $start, array $continue): bool
+    {
+        return self::rowContinuesSpan($start, $continue);
+    }
+
+    /**
+     * Whether $next is a continue row in the same span group as $start.
+     *
+     * @param  array<string, mixed>  $start
+     * @param  array<string, mixed>  $next
+     */
+    public static function rowContinuesSpan(array $start, array $next): bool
+    {
+        $group = self::rowSpanGroup($start);
+
+        return $group !== null
+            && self::rowSpanRole($start) === 'start'
+            && self::rowSpanGroup($next) === $group
+            && self::rowSpanRole($next) === 'continue';
+    }
+
+    /**
+     * Number of consecutive span rows starting at $startIndex (1 when not a span start).
+     *
+     * @param  list<array<string, mixed>>  $rows
+     */
+    public static function spanGroupLength(array $rows, int $startIndex): int
+    {
+        $start = $rows[$startIndex] ?? null;
+        if (! is_array($start) || self::rowSpanRole($start) !== 'start') {
+            return 1;
+        }
+
+        $length = 1;
+        for ($i = $startIndex + 1; $i < count($rows); $i++) {
+            $next = $rows[$i] ?? null;
+            if (! is_array($next) || ! self::rowContinuesSpan($start, $next)) {
+                break;
+            }
+            $length++;
+        }
+
+        return $length;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    public static function rowVariant(array $row): ?string
+    {
+        $variant = strtolower(trim((string) ($row['row_variant'] ?? '')));
+
+        return $variant !== '' ? $variant : null;
     }
 
     /**
@@ -381,6 +609,23 @@ class DynamicTestMatrix
     public static function rowHeightKey(array $row): string
     {
         return mb_strtolower(trim((string) ($row['test'] ?? '')));
+    }
+
+    /**
+     * Designer text-edit match key (test name + optional Raw/Finish role).
+     *
+     * @param  array<string, mixed>  $row
+     */
+    public static function rowEditKey(array $row): string
+    {
+        $base = self::rowHeightKey($row);
+        $variant = self::rowVariant($row);
+        if ($variant !== null) {
+            return $base.'|'.$variant;
+        }
+        $role = self::rowSpanRole($row);
+
+        return $role !== null ? $base.'|'.$role : $base;
     }
 
     /**
@@ -413,9 +658,14 @@ class DynamicTestMatrix
     {
         $edits = [];
         foreach (is_array($config['preview_data'] ?? null) ? $config['preview_data'] : [] as $edit) {
-            if (is_array($edit) && ($key = self::rowHeightKey($edit)) !== '') {
-                $edits[$key] ??= $edit;
+            if (! is_array($edit)) {
+                continue;
             }
+            $key = self::rowEditKey($edit);
+            if ($key === '' || $key === '|start' || $key === '|continue') {
+                continue;
+            }
+            $edits[$key] ??= $edit;
         }
 
         if ($edits === []) {
@@ -423,20 +673,88 @@ class DynamicTestMatrix
         }
 
         return array_map(function ($row) use ($edits) {
-            if (! is_array($row) || ! isset($edits[self::rowHeightKey($row)])) {
+            if (! is_array($row)) {
                 return $row;
             }
 
-            $edit = $edits[self::rowHeightKey($row)];
+            $key = self::rowEditKey($row);
+            $usedBaseFallback = false;
+            if (! isset($edits[$key])) {
+                // Span pairs without role on an edit still match by base test name for shared columns.
+                $base = self::rowHeightKey($row);
+                if ($base === '' || ! isset($edits[$base])) {
+                    return $row;
+                }
+                $edit = $edits[$base];
+                $usedBaseFallback = true;
+            } else {
+                $edit = $edits[$key];
+            }
+
             foreach (['test_method', 'method', 'acceptable_values', 'test_detail'] as $column) {
+                // Raw/Finish keep distinct limits; do not copy Acceptable Values via base-name fallback.
+                if ($usedBaseFallback && $column === 'acceptable_values' && self::rowSpanRole($row) !== null) {
+                    continue;
+                }
                 $value = $edit[$column] ?? null;
                 if (is_string($value) && trim($value) !== '') {
                     $row[$column] = $value;
                 }
             }
 
-            return $row;
+            return self::sanitizeRawFinishAcceptableValues($row);
         }, $rows);
+    }
+
+    /**
+     * Ensure Raw does not keep the Finish limit text (and vice versa) when both were stored together.
+     *
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    public static function sanitizeRawFinishAcceptableValues(array $row): array
+    {
+        $role = self::rowSpanRole($row);
+        if ($role === null) {
+            return $row;
+        }
+
+        $code = self::rawFinishCodeFromTestName((string) ($row['test'] ?? ''));
+        if ($code === null) {
+            return $row;
+        }
+
+        $row['acceptable_values'] = OfficialAnalysisCatalog::acceptableValuesForCodeRole(
+            $code,
+            $role,
+            isset($row['acceptable_values']) ? (string) $row['acceptable_values'] : null,
+            self::rowVariant($row),
+        );
+
+        return $row;
+    }
+
+    /**
+     * Infer variant-matrix catalog code from matrix test label when analysis type is absent.
+     */
+    public static function rawFinishCodeFromTestName(string $test): ?string
+    {
+        $test = mb_strtolower(trim($test));
+        if ($test === '') {
+            return null;
+        }
+        if (str_contains($test, 'total dissolved solids')) {
+            return 'DW-03';
+        }
+        // Exact "ph" or labels that start with "ph" (e.g. "pH") — avoid matching "phosphate".
+        if ($test === 'ph' || str_starts_with($test, 'ph ') || str_starts_with($test, 'ph(')) {
+            return 'DW-02';
+        }
+        if (str_contains($test, 'residual chlorine')) {
+            return 'DW-05';
+        }
+
+        return null;
     }
 
     /**
@@ -650,41 +968,229 @@ class DynamicTestMatrix
      */
     public static function buildRows(Collection $ordered): array
     {
-        return $ordered
-            ->map(function (JobOrderAnalysis $line): array {
-                $requiresPassFail = (bool) ($line->analysisType?->requires_pass_fail);
-                $passFail = $requiresPassFail && filled($line->result_pass_fail)
-                    ? (string) $line->result_pass_fail
-                    : null;
-                $value = self::formatPrintedResult(
-                    $line->result_value,
-                    $line->result_unit,
-                    $passFail,
-                );
-                $measuredOnly = self::formatPrintedResult(
-                    $line->result_value,
-                    $line->result_unit,
-                );
-                $method = filled($line->result_method)
-                    ? (string) $line->result_method
-                    : self::methodForAnalysisType($line->analysisType);
-                $acceptable = self::acceptableValuesForAnalysisType($line->analysisType);
+        $rows = [];
+        foreach ($ordered as $line) {
+            if (! $line instanceof JobOrderAnalysis) {
+                continue;
+            }
 
-                return [
-                    'test' => (string) $line->name,
-                    'test_method' => $method,
-                    'test_detail' => self::testDetailForAnalysis($line),
-                    'method' => $method,
-                    'acceptable_values' => $acceptable,
-                    'result' => $value,
-                    'result_value' => $measuredOnly,
-                    'pass_fail' => $passFail,
-                    'sample_1' => $value,
-                    'sample_2' => null,
-                    'remarks' => filled($line->result_remarks) ? (string) $line->result_remarks : null,
-                ];
-            })
-            ->all();
+            $code = $line->analysisType?->code;
+            if (OfficialAnalysisCatalog::usesRawFinishResults($code)) {
+                foreach (self::buildRawFinishRows($line) as $row) {
+                    $rows[] = $row;
+                }
+
+                continue;
+            }
+
+            if (OfficialAnalysisCatalog::usesResidualChlorineResults($code)) {
+                foreach (self::buildResidualChlorineRows($line) as $row) {
+                    $rows[] = $row;
+                }
+
+                continue;
+            }
+
+            $rows[] = self::buildSingleRow($line);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return array{test: string, test_method?: string|null, method?: string|null, acceptable_values?: string|null, result?: string|null, pass_fail?: string|null, sample_1?: string|null, sample_2?: string|null, remarks?: string|null}
+     */
+    private static function buildSingleRow(JobOrderAnalysis $line): array
+    {
+        $requiresPassFail = (bool) ($line->analysisType?->requires_pass_fail);
+        $passFail = $requiresPassFail && filled($line->result_pass_fail)
+            ? (string) $line->result_pass_fail
+            : null;
+        $value = self::formatPrintedResult(
+            $line->result_value,
+            $line->result_unit,
+            $passFail,
+        );
+        $measuredOnly = self::formatPrintedResult(
+            $line->result_value,
+            $line->result_unit,
+        );
+        $method = filled($line->result_method)
+            ? (string) $line->result_method
+            : self::methodForAnalysisType($line->analysisType);
+        $acceptable = self::acceptableValuesForAnalysisType($line->analysisType);
+
+        $code = $line->analysisType?->code;
+        $testName = (string) $line->name;
+        if (OfficialAnalysisCatalog::isWastewaterPhysicoPanelCode($code)) {
+            $testName = OfficialAnalysisCatalog::wastewaterTestLabelWithFootnote(
+                $testName,
+                OfficialAnalysisCatalog::resolveWastewaterAccreditationFootnote(
+                    $line->accreditation_footnote,
+                    $code,
+                ),
+            );
+        }
+
+        return [
+            'test' => $testName,
+            'test_method' => $method,
+            'test_detail' => self::testDetailForAnalysis($line),
+            'method' => $method,
+            'acceptable_values' => $acceptable,
+            'result' => $value,
+            'result_value' => $measuredOnly,
+            'pass_fail' => $passFail,
+            'sample_1' => $value,
+            'sample_2' => null,
+            'remarks' => filled($line->result_remarks) ? (string) $line->result_remarks : null,
+        ];
+    }
+
+    /**
+     * DW-02 / DW-03 Raw/Finish assays: two sub-rows; Test/Method rowspan on print.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function buildRawFinishRows(JobOrderAnalysis $line): array
+    {
+        $code = (string) ($line->analysisType?->code ?? '');
+        $method = filled($line->result_method)
+            ? (string) $line->result_method
+            : self::methodForAnalysisType($line->analysisType);
+        $baseName = (string) $line->name;
+        $detail = self::testDetailForAnalysis($line);
+        $unit = $line->result_unit;
+        $group = 'rawfinish-'.strtolower($code !== '' ? $code : 'x').'-'.(string) ($line->id ?? '0');
+        $remarksRaw = filled($line->result_remarks_raw)
+            ? (string) $line->result_remarks_raw
+            : (filled($line->result_remarks) ? (string) $line->result_remarks : null);
+        $remarksFinish = filled($line->result_remarks_finish)
+            ? (string) $line->result_remarks_finish
+            : null;
+        $requiresPassFail = (bool) ($line->analysisType?->requires_pass_fail);
+        $passFail = $requiresPassFail && filled($line->result_pass_fail)
+            ? (string) $line->result_pass_fail
+            : null;
+
+        $variants = [
+            [
+                'key' => 'raw',
+                'role' => 'start',
+                'measured' => $line->result_raw,
+                'remarks' => $remarksRaw,
+            ],
+            [
+                'key' => 'finish',
+                'role' => 'continue',
+                'measured' => $line->result_finish,
+                'remarks' => $remarksFinish,
+            ],
+        ];
+
+        $rows = [];
+        foreach ($variants as $variant) {
+            $measuredOnly = self::formatPrintedResult($variant['measured'], $unit);
+            // Never fall back to the combined catalog blob (Raw+Finish on one line).
+            $acceptable = OfficialAnalysisCatalog::acceptableValuesForCodeVariant($code, $variant['key']);
+            $isStart = $variant['role'] === 'start';
+            $hasMeasured = filled($variant['measured']);
+
+            $rows[] = [
+                'test' => $baseName,
+                'test_method' => $method,
+                'test_detail' => $isStart ? $detail : null,
+                'method' => $method,
+                'acceptable_values' => $acceptable,
+                'result' => $measuredOnly,
+                'result_value' => $measuredOnly,
+                'pass_fail' => $hasMeasured ? $passFail : null,
+                'sample_1' => $measuredOnly,
+                'sample_2' => null,
+                'remarks' => $variant['remarks'],
+                'row_span_group' => $group,
+                'row_span_role' => $variant['role'],
+                'row_variant' => $variant['key'],
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * DW-05 Residual Chlorine: Finish / Chlorinated / Raw; Test/Method rowspan; Raw result is "-".
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function buildResidualChlorineRows(JobOrderAnalysis $line): array
+    {
+        $code = (string) ($line->analysisType?->code ?? 'DW-05');
+        $method = filled($line->result_method)
+            ? (string) $line->result_method
+            : self::methodForAnalysisType($line->analysisType);
+        $baseName = (string) $line->name;
+        $detail = self::testDetailForAnalysis($line);
+        $unit = $line->result_unit;
+        $group = 'cl-'.strtolower($code !== '' ? $code : 'dw-05').'-'.(string) ($line->id ?? '0');
+        $requiresPassFail = (bool) ($line->analysisType?->requires_pass_fail);
+        $passFail = $requiresPassFail && filled($line->result_pass_fail)
+            ? (string) $line->result_pass_fail
+            : null;
+
+        $variants = [
+            [
+                'key' => 'finish',
+                'role' => 'start',
+                'measured' => $line->result_finish,
+                'remarks' => filled($line->result_remarks_finish)
+                    ? (string) $line->result_remarks_finish
+                    : (filled($line->result_remarks) ? (string) $line->result_remarks : null),
+                'fixed' => null,
+            ],
+            [
+                'key' => 'chlorinated',
+                'role' => 'continue',
+                'measured' => $line->result_chlorinated,
+                'remarks' => filled($line->result_remarks_chlorinated)
+                    ? (string) $line->result_remarks_chlorinated
+                    : null,
+                'fixed' => null,
+            ],
+            [
+                'key' => 'raw',
+                'role' => 'continue',
+                'measured' => null,
+                'remarks' => null,
+                'fixed' => '-',
+            ],
+        ];
+
+        $rows = [];
+        foreach ($variants as $variant) {
+            $measuredOnly = $variant['fixed'] ?? self::formatPrintedResult($variant['measured'], $unit);
+            $acceptable = OfficialAnalysisCatalog::acceptableValuesForCodeVariant($code, $variant['key']);
+            $isStart = $variant['role'] === 'start';
+            $hasMeasured = filled($variant['measured']);
+
+            $rows[] = [
+                'test' => $baseName,
+                'test_method' => $method,
+                'test_detail' => $isStart ? $detail : null,
+                'method' => $method,
+                'acceptable_values' => $acceptable,
+                'result' => $measuredOnly,
+                'result_value' => $measuredOnly,
+                'pass_fail' => $hasMeasured ? $passFail : null,
+                'sample_1' => $measuredOnly,
+                'sample_2' => null,
+                'remarks' => $variant['remarks'],
+                'row_span_group' => $group,
+                'row_span_role' => $variant['role'],
+                'row_variant' => $variant['key'],
+            ];
+        }
+
+        return $rows;
     }
 
     /**
@@ -744,30 +1250,35 @@ class DynamicTestMatrix
             ->map(fn (AnalysisType $type): int => (int) $type->id)
             ->all();
         $typeIds = array_values(array_diff($form->orderedTypeIds(), $prepTypeIds));
-        $catalogRows = self::previewRowsForTypeIds($typeIds, $form->analysisTypes);
+        $typesById = $form->analysisTypes->keyBy(fn (AnalysisType $type): int => (int) $type->id);
         $byType = $ordered->keyBy(fn (JobOrderAnalysis $line): int => (int) $line->analysis_type_id);
 
         $rows = [];
-        foreach ($typeIds as $index => $typeId) {
+        foreach ($typeIds as $typeId) {
             $line = $byType->get($typeId);
             if ($line instanceof JobOrderAnalysis) {
-                $rows[] = self::buildRows(collect([$line]))[0];
+                // Raw/Finish assays expand to multiple matrix rows.
+                foreach (self::buildRows(collect([$line])) as $row) {
+                    $rows[] = $row;
+                }
 
                 continue;
             }
 
-            $catalog = $catalogRows[$index] ?? null;
-            if (! is_array($catalog)) {
+            $type = $typesById->get($typeId);
+            if (! $type instanceof AnalysisType) {
                 continue;
             }
 
-            $rows[] = array_merge($catalog, [
-                'result' => '-',
-                'result_value' => '-',
-                'pass_fail' => null,
-                'sample_1' => '-',
-                'remarks' => '-',
-            ]);
+            foreach (self::previewRowsForAnalysisType($type) as $catalog) {
+                $rows[] = array_merge($catalog, [
+                    'result' => '-',
+                    'result_value' => '-',
+                    'pass_fail' => null,
+                    'sample_1' => '-',
+                    'remarks' => '-',
+                ]);
+            }
         }
 
         return $rows;
@@ -901,27 +1412,14 @@ class DynamicTestMatrix
         );
 
         $rows = collect($package->orderedTypeIds())
-            ->map(function (int $typeId) use ($byId): ?array {
+            ->flatMap(function (int $typeId) use ($byId): array {
                 $type = $byId->get($typeId);
                 if (! $type instanceof AnalysisType || $type->isSamplePreparation()) {
-                    return null;
+                    return [];
                 }
 
-                $method = self::methodForAnalysisType($type);
-
-                return [
-                    'test' => (string) $type->name,
-                    'test_method' => $method,
-                    'test_detail' => self::testDetailForType($type),
-                    'method' => $method,
-                    'acceptable_values' => self::acceptableValuesForAnalysisType($type),
-                    'result' => '',
-                    'sample_1' => '',
-                    'sample_2' => null,
-                    'remarks' => null,
-                ];
+                return self::previewRowsForAnalysisType($type);
             })
-            ->filter()
             ->values()
             ->all();
 
@@ -1178,6 +1676,8 @@ class DynamicTestMatrix
             'header_bold' => true,
             'method_font_size' => 6,
             'header_font_size' => 8,
+            // Short panels (e.g. Abstracted water) leave a gap unless footer fields anchor below.
+            'stretch_body' => false,
         ];
     }
 

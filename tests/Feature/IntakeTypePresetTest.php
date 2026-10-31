@@ -342,6 +342,251 @@ class IntakeTypePresetTest extends TestCase
         $this->assertSame('LSP-7.8-FO2', $resolved->controlledForm?->form_code);
     }
 
+    public function test_intake_create_exposes_wastewater_kind_fo2_defaults(): void
+    {
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+
+        $this->actingAs($receiving)
+            ->get('/intake/create')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('intake/wizard')
+                ->where('options.wastewater_kinds', OfficialAnalysisCatalog::wastewaterKinds())
+                ->where(
+                    'options.wastewater_fo2_default_codes.Wastewater',
+                    OfficialAnalysisCatalog::wastewaterPhysicoIssue18TypeCodes(),
+                )
+                ->where(
+                    'options.wastewater_fo2_default_codes.River water',
+                    OfficialAnalysisCatalog::wastewaterPhysicoIssue18TypeCodes(),
+                )
+                ->where(
+                    'options.wastewater_fo2_default_codes.Abstracted water',
+                    OfficialAnalysisCatalog::wastewaterPhysicoAbstractedTypeCodes(),
+                ));
+    }
+
+    public function test_fo2_abstracted_water_intake_selects_four_types_and_resolves_fo2a(): void
+    {
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2A')->firstOrFail();
+        $revision = $form->activeRevision();
+        $this->assertNotNull($revision);
+
+        $codes = OfficialAnalysisCatalog::wastewaterPhysicoAbstractedTypeCodes();
+        $typeIds = AnalysisType::query()
+            ->whereIn('code', $codes)
+            ->get()
+            ->sortBy(fn (AnalysisType $type) => array_search($type->code, $codes, true))
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+        $this->assertCount(4, $typeIds);
+
+        $this->actingAs($receiving)
+            ->post('/intake/job-orders', [
+                'customer_name' => 'FO2 Abstracted Customer',
+                'customer_email' => 'fo2-abstracted@example.com',
+                'classification' => 'Wastewater',
+                'samples' => [
+                    [
+                        'description' => 'Abstracted water',
+                        'matrix' => 'Liquid',
+                        'analysis_type_ids' => $typeIds,
+                        'package_ids' => [],
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $sample = $job->samples()->firstOrFail();
+        $this->assertSame('Abstracted water', $sample->description);
+        $this->assertCount(4, $job->analyses);
+        $this->assertEqualsCanonicalizing(
+            $codes,
+            $job->analyses()->with('analysisType')->get()->pluck('analysisType.code')->all(),
+        );
+
+        $resolved = app(AnalysisResultReportResolver::class)->forJobOrder($job, $receiving);
+        $this->assertSame('LSP-7.8-FO2A', $resolved->controlledForm?->form_code);
+
+        $bag = app(\App\Services\FieldValueResolver::class)->forResult(
+            $revision->load('fields'),
+            $job->fresh(['samples', 'analyses.analysisType']),
+            null,
+            $form->fresh(['analysisPackage', 'analysisTypes']),
+            $sample,
+        );
+        $this->assertSame('Abstracted water', $bag['results.sample_description']);
+        $this->assertSame('abstracted', $bag['fo2_footer_variant']);
+        $this->assertStringContainsString('*Not EMB- DENR Accredited.', (string) $bag['fo2_notes']);
+    }
+
+    public function test_fo2_footer_bag_follows_resolved_form_and_kind(): void
+    {
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $fo2 = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2')->firstOrFail();
+        $fo2a = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2A')->firstOrFail();
+        $fo2Revision = $fo2->activeRevision();
+        $fo2aRevision = $fo2a->activeRevision();
+        $this->assertNotNull($fo2Revision);
+        $this->assertNotNull($fo2aRevision);
+
+        $absCodes = OfficialAnalysisCatalog::wastewaterPhysicoAbstractedTypeCodes();
+        $absIds = AnalysisType::query()
+            ->whereIn('code', $absCodes)
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        $this->actingAs($receiving)
+            ->post('/intake/job-orders', [
+                'customer_name' => 'FO2 Footer Abs',
+                'customer_email' => 'fo2-footer-abs@example.com',
+                'classification' => 'Wastewater',
+                'samples' => [
+                    [
+                        'description' => 'Abstracted water',
+                        'matrix' => 'Liquid',
+                        'analysis_type_ids' => $absIds,
+                        'package_ids' => [],
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $absJob = JobOrder::query()->latest('id')->firstOrFail();
+        $absSample = $absJob->samples()->firstOrFail();
+        $this->assertSame(
+            'LSP-7.8-FO2A',
+            app(AnalysisResultReportResolver::class)->forJobOrder($absJob, $receiving)->controlledForm?->form_code,
+        );
+
+        $absBag = app(\App\Services\FieldValueResolver::class)->forResult(
+            $fo2aRevision->load('fields'),
+            $absJob->fresh(['samples', 'analyses.analysisType']),
+            null,
+            $fo2a->fresh(['analysisPackage', 'analysisTypes']),
+            $absSample,
+        );
+
+        $this->assertSame('abstracted', $absBag['fo2_footer_variant']);
+        $this->assertSame('Abstracted water', $absBag['results.sample_description']);
+        $this->assertStringContainsString('*Not EMB- DENR Accredited.', (string) $absBag['fo2_notes']);
+        $this->assertStringNotContainsString('***Not PAB', (string) $absBag['fo2_notes']);
+        $this->assertNull($absBag['results.analyst_name_4'] ?? null);
+
+        $fullCodes = OfficialAnalysisCatalog::wastewaterPhysicoIssue18TypeCodes();
+        $fullIds = AnalysisType::query()
+            ->whereIn('code', $fullCodes)
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        $this->actingAs($receiving)
+            ->post('/intake/job-orders', [
+                'customer_name' => 'FO2 Footer River',
+                'customer_email' => 'fo2-footer-river@example.com',
+                'classification' => 'Wastewater',
+                'samples' => [
+                    [
+                        'description' => 'River water',
+                        'matrix' => 'Liquid',
+                        'analysis_type_ids' => $fullIds,
+                        'package_ids' => [],
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $riverJob = JobOrder::query()->latest('id')->firstOrFail();
+        $riverSample = $riverJob->samples()->firstOrFail();
+        $this->assertSame(
+            'LSP-7.8-FO2',
+            app(AnalysisResultReportResolver::class)->forJobOrder($riverJob, $receiving)->controlledForm?->form_code,
+        );
+
+        $riverJob->result_signatories = [
+            ['name' => 'Reviewed', 'prc_id' => '1'],
+            ['name' => 'Noted', 'prc_id' => '2'],
+            ['name' => 'Cert1', 'prc_id' => '3'],
+            ['name' => 'Cert2', 'prc_id' => '4'],
+        ];
+        $riverJob->save();
+
+        $riverBag = app(\App\Services\FieldValueResolver::class)->forResult(
+            $fo2Revision->load('fields'),
+            $riverJob->fresh(['samples', 'analyses.analysisType']),
+            null,
+            $fo2->fresh(['analysisPackage', 'analysisTypes']),
+            $riverSample,
+        );
+
+        $this->assertSame('full', $riverBag['fo2_footer_variant']);
+        $this->assertSame('River water', $riverBag['results.sample_description']);
+        $this->assertStringContainsString('***Not PAB and EMB', (string) $riverBag['fo2_notes']);
+        $this->assertSame('Cert2', $riverBag['results.analyst_name_4']);
+    }
+
+    public function test_fo2_river_water_intake_selects_full_panel_and_prints_description(): void
+    {
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2')->firstOrFail();
+        $revision = $form->activeRevision();
+        $this->assertNotNull($revision);
+
+        $codes = OfficialAnalysisCatalog::wastewaterPhysicoIssue18TypeCodes();
+        $typeIds = AnalysisType::query()
+            ->whereIn('code', $codes)
+            ->get()
+            ->sortBy(fn (AnalysisType $type) => array_search($type->code, $codes, true))
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+        $this->assertNotEmpty($typeIds);
+
+        $this->actingAs($receiving)
+            ->post('/intake/job-orders', [
+                'customer_name' => 'FO2 River Customer',
+                'customer_email' => 'fo2-river@example.com',
+                'classification' => 'Wastewater',
+                'samples' => [
+                    [
+                        'description' => 'River water',
+                        'matrix' => 'Liquid',
+                        'analysis_type_ids' => $typeIds,
+                        'package_ids' => [],
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $sample = $job->samples()->firstOrFail();
+        $this->assertSame('River water', $sample->description);
+        $this->assertCount(count($typeIds), $job->analyses);
+
+        $bag = app(\App\Services\FieldValueResolver::class)->forResult(
+            $revision->load('fields'),
+            $job->fresh(['samples', 'analyses.analysisType']),
+            null,
+            $form->fresh(['analysisPackage', 'analysisTypes']),
+            $sample,
+        );
+        $this->assertSame('River water', $bag['results.sample_description']);
+    }
+
     public function test_proximate_preset_type_ids_create_individual_lines(): void
     {
         $this->seed();

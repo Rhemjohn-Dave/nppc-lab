@@ -10,11 +10,18 @@ import { Check, Circle } from 'lucide-react';
 export type EncodingFormData = {
     performed_at: string;
     result_value: string;
+    result_raw: string;
+    result_finish: string;
+    result_chlorinated: string;
     result_pass_fail: string;
     result_measurement: string;
     result_unit: string;
     result_remarks: string;
+    result_remarks_raw: string;
+    result_remarks_finish: string;
+    result_remarks_chlorinated: string;
     result_method: string;
+    accreditation_footnote: string;
 };
 
 export type EncodingFormErrors = Partial<
@@ -40,9 +47,53 @@ export default function EncodingAssayForm({
     analysisError,
     onFieldChange,
 }: Props) {
+    const isReturned = task.status === 'returned';
     const resultsLocked = !readOnly && !formData.performed_at.trim();
-    const resultFilled = formData.result_value.trim().length > 0;
-    const remarksLen = formData.result_remarks.length;
+    const performedAtRequired = !readOnly && !isReturned;
+    const usesRawFinish = task.uses_raw_finish === true;
+    const usesResidualCl = task.uses_residual_chlorine === true;
+    const analysisCode = (task.analysis_type_code ?? '').trim().toUpperCase();
+    const rawFinishHints =
+        analysisCode === 'DW-02'
+            ? {
+                  rawLabel: 'Raw',
+                  finishLabel: 'Finish',
+                  rawHint: 'Limit: 6.5-8.5',
+                  finishHint: 'Limit: 5-7 (RO / distillation)',
+                  rawPlaceholder: 'e.g. 7.2',
+                  finishPlaceholder: 'e.g. 6.1',
+              }
+            : {
+                  rawLabel: 'Raw',
+                  finishLabel: 'Finish',
+                  rawHint: 'Limit: 600 (no RO / distillation)',
+                  finishHint: 'Limit: <10 (RO / distillation)',
+                  rawPlaceholder: 'e.g. 450',
+                  finishPlaceholder: 'e.g. 8',
+              };
+    const rawFilled = formData.result_raw.trim().length > 0;
+    const finishFilled = formData.result_finish.trim().length > 0;
+    const chlorinatedFilled = formData.result_chlorinated.trim().length > 0;
+    const resultFilled = usesRawFinish
+        ? rawFilled || finishFilled
+        : usesResidualCl
+          ? finishFilled || chlorinatedFilled
+          : formData.result_value.trim().length > 0;
+    const requireRaw = !readOnly && !resultsLocked && !finishFilled;
+    const requireFinishRawPair = !readOnly && !resultsLocked && !rawFilled;
+    const requireFinishCl = !readOnly && !resultsLocked && !chlorinatedFilled;
+    const requireChlorinated = !readOnly && !resultsLocked && !finishFilled;
+    const remarksLen = usesRawFinish
+        ? Math.max(
+              formData.result_remarks_raw.length,
+              formData.result_remarks_finish.length,
+          )
+        : usesResidualCl
+          ? Math.max(
+                formData.result_remarks_finish.length,
+                formData.result_remarks_chlorinated.length,
+            )
+          : formData.result_remarks.length;
 
     if (task.is_sample_preparation === true) {
         return (
@@ -83,14 +134,16 @@ export default function EncodingAssayForm({
                         htmlFor={`performed_at_${task.id}`}
                         className="mb-1 block text-[11px] font-semibold text-slate-700"
                     >
-                        Date &amp; time performed{' '}
-                        <span className="text-rose-600">*</span>
+                        Date &amp; time performed
+                        {performedAtRequired ? (
+                            <span className="text-rose-600"> *</span>
+                        ) : null}
                     </Label>
                     <Input
                         id={`performed_at_${task.id}`}
                         type="datetime-local"
                         className="h-10 text-xs"
-                        required={!readOnly}
+                        required={performedAtRequired}
                         autoFocus={!readOnly}
                         readOnly={readOnly}
                         disabled={readOnly}
@@ -136,70 +189,333 @@ export default function EncodingAssayForm({
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-12 md:items-start">
-                <div className="md:col-span-8">
+            {task.supports_accreditation_footnote === true ? (
+                <div>
                     <Label
-                        htmlFor={`result_value_${task.id}`}
+                        htmlFor={`accreditation_footnote_${task.id}`}
                         className="mb-1 block text-[11px] font-semibold text-slate-700"
                     >
-                        Quantitative result{' '}
-                        <span className="text-rose-600">*</span>
+                        Accreditation mark (Notes)
                     </Label>
-                    <div className="relative">
+                    <select
+                        id={`accreditation_footnote_${task.id}`}
+                        className="h-10 w-full rounded-md border border-input bg-transparent px-3 text-xs shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={readOnly || resultsLocked}
+                        value={
+                            formData.accreditation_footnote === '' ||
+                            formData.accreditation_footnote === 'none'
+                                ? 'none'
+                                : formData.accreditation_footnote
+                        }
+                        onChange={(e) =>
+                            onFieldChange(
+                                'accreditation_footnote',
+                                e.target.value,
+                            )
+                        }
+                    >
+                        <option value="none">None</option>
+                        <option value="*">* (Note 4)</option>
+                        <option value="**">** (Note 5)</option>
+                        <option value="***">*** (Note 6)</option>
+                    </select>
+                    <p className="mt-0.5 text-[10px] text-slate-500">
+                        Prefixes the TEST name on FO2 / FO2A to match the Notes
+                        legend (* / ** / ***).
+                    </p>
+                    <InputError
+                        className="mt-0.5"
+                        message={formErrors.accreditation_footnote}
+                    />
+                </div>
+            ) : null}
+
+            {usesRawFinish ? (
+                <div className="grid grid-cols-1 gap-2.5 md:grid-cols-12 md:items-start">
+                    <div className="md:col-span-4">
+                        <Label
+                            htmlFor={`result_raw_${task.id}`}
+                            className="mb-1 block text-[11px] font-semibold text-slate-700"
+                        >
+                            {rawFinishHints.rawLabel}
+                            {requireRaw ? (
+                                <span className="text-rose-600"> *</span>
+                            ) : null}
+                        </Label>
                         <Input
-                            id={`result_value_${task.id}`}
-                            className="h-10 pr-28 text-sm font-semibold"
-                            required={!readOnly && !resultsLocked}
+                            id={`result_raw_${task.id}`}
+                            className="h-10 text-sm font-semibold"
+                            required={requireRaw}
                             readOnly={readOnly}
                             disabled={readOnly || resultsLocked}
-                            placeholder="e.g. 0.00023, 2.3×10⁻⁴, ND"
-                            value={formData.result_value}
+                            placeholder={rawFinishHints.rawPlaceholder}
+                            value={formData.result_raw}
                             onChange={(e) =>
-                                onFieldChange('result_value', e.target.value)
+                                onFieldChange('result_raw', e.target.value)
                             }
                             onBlur={() => {
                                 if (readOnly || resultsLocked) {
                                     return;
                                 }
                                 const next = formatScientificResult(
-                                    formData.result_value,
+                                    formData.result_raw,
                                 );
-                                if (next !== formData.result_value) {
-                                    onFieldChange('result_value', next);
+                                if (next !== formData.result_raw) {
+                                    onFieldChange('result_raw', next);
                                 }
                             }}
                         />
-                        {resultFilled && !formErrors.result_value ? (
-                            <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
-                                Entered
-                            </span>
-                        ) : null}
+                        <p className="mt-0.5 text-[10px] text-slate-500">
+                            {rawFinishHints.rawHint}
+                        </p>
+                        <InputError
+                            className="mt-0.5"
+                            message={formErrors.result_raw}
+                        />
                     </div>
-                    <InputError
-                        className="mt-0.5"
-                        message={formErrors.result_value}
-                    />
+                    <div className="md:col-span-4">
+                        <Label
+                            htmlFor={`result_finish_${task.id}`}
+                            className="mb-1 block text-[11px] font-semibold text-slate-700"
+                        >
+                            {rawFinishHints.finishLabel}
+                            {requireFinishRawPair ? (
+                                <span className="text-rose-600"> *</span>
+                            ) : null}
+                        </Label>
+                        <Input
+                            id={`result_finish_${task.id}`}
+                            className="h-10 text-sm font-semibold"
+                            required={requireFinishRawPair}
+                            readOnly={readOnly}
+                            disabled={readOnly || resultsLocked}
+                            placeholder={rawFinishHints.finishPlaceholder}
+                            value={formData.result_finish}
+                            onChange={(e) =>
+                                onFieldChange('result_finish', e.target.value)
+                            }
+                            onBlur={() => {
+                                if (readOnly || resultsLocked) {
+                                    return;
+                                }
+                                const next = formatScientificResult(
+                                    formData.result_finish,
+                                );
+                                if (next !== formData.result_finish) {
+                                    onFieldChange('result_finish', next);
+                                }
+                            }}
+                        />
+                        <p className="mt-0.5 text-[10px] text-slate-500">
+                            {rawFinishHints.finishHint}
+                        </p>
+                        <InputError
+                            className="mt-0.5"
+                            message={formErrors.result_finish}
+                        />
+                    </div>
+                    <div className="md:col-span-4">
+                        <Label
+                            htmlFor={`result_unit_${task.id}`}
+                            className="mb-1 block text-[11px] font-semibold text-slate-700"
+                        >
+                            Unit of measure
+                        </Label>
+                        <Input
+                            id={`result_unit_${task.id}`}
+                            className="h-10 text-xs"
+                            placeholder="mg/L"
+                            readOnly={readOnly}
+                            disabled={readOnly || resultsLocked}
+                            value={formData.result_unit}
+                            onChange={(e) =>
+                                onFieldChange('result_unit', e.target.value)
+                            }
+                        />
+                    </div>
+                    <p className="md:col-span-12 text-[10px] text-slate-500">
+                        Enter Raw or Finish (at least one).
+                    </p>
                 </div>
-                <div className="md:col-span-4">
-                    <Label
-                        htmlFor={`result_unit_${task.id}`}
-                        className="mb-1 block text-[11px] font-semibold text-slate-700"
-                    >
-                        Unit of measure
-                    </Label>
-                    <Input
-                        id={`result_unit_${task.id}`}
-                        className="h-10 text-xs"
-                        placeholder="e.g. mg/L, CFU/mL"
-                        readOnly={readOnly}
-                        disabled={readOnly || resultsLocked}
-                        value={formData.result_unit}
-                        onChange={(e) =>
-                            onFieldChange('result_unit', e.target.value)
-                        }
-                    />
+            ) : usesResidualCl ? (
+                <div className="grid grid-cols-1 gap-2.5 md:grid-cols-12 md:items-start">
+                    <div className="md:col-span-4">
+                        <Label
+                            htmlFor={`result_finish_${task.id}`}
+                            className="mb-1 block text-[11px] font-semibold text-slate-700"
+                        >
+                            Finish
+                            {requireFinishCl ? (
+                                <span className="text-rose-600"> *</span>
+                            ) : null}
+                        </Label>
+                        <Input
+                            id={`result_finish_${task.id}`}
+                            className="h-10 text-sm font-semibold"
+                            required={requireFinishCl}
+                            readOnly={readOnly}
+                            disabled={readOnly || resultsLocked}
+                            placeholder="e.g. 0.4"
+                            value={formData.result_finish}
+                            onChange={(e) =>
+                                onFieldChange('result_finish', e.target.value)
+                            }
+                            onBlur={() => {
+                                if (readOnly || resultsLocked) {
+                                    return;
+                                }
+                                const next = formatScientificResult(
+                                    formData.result_finish,
+                                );
+                                if (next !== formData.result_finish) {
+                                    onFieldChange('result_finish', next);
+                                }
+                            }}
+                        />
+                        <p className="mt-0.5 text-[10px] text-slate-500">
+                            Limit: &lt;1.0 mg/L RO
+                        </p>
+                        <InputError
+                            className="mt-0.5"
+                            message={formErrors.result_finish}
+                        />
+                    </div>
+                    <div className="md:col-span-4">
+                        <Label
+                            htmlFor={`result_chlorinated_${task.id}`}
+                            className="mb-1 block text-[11px] font-semibold text-slate-700"
+                        >
+                            Chlorinated
+                            {requireChlorinated ? (
+                                <span className="text-rose-600"> *</span>
+                            ) : null}
+                        </Label>
+                        <Input
+                            id={`result_chlorinated_${task.id}`}
+                            className="h-10 text-sm font-semibold"
+                            required={requireChlorinated}
+                            readOnly={readOnly}
+                            disabled={readOnly || resultsLocked}
+                            placeholder="e.g. 0.8"
+                            value={formData.result_chlorinated}
+                            onChange={(e) =>
+                                onFieldChange(
+                                    'result_chlorinated',
+                                    e.target.value,
+                                )
+                            }
+                            onBlur={() => {
+                                if (readOnly || resultsLocked) {
+                                    return;
+                                }
+                                const next = formatScientificResult(
+                                    formData.result_chlorinated,
+                                );
+                                if (next !== formData.result_chlorinated) {
+                                    onFieldChange('result_chlorinated', next);
+                                }
+                            }}
+                        />
+                        <p className="mt-0.5 text-[10px] text-slate-500">
+                            Limit: 0.3–1.5 mg/L chlorinated
+                        </p>
+                        <InputError
+                            className="mt-0.5"
+                            message={formErrors.result_chlorinated}
+                        />
+                    </div>
+                    <div className="md:col-span-4">
+                        <Label
+                            htmlFor={`result_unit_${task.id}`}
+                            className="mb-1 block text-[11px] font-semibold text-slate-700"
+                        >
+                            Unit of measure
+                        </Label>
+                        <Input
+                            id={`result_unit_${task.id}`}
+                            className="h-10 text-xs"
+                            placeholder="mg/L"
+                            readOnly={readOnly}
+                            disabled={readOnly || resultsLocked}
+                            value={formData.result_unit}
+                            onChange={(e) =>
+                                onFieldChange('result_unit', e.target.value)
+                            }
+                        />
+                        <p className="mt-0.5 text-[10px] text-slate-500">
+                            Raw Results print as -
+                        </p>
+                    </div>
+                    <p className="md:col-span-12 text-[10px] text-slate-500">
+                        Enter Finish or Chlorinated (at least one).
+                    </p>
                 </div>
-            </div>
+            ) : (
+                <div className="grid grid-cols-1 gap-2.5 md:grid-cols-12 md:items-start">
+                    <div className="md:col-span-8">
+                        <Label
+                            htmlFor={`result_value_${task.id}`}
+                            className="mb-1 block text-[11px] font-semibold text-slate-700"
+                        >
+                            Quantitative result{' '}
+                            <span className="text-rose-600">*</span>
+                        </Label>
+                        <div className="relative">
+                            <Input
+                                id={`result_value_${task.id}`}
+                                className="h-10 pr-28 text-sm font-semibold"
+                                required={!readOnly && !resultsLocked}
+                                readOnly={readOnly}
+                                disabled={readOnly || resultsLocked}
+                                placeholder="e.g. 0.00023, 2.3×10⁻⁴, ND"
+                                value={formData.result_value}
+                                onChange={(e) =>
+                                    onFieldChange('result_value', e.target.value)
+                                }
+                                onBlur={() => {
+                                    if (readOnly || resultsLocked) {
+                                        return;
+                                    }
+                                    const next = formatScientificResult(
+                                        formData.result_value,
+                                    );
+                                    if (next !== formData.result_value) {
+                                        onFieldChange('result_value', next);
+                                    }
+                                }}
+                            />
+                            {resultFilled && !formErrors.result_value ? (
+                                <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                                    Entered
+                                </span>
+                            ) : null}
+                        </div>
+                        <InputError
+                            className="mt-0.5"
+                            message={formErrors.result_value}
+                        />
+                    </div>
+                    <div className="md:col-span-4">
+                        <Label
+                            htmlFor={`result_unit_${task.id}`}
+                            className="mb-1 block text-[11px] font-semibold text-slate-700"
+                        >
+                            Unit of measure
+                        </Label>
+                        <Input
+                            id={`result_unit_${task.id}`}
+                            className="h-10 text-xs"
+                            placeholder="e.g. mg/L, CFU/mL"
+                            readOnly={readOnly}
+                            disabled={readOnly || resultsLocked}
+                            value={formData.result_unit}
+                            onChange={(e) =>
+                                onFieldChange('result_unit', e.target.value)
+                            }
+                        />
+                    </div>
+                </div>
+            )}
 
             {task.requires_pass_fail === true ? (
                 <div>
@@ -313,32 +629,160 @@ export default function EncodingAssayForm({
                 </div>
             ) : null}
 
-            <div>
-                <div className="mb-1 flex items-center justify-between gap-2">
-                    <Label
-                        htmlFor={`result_remarks_${task.id}`}
-                        className="text-[11px] font-semibold text-slate-700"
-                    >
-                        Analytical remarks &amp; observations
-                    </Label>
-                    <span className="font-mono text-[10px] text-slate-400">
-                        {remarksLen} / {REMARKS_MAX}
-                    </span>
+            {usesRawFinish ? (
+                <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+                    <div>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                            <Label
+                                htmlFor={`result_remarks_raw_${task.id}`}
+                                className="text-[11px] font-semibold text-slate-700"
+                            >
+                                Remarks — Raw
+                            </Label>
+                            <span className="font-mono text-[10px] text-slate-400">
+                                {formData.result_remarks_raw.length} /{' '}
+                                {REMARKS_MAX}
+                            </span>
+                        </div>
+                        <Textarea
+                            id={`result_remarks_raw_${task.id}`}
+                            className="min-h-0 text-xs"
+                            rows={2}
+                            maxLength={REMARKS_MAX}
+                            placeholder="Raw observations…"
+                            readOnly={readOnly}
+                            disabled={readOnly || resultsLocked}
+                            value={formData.result_remarks_raw}
+                            onChange={(e) =>
+                                onFieldChange(
+                                    'result_remarks_raw',
+                                    e.target.value,
+                                )
+                            }
+                        />
+                    </div>
+                    <div>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                            <Label
+                                htmlFor={`result_remarks_finish_${task.id}`}
+                                className="text-[11px] font-semibold text-slate-700"
+                            >
+                                Remarks — Finish
+                            </Label>
+                            <span className="font-mono text-[10px] text-slate-400">
+                                {formData.result_remarks_finish.length} /{' '}
+                                {REMARKS_MAX}
+                            </span>
+                        </div>
+                        <Textarea
+                            id={`result_remarks_finish_${task.id}`}
+                            className="min-h-0 text-xs"
+                            rows={2}
+                            maxLength={REMARKS_MAX}
+                            placeholder="Finish observations…"
+                            readOnly={readOnly}
+                            disabled={readOnly || resultsLocked}
+                            value={formData.result_remarks_finish}
+                            onChange={(e) =>
+                                onFieldChange(
+                                    'result_remarks_finish',
+                                    e.target.value,
+                                )
+                            }
+                        />
+                    </div>
                 </div>
-                <Textarea
-                    id={`result_remarks_${task.id}`}
-                    className="min-h-0 text-xs"
-                    rows={2}
-                    maxLength={REMARKS_MAX}
-                    placeholder="Detection limits, observations…"
-                    readOnly={readOnly}
-                    disabled={readOnly || resultsLocked}
-                    value={formData.result_remarks}
-                    onChange={(e) =>
-                        onFieldChange('result_remarks', e.target.value)
-                    }
-                />
-            </div>
+            ) : usesResidualCl ? (
+                <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+                    <div>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                            <Label
+                                htmlFor={`result_remarks_finish_${task.id}`}
+                                className="text-[11px] font-semibold text-slate-700"
+                            >
+                                Remarks — Finish
+                            </Label>
+                            <span className="font-mono text-[10px] text-slate-400">
+                                {formData.result_remarks_finish.length} /{' '}
+                                {REMARKS_MAX}
+                            </span>
+                        </div>
+                        <Textarea
+                            id={`result_remarks_finish_${task.id}`}
+                            className="min-h-0 text-xs"
+                            rows={2}
+                            maxLength={REMARKS_MAX}
+                            placeholder="Finish observations…"
+                            readOnly={readOnly}
+                            disabled={readOnly || resultsLocked}
+                            value={formData.result_remarks_finish}
+                            onChange={(e) =>
+                                onFieldChange(
+                                    'result_remarks_finish',
+                                    e.target.value,
+                                )
+                            }
+                        />
+                    </div>
+                    <div>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                            <Label
+                                htmlFor={`result_remarks_chlorinated_${task.id}`}
+                                className="text-[11px] font-semibold text-slate-700"
+                            >
+                                Remarks — Chlorinated
+                            </Label>
+                            <span className="font-mono text-[10px] text-slate-400">
+                                {formData.result_remarks_chlorinated.length} /{' '}
+                                {REMARKS_MAX}
+                            </span>
+                        </div>
+                        <Textarea
+                            id={`result_remarks_chlorinated_${task.id}`}
+                            className="min-h-0 text-xs"
+                            rows={2}
+                            maxLength={REMARKS_MAX}
+                            placeholder="Chlorinated observations…"
+                            readOnly={readOnly}
+                            disabled={readOnly || resultsLocked}
+                            value={formData.result_remarks_chlorinated}
+                            onChange={(e) =>
+                                onFieldChange(
+                                    'result_remarks_chlorinated',
+                                    e.target.value,
+                                )
+                            }
+                        />
+                    </div>
+                </div>
+            ) : (
+                <div>
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                        <Label
+                            htmlFor={`result_remarks_${task.id}`}
+                            className="text-[11px] font-semibold text-slate-700"
+                        >
+                            Analytical remarks &amp; observations
+                        </Label>
+                        <span className="font-mono text-[10px] text-slate-400">
+                            {remarksLen} / {REMARKS_MAX}
+                        </span>
+                    </div>
+                    <Textarea
+                        id={`result_remarks_${task.id}`}
+                        className="min-h-0 text-xs"
+                        rows={2}
+                        maxLength={REMARKS_MAX}
+                        placeholder="Detection limits, observations…"
+                        readOnly={readOnly}
+                        disabled={readOnly || resultsLocked}
+                        value={formData.result_remarks}
+                        onChange={(e) =>
+                            onFieldChange('result_remarks', e.target.value)
+                        }
+                    />
+                </div>
+            )}
         </div>
     );
 }

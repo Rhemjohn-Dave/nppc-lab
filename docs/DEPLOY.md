@@ -209,7 +209,9 @@ Seed accounts (`admin@nppc.local`, `receiving@nppc.local`, `analyst@nppc.local`,
 
 ### Controlled form deploy defaults
 
-`DatabaseSeeder` runs `ControlledFormDefaultsSeeder`, which for each plotted default form (Job Orders + FO2/FO3/FO37/FO4/FO5/F016-PROX/F016-MILK/F016-WA/F016-CAP/F016-NO2/FO26/FO27):
+Existing server — refresh this repo’s exact plotted forms and catalog without a full OS rebuild: [DEPLOY_SERVER_FORMS.md](DEPLOY_SERVER_FORMS.md).
+
+`DatabaseSeeder` runs `ControlledFormDefaultsSeeder`, which for each plotted default form (Job Orders + FO2/FO2A/FO3/FO37/FO4/FO5/F016-PROX/F016-MILK/F016-WA/F016-CAP/F016-NO2/FO26/FO27):
 
 - keeps **only revision `1`** (deletes other revisions)
 - attaches the official PDF from `resources/forms/official/` (**except** reference-only forms — see below)
@@ -225,6 +227,10 @@ php artisan controlled-forms:export-blueprints --pdfs
 ```
 
 Then commit the updated `config/*_form_fields.php` files and any new official PDFs. For Milk, prefer exporting fields only (`--form=LSP-7.8-F016-MILK` without forcing a PDF replace of a Designer-calibrated upload).
+
+**Sole-revision deploy (all plotted forms):** migration `2026_10_27_130000_deploy_all_plotted_controlled_forms_sole_rev` collapses every form in `ExportControlledFormBlueprintsCommand::TARGETS` (RFA + RFA Aqua + FO2/FO2A/FO3/FO37/FO4/FO5 + F016-PROX/MILK/WA/CAP/NO2 + FO26/FO27) to a **single active revision labeled `1`**, imports the committed blueprints, syncs page metrics, and sets signatory slots/PRC. On first install, `migrate --seed` then re-applies the same via `ControlledFormDefaultsSeeder` (attaches official PDFs except milk reference-only). After Designer edits: `php artisan controlled-forms:export-blueprints --pdfs` (or `--form=CODE`), commit configs/PDFs, then migrate/seed on the server.
+
+**Footer chrome notes:** FO26/FO27 use static methods + NOTES + 1 Analyzed-by (no PRC). F016-MILK/NO2 use NOTES + Ferresa + PRC + static Wendy. F016-PROX uses two Analyzed-by slots + PRC. FO2/FO2A use wastewater physico footers (4 / 3 slots). Details: `docs/DYNAMIC_CONTROLLED_FORMS.md`.
 
 ## Subsequent deploys
 
@@ -292,7 +298,7 @@ LOG_LEVEL=error
 
 Use Microsoft 365 / Google Workspace SMTP for customer mail (“request received” at intake, “results ready” at release).
 
-**Preferred:** configure SMTP in **Admin → Email Settings** (`/admin/email-settings`) — host, port, encryption, username, password, from address/name. Settings live in the database (password encrypted with `APP_KEY`), override the `.env` mailer at runtime, and need no redeploy. Use **Send test email** there to verify. When the admin settings are disabled, the `MAIL_*` values above apply. Keep `APP_KEY` stable — rotating it makes the stored SMTP password unreadable (re-enter it).
+**Preferred:** configure SMTP in **Admin → Email Settings** (`/admin/email-settings`) — host, port, encryption, username, password, from address/name. Settings live in the database (password encrypted with `APP_KEY`), override the `.env` mailer at runtime, and need no redeploy. Use **Send test email** there to verify. When the admin settings are disabled, the `MAIL_*` values above apply. Keep `APP_KEY` stable — rotating it makes the stored SMTP password unreadable (re-enter it). Full admin steps, provider examples, and troubleshooting: [`EMAIL_SETTINGS.md`](EMAIL_SETTINGS.md).
 
 Public self-registration (`/register`) is disabled; create staff accounts in **Admin → Users**.
 
@@ -386,7 +392,7 @@ stdout_logfile=/var/www/nppc-lab/storage/logs/worker.log
 
 ## Reverb (real-time notifications and queues)
 
-Run Reverb beside the queue worker so the header bell and Receiving / Analyst / Head queue boards update without a page reload or timed poll. Workflow changes in `JobOrderService` broadcast `LabQueueUpdated` on private `lab.queue.*` channels; those pages do a one-shot Inertia partial reload.
+Run Reverb beside the queue worker so the header bell and Receiving / Analyst / Head queue boards update without a page reload. Workflow changes in `JobOrderService` broadcast `LabQueueUpdated` on private `lab.queue.*` channels; those pages do a one-shot Inertia partial reload. **Checklist:** `BROADCAST_CONNECTION=reverb`, matching `REVERB_*` / `VITE_REVERB_*` (browser-reachable host — not a dead LAN IP), rebuild front-end after changing `VITE_REVERB_*`, and keep `php artisan reverb:start` (or Supervisor) running. Analysts need role access to `lab.queue.analyst` (`routes/channels.php`). **Without Reverb / `VITE_REVERB_APP_KEY`:** queue boards show an offline banner and poll every 30s instead of live WebSocket updates (header bell still needs Reverb for push).
 
 Save as `/etc/supervisor/conf.d/nppc-lab-reverb.conf`:
 
@@ -429,8 +435,4 @@ Daily:
 
 - MySQL dump of the application database
 - `storage/app/private` (controlled-form originals and canonical PDFs)
-- `.env` (store separately from the code backup)
-
-## CI
-
-GitHub Actions workflow `.github/workflows/tests.yml` runs `composer setup` then `composer ci:check` (lint + types + PHPUnit).
+- `.env` (store separately from 
