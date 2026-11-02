@@ -14,9 +14,9 @@ export default function IntakeStepper({ steps, step, onStepSelect }: Props) {
     const progress = ((step + 1) / steps.length) * 100;
 
     return (
-        <div className="shrink-0 border-b border-slate-100 pb-2">
+        <div className="shrink-0 border-b border-slate-100 pb-1.5">
             <div className="sm:hidden">
-                <div className="mb-1 flex items-center justify-between text-sm">
+                <div className="mb-1 flex items-center justify-between text-xs">
                     <span className="font-semibold text-nppc-900">
                         Step {step + 1} of {steps.length}
                     </span>
@@ -44,7 +44,7 @@ export default function IntakeStepper({ steps, step, onStepSelect }: Props) {
                             {index < steps.length - 1 ? (
                                 <span
                                     className={cn(
-                                        'absolute top-3.5 left-[calc(50%+0.9rem)] h-0.5 w-[calc(100%-1.8rem)]',
+                                        'absolute top-3 left-[calc(50%+0.85rem)] h-0.5 w-[calc(100%-1.7rem)]',
                                         done || current
                                             ? 'bg-nppc-900'
                                             : 'bg-slate-200',
@@ -66,7 +66,7 @@ export default function IntakeStepper({ steps, step, onStepSelect }: Props) {
                             >
                                 <span
                                     className={cn(
-                                        'flex size-7 items-center justify-center rounded-full text-[11px] font-bold',
+                                        'flex size-6 items-center justify-center rounded-full text-[10px] font-bold',
                                         current &&
                                             'bg-nppc-900 text-white shadow-sm',
                                         done && 'bg-nppc-100 text-nppc-900',
@@ -76,7 +76,7 @@ export default function IntakeStepper({ steps, step, onStepSelect }: Props) {
                                 >
                                     {done ? (
                                         <Check
-                                            className="size-3.5"
+                                            className="size-3"
                                             aria-hidden
                                         />
                                     ) : (
@@ -86,7 +86,7 @@ export default function IntakeStepper({ steps, step, onStepSelect }: Props) {
                                 <span className="text-center">
                                     <span
                                         className={cn(
-                                            'block text-[11px] font-semibold leading-tight',
+                                            'block text-[10px] font-semibold leading-tight',
                                             current
                                                 ? 'text-nppc-900'
                                                 : done

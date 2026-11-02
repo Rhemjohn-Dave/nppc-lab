@@ -68,9 +68,7 @@ export default function IntakeSampleSwitcher({
                                         )}
                                     >
                                         {sample.analysisCount} test
-                                        {sample.analysisCount === 1
-                                            ? ''
-                                            : 's'}
+                                        {sample.analysisCount === 1 ? '' : 's'}
                                     </span>
                                 ) : sample.hasSelection ? (
                                     <Check

@@ -11,6 +11,7 @@ use App\Support\RfaPdfExporter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -27,15 +28,36 @@ class ReceivingController extends Controller
             $sort = 'oldest';
         }
 
-        $intakeQuery = JobOrder::query()->whereIn('status', [
+        $day = $request->string('day')->toString();
+        $dayRange = null;
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $day) && checkdate((int) substr($day, 5, 2), (int) substr($day, 8, 2), (int) substr($day, 0, 4))) {
+            $labStart = Carbon::createFromFormat('Y-m-d', $day, (string) config('app.lab_timezone', 'Asia/Manila'))->startOfDay();
+            $appTz = (string) config('app.timezone', 'UTC');
+            $dayRange = [$labStart->copy()->timezone($appTz), $labStart->copy()->endOfDay()->timezone($appTz)];
+        } else {
+            $day = '';
+        }
+
+        $intakeStatuses = [
             JobOrderStatus::DraftSubmitted,
             JobOrderStatus::PendingJoApproval,
             JobOrderStatus::Priced,
             JobOrderStatus::JoApproved,
-        ]);
+        ];
+        if ($dayRange !== null) {
+            $intakeStatuses[] = JobOrderStatus::InAnalysis;
+            $intakeStatuses[] = JobOrderStatus::PendingReview;
+        }
+
+        $intakeQuery = JobOrder::query()->whereIn('status', $intakeStatuses);
         $reviewedQuery = JobOrder::query()
             ->whereNotNull('reviewed_at')
             ->where('status', JobOrderStatus::ReadyForPickup);
+
+        if ($dayRange !== null) {
+            $intakeQuery->whereBetween('created_at', $dayRange);
+            $reviewedQuery->whereBetween('created_at', $dayRange);
+        }
 
         $showingReviewed = $statusFilter === 'reviewed';
         $baseQuery = $showingReviewed ? $reviewedQuery : $intakeQuery;
@@ -123,6 +145,7 @@ class ReceivingController extends Controller
                 'q' => $search,
                 'status' => $statusFilter,
                 'sort' => $sort,
+                'day' => $day,
             ],
         ]);
     }

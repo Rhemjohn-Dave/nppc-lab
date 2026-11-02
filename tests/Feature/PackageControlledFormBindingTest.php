@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Enums\AnalysisPackageReportLayout;
 use App\Enums\ControlledFormCategory;
 use App\Enums\JobOrderAnalysisStatus;
+use App\Models\AnalysisCategory;
 use App\Models\AnalysisPackage;
 use App\Models\AnalysisType;
 use App\Models\ControlledForm;
@@ -74,11 +76,10 @@ class PackageControlledFormBindingTest extends TestCase
         $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
-        $package = AnalysisPackage::query()->where('code', 'PKG-MIC-DW')->firstOrFail();
-        $package->update(['is_active' => true]);
         $total = AnalysisType::query()->where('code', 'MB-02A')->firstOrFail();
         $thermo = AnalysisType::query()->where('code', 'MB-02B')->firstOrFail();
         $hpc = AnalysisType::query()->where('code', 'MB-01')->firstOrFail();
+        $package = $this->makeFo5Package($admin, [$total->id, $thermo->id, $hpc->id]);
 
         $existing = ControlledForm::query()->where('form_code', 'LSP-7.8-FO5')->first();
         if ($existing) {
@@ -226,11 +227,10 @@ class PackageControlledFormBindingTest extends TestCase
         $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
-        $package = AnalysisPackage::query()->where('code', 'PKG-MIC-DW')->firstOrFail();
-        $package->update(['is_active' => true]);
         $total = AnalysisType::query()->where('code', 'MB-02A')->firstOrFail();
         $thermo = AnalysisType::query()->where('code', 'MB-02B')->firstOrFail();
         $hpc = AnalysisType::query()->where('code', 'MB-01')->firstOrFail();
+        $package = $this->makeFo5Package($admin, [$total->id, $thermo->id, $hpc->id]);
 
         $existing = ControlledForm::query()->where('form_code', 'LSP-7.8-FO5')->first();
         if ($existing) {
@@ -355,6 +355,31 @@ class PackageControlledFormBindingTest extends TestCase
         $this->assertSame(1, \App\Services\ControlledFormService::healEmptyPackageResultBindings());
         $this->assertCount(3, $form->fresh()->orderedTypeIds());
         $this->assertSame(0, \App\Services\ControlledFormService::healEmptyPackageResultBindings());
+    }
+
+    /**
+     * @param  list<int>  $typeIds
+     */
+    private function makeFo5Package(User $admin, array $typeIds): AnalysisPackage
+    {
+        unset($admin);
+
+        $category = AnalysisCategory::query()->where('slug', 'microbiological')->firstOrFail();
+        $package = AnalysisPackage::query()->create([
+            'code' => 'PKG-MIC-DW',
+            'name' => 'Microbiological Examination — Drinking Water (test)',
+            'category_id' => $category->id,
+            'default_price' => 900,
+            'classifications' => ['Potability'],
+            'report_layout' => AnalysisPackageReportLayout::ControlledForm,
+            'signatory_user_id' => User::where('email', 'analyst@nppc.local')->value('id'),
+            'is_active' => true,
+            'sort_order' => 99,
+        ]);
+        $package->syncTypes($typeIds);
+        AnalysisType::query()->whereIn('id', $typeIds)->update(['requires_pass_fail' => true]);
+
+        return $package->fresh();
     }
 
     private function makeBlankResultPdf(): UploadedFile

@@ -678,7 +678,18 @@ class JobOrderService
     public function completeAnalysis(JobOrderAnalysis $analysis, array $data, User $analyst): JobOrderAnalysis
     {
         $this->assertAnalystCanWorkOn($analysis, $analyst);
-        $analysis->loadMissing(['analysisType', 'jobOrder.packages', 'jobOrder.analyses']);
+        $analysis->loadMissing(['analysisType', 'jobOrder.packages', 'jobOrder.analyses', 'jobOrder.samples']);
+
+        $jobOrder = $analysis->jobOrder;
+        if ($jobOrder instanceof JobOrder) {
+            $resultForm = $this->reports->matchingControlledForm($jobOrder);
+            if (ResultFooter::formRequiresLabAtmosphere($resultForm)
+                && ! ResultFooter::isAtmosphereComplete($jobOrder, $resultForm)) {
+                throw ValidationException::withMessages([
+                    'result_footer' => 'Enter laboratory temperature and humidity before encoding results.',
+                ]);
+            }
+        }
 
         $code = $analysis->analysisType?->code;
         $rawFinish = OfficialAnalysisCatalog::usesRawFinishResults($code);

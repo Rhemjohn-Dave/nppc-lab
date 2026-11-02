@@ -47,8 +47,7 @@ class ResultSheetHeaderFieldsTest extends TestCase
     {
         $this->seed();
 
-        $package = AnalysisPackage::query()->where('code', 'PKG-WATER-ACTIVITY')->firstOrFail();
-        $this->assertFalse($package->is_active);
+        $this->assertDatabaseMissing('analysis_packages', ['code' => 'PKG-WATER-ACTIVITY']);
 
         $form = ControlledForm::query()->where('form_code', 'LSP-7.8-F016-WA')->firstOrFail();
         $this->assertNull($form->analysis_package_id);

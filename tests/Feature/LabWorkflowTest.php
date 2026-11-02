@@ -68,6 +68,15 @@ class LabWorkflowTest extends TestCase
         $this->assertSame($head->id, $job->jo_approved_by);
 
         $this->actingAs($receiving)
+            ->get('/receiving?status=jo_approved')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('receiving/index')
+                ->has('orders.data', 1)
+                ->where('orders.data.0.id', $job->id)
+                ->where('orders.data.0.can_receive', true));
+
+        $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
 
@@ -88,6 +97,13 @@ class LabWorkflowTest extends TestCase
         $line->refresh();
         $this->assertSame(JobOrderAnalysisStatus::InProgress, $line->status);
         $this->assertSame('12.4', $line->result_value);
+
+        $this->actingAs($analyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+            ])
+            ->assertOk();
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [

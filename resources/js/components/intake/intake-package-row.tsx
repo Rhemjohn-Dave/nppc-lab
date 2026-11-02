@@ -1,5 +1,5 @@
-import { useState } from 'react';
 import { Check, ChevronDown, Plus } from 'lucide-react';
+import { useState } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
@@ -51,10 +51,10 @@ export default function IntakePackageRow({
                     : 'border-slate-200 hover:border-nppc-500/50',
             )}
         >
-            <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between sm:gap-5">
-                <div className="min-w-0 flex-1 space-y-2">
+            <div className="flex flex-col gap-2.5 p-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:p-3.5">
+                <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-1.5">
-                        <p className="font-heading text-base font-semibold text-nppc-900">
+                        <p className="font-heading text-sm font-semibold text-nppc-900 sm:text-base">
                             {pkg.name}
                         </p>
                         {pkg.form_code ? (
@@ -71,11 +71,11 @@ export default function IntakePackageRow({
                             {pkg.description}
                         </p>
                     ) : null}
-                    <ul className="space-y-1 text-sm text-slate-700">
+                    <ul className="grid gap-1 text-sm text-slate-700 sm:grid-cols-2">
                         {previewTests.map((test) => (
                             <li
                                 key={test.id}
-                                className="flex items-center gap-2"
+                                className="flex min-w-0 items-center gap-2"
                             >
                                 <span
                                     className={cn(
@@ -91,7 +91,7 @@ export default function IntakePackageRow({
                             </li>
                         ))}
                         {pkg.tests.length > 4 ? (
-                            <li className="pl-3.5 text-xs text-slate-500">
+                            <li className="pl-3.5 text-xs text-slate-500 sm:col-span-2">
                                 +{pkg.tests.length - 4} more
                             </li>
                         ) : null}
@@ -141,12 +141,12 @@ export default function IntakePackageRow({
                         {selected ? (
                             <>
                                 <Check className="size-3.5" aria-hidden />
-                                Added
+                                Selected
                             </>
                         ) : (
                             <>
                                 <Plus className="size-3.5" aria-hidden />
-                                Select package
+                                Select Package
                             </>
                         )}
                     </button>

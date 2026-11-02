@@ -1,5 +1,5 @@
-import { useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
+import { useState } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
@@ -56,13 +56,18 @@ export default function IntakeTypePresetRow({
     return (
         <div
             className={cn(
-                'rounded-lg border bg-white transition',
+                'overflow-hidden rounded-lg border bg-white transition',
                 selected
-                    ? 'border-nppc-900 shadow-sm'
-                    : 'border-slate-200/80 hover:border-nppc-500/60',
+                    ? 'border-nppc-900 shadow-sm ring-1 ring-nppc-900/10'
+                    : 'border-slate-200 hover:border-nppc-500/60',
             )}
         >
-            <div className="flex items-center gap-3 px-3 py-2.5">
+            <div className="flex items-center gap-2.5 px-2.5 py-2 sm:px-3">
+                <Checkbox
+                    checked={selected}
+                    onCheckedChange={() => onTogglePreset()}
+                    aria-label={`Select ${preset.label}`}
+                />
                 <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-nppc-900">
                         {preset.label}
@@ -102,7 +107,7 @@ export default function IntakeTypePresetRow({
                     onClick={onTogglePreset}
                     aria-pressed={selected}
                     className={cn(
-                        'flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none',
+                        'flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none',
                         selected
                             ? 'bg-nppc-900 text-white'
                             : 'border border-nppc-900/30 text-nppc-900 hover:bg-nppc-50',
@@ -110,7 +115,7 @@ export default function IntakeTypePresetRow({
                 >
                     {selected ? (
                         <>
-                            <Check className="size-4" aria-hidden />
+                            <Check className="size-3.5" aria-hidden />
                             Selected
                         </>
                     ) : (

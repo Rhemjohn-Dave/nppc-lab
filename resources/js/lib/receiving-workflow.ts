@@ -17,7 +17,11 @@ export type ReceivingNextAction = {
     title: string;
     steps: string[];
     primaryLabel: string;
-    primaryHref: string;
+    primaryHref: string | null;
+    /** Queue-only: POST receive instead of navigating via primaryHref. */
+    primaryAction?: 'receive' | null;
+    secondaryLabel?: string | null;
+    secondaryHref?: string | null;
     printHref: string | null;
     printLabel: string | null;
     emphasize: boolean;

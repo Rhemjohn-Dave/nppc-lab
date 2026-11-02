@@ -1,9 +1,6 @@
 import type { ReactNode } from 'react';
 import IntakePortalChrome from '@/components/intake/intake-portal-chrome';
-import {
-    limsIntakeShell,
-    limsPageBackground,
-} from '@/lib/lims-page-shell';
+import { limsIntakeShell } from '@/lib/lims-page-shell';
 import { cn } from '@/lib/utils';
 
 type WizardNav = {
@@ -13,69 +10,60 @@ type WizardNav = {
 };
 
 type Props = {
-    /** Wizard navigation for header breadcrumb pills + Exit. */
+    /** Wizard navigation for step strip below navbar + Exit. */
     wizard?: WizardNav;
     /** Fallback actions when not using wizard Exit. */
     headerActions?: ReactNode;
+    /** Intercept Exit from portal chrome. */
+    onExit?: () => void;
     children: ReactNode;
     footer?: ReactNode;
     className?: string;
 };
 
 /**
- * Public Intake wizard layout: portal chrome + wide white workspace card.
- * Card height follows content (no hollow mid-card stretch).
+ * Public Intake wizard layout.
+ * Full-height column: header → flexible main → site footer.
+ * Short steps can stretch their cards to fill the main area; the sticky
+ * action bar stays at the bottom of the viewport.
  */
 export default function IntakePageShell({
     wizard,
     headerActions,
+    onExit,
     children,
     footer,
     className,
 }: Props) {
     return (
-        <div
-            className={cn(
-                'relative flex min-h-svh flex-col text-slate-900',
-                limsPageBackground,
-            )}
-        >
+        <div className="relative flex min-h-dvh flex-col bg-[#f3f6fa] text-slate-900">
             <IntakePortalChrome
                 compact
                 wizard={wizard}
                 showExit={Boolean(wizard)}
+                onExit={onExit}
                 actions={wizard ? undefined : headerActions}
             />
 
             <div
                 className={cn(
                     limsIntakeShell,
-                    'relative w-full grow-0 py-3',
+                    'relative z-10 flex min-h-0 w-full flex-1 flex-col py-2',
                     className,
                 )}
             >
-                <div className="intake-enter flex min-w-0 flex-col gap-3 rounded-xl border border-slate-200/80 bg-white p-3 shadow-xs sm:p-4">
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                     {children}
                 </div>
-
                 {footer}
             </div>
 
-            <footer className="mt-auto border-t border-nppc-100 bg-nppc-50/70">
-                <div className="mx-auto flex w-full max-w-[1920px] flex-wrap items-center justify-between gap-2 px-3 py-2 text-[11px] text-slate-600 sm:px-4 lg:px-5 xl:px-6">
+            <footer className="relative z-10 shrink-0 border-t border-slate-200 bg-white">
+                <div className="mx-auto flex w-full max-w-[1600px] flex-wrap items-center justify-between gap-2 px-4 py-1.5 text-[10px] text-slate-500 sm:px-5 lg:px-6">
                     <p>
-                        ISO/IEC 17025 Accredited Laboratory · NPPC Analytical
-                        &amp; Diagnostic Testing
+                        ISO/IEC 17025 · NPPC Analytical &amp; Diagnostic Testing
                     </p>
-                    <div className="flex flex-wrap items-center gap-3">
-                        <span className="text-slate-500">
-                            Portal Ref: NPPC-INTAKE
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 font-medium text-slate-600">
-                            <span className="size-1.5 rounded-full bg-emerald-500" />
-                            Secure SSL Encrypted
-                        </span>
-                    </div>
+                    <p>Powered by FNDS · All rights reserved 2026</p>
                 </div>
             </footer>
         </div>

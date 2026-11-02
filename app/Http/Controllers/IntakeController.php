@@ -15,6 +15,7 @@ use App\Enums\PaymentMode;
 use App\Enums\PaymentTerms;
 use App\Services\JobOrderService;
 use App\Support\OfficialAnalysisCatalog;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -47,8 +48,43 @@ class IntakeController extends Controller
 
     public function index(): Response
     {
-        return Inertia::render('intake/index', [
-            'packages' => $this->kioskPackages(),
+        return Inertia::render('intake/index');
+    }
+
+    public function suggestCustomers(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'q' => ['required', 'string', 'min:2', 'max:255'],
+        ]);
+
+        $q = trim($data['q']);
+        $like = '%'.$q.'%';
+
+        $customers = Customer::query()
+            ->where(function ($builder) use ($q, $like) {
+                $builder->where('customer_name', 'like', $like)
+                    ->orWhere('customer_contact', 'like', $like)
+                    ->orWhere('customer_email', 'like', $like)
+                    ->orWhere('company_name', 'like', $like);
+
+                if (str_contains($q, '@')) {
+                    $builder->orWhere('customer_email', $q);
+                }
+            })
+            ->latest('id')
+            ->limit(8)
+            ->get([
+                'id',
+                'customer_name',
+                'customer_email',
+                'customer_contact',
+                'customer_address',
+                'company_name',
+                'ownership_type',
+            ]);
+
+        return response()->json([
+            'customers' => $customers,
         ]);
     }
 
@@ -56,18 +92,34 @@ class IntakeController extends Controller
     {
         $data = $request->validate([
             'query' => ['required', 'string', 'min:3', 'max:255'],
+            'customer_id' => ['nullable', 'integer', 'exists:customers,id'],
         ]);
 
-        $q = $data['query'];
+        if (! empty($data['customer_id'])) {
+            $previous = Customer::query()->findOrFail((int) $data['customer_id']);
 
-        $previous = Customer::query()
+            return $this->redirectToIntakeCreate($previous);
+        }
+
+        $q = trim($data['query']);
+
+        $matches = Customer::query()
             ->where(function ($builder) use ($q) {
                 $builder->where('customer_email', $q)
                     ->orWhere('customer_contact', $q)
                     ->orWhere('customer_name', 'like', "%{$q}%");
             })
             ->latest('id')
-            ->first();
+            ->limit(8)
+            ->get();
+
+        if ($matches->count() > 1) {
+            return back()->withErrors([
+                'query' => 'Multiple customers match that search. Pick one from the suggestions.',
+            ]);
+        }
+
+        $previous = $matches->first();
 
         if (! $previous) {
             $previous = JobOrder::query()
@@ -86,6 +138,14 @@ class IntakeController extends Controller
             ]);
         }
 
+        return $this->redirectToIntakeCreate($previous);
+    }
+
+    /**
+     * @param  Customer|JobOrder  $previous
+     */
+    private function redirectToIntakeCreate(Customer|JobOrder $previous): RedirectResponse
+    {
         return redirect()->route('intake.create', [
             'customer_name' => $previous->customer_name,
             'customer_email' => $previous->customer_email,

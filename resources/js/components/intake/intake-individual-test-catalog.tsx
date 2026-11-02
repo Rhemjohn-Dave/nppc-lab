@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
 import { Search } from 'lucide-react';
+import { useMemo } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -43,6 +43,7 @@ export default function IntakeIndividualTestCatalog({
 }: Props) {
     const matched = useMemo(() => {
         const needle = query.trim().toLowerCase();
+
         if (!needle) {
             return categories;
         }
@@ -133,7 +134,7 @@ export default function IntakeIndividualTestCatalog({
             </div>
 
             {shown.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center">
+                <div className="rounded-lg border border-dashed border-slate-200 p-3 text-center">
                     <p className="font-medium text-slate-800">
                         No tests found.
                     </p>
@@ -222,7 +223,7 @@ function CategoryChip({
             aria-pressed={active}
             onClick={onClick}
             className={cn(
-                'rounded-lg border px-2 py-1 text-xs font-medium transition focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none',
+                'rounded-md border px-2 py-1 text-xs font-medium transition focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none',
                 active
                     ? 'border-nppc-900 bg-nppc-900 text-white'
                     : 'border-slate-200 bg-white text-slate-700 hover:border-nppc-500',

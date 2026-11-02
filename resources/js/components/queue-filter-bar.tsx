@@ -26,6 +26,9 @@ type Props = {
     sortValue?: string;
     onSortChange?: (value: string) => void;
     sortOptions?: readonly QueueSortOption[];
+    dayValue?: string;
+    onDayChange?: (value: string) => void;
+    dayLabel?: string;
 };
 
 export default function QueueFilterBar({

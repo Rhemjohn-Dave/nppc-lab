@@ -1,6 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { ArrowRight, Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import ConfirmDialog from '@/components/confirm-dialog';
 import JoReferenceChip from '@/components/lims/jo-reference-chip';
 import LimsWorkspace from '@/components/lims/lims-workspace';
 import QueueSummaryCards from '@/components/lims/queue-summary-cards';
@@ -59,6 +60,7 @@ type Props = {
         q: string;
         status: string;
         sort?: string;
+        day?: string;
     };
 };
 
@@ -73,12 +75,15 @@ function isAwaitingHead(status: string) {
 function OrderActions({
     order,
     printed,
+    onReceive,
 }: {
     order: Order;
     printed: boolean;
+    onReceive: (order: Order) => void;
 }) {
     const action = nextAction(order, { printedThisSession: printed });
     const awaitingHead = isAwaitingHead(order.status);
+    const receivePrimary = action.primaryAction === 'receive';
 
     return (
         <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
@@ -92,21 +97,45 @@ function OrderActions({
                     <Link href={action.printHref}>{action.printLabel}</Link>
                 </Button>
             ) : null}
-            <Button
-                asChild
-                size="sm"
-                className={cn(
-                    'h-8 gap-1.5 text-xs shadow-xs',
-                    awaitingHead
-                        ? 'border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
-                        : 'bg-nppc-900 hover:bg-nppc-700',
-                )}
-            >
-                <Link href={action.primaryHref}>
+            {action.secondaryHref && action.secondaryLabel ? (
+                <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 border-slate-200 text-xs shadow-xs"
+                >
+                    <Link href={action.secondaryHref}>
+                        {action.secondaryLabel}
+                    </Link>
+                </Button>
+            ) : null}
+            {receivePrimary ? (
+                <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 gap-1.5 bg-nppc-900 text-xs shadow-xs hover:bg-nppc-700"
+                    onClick={() => onReceive(order)}
+                >
                     {action.primaryLabel}
                     <ArrowRight className="size-3" />
-                </Link>
-            </Button>
+                </Button>
+            ) : action.primaryHref ? (
+                <Button
+                    asChild
+                    size="sm"
+                    className={cn(
+                        'h-8 gap-1.5 text-xs shadow-xs',
+                        awaitingHead
+                            ? 'border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                            : 'bg-nppc-900 hover:bg-nppc-700',
+                    )}
+                >
+                    <Link href={action.primaryHref}>
+                        {action.primaryLabel}
+                        <ArrowRight className="size-3" />
+                    </Link>
+                </Button>
+            ) : null}
         </div>
     );
 }
@@ -114,8 +143,21 @@ function OrderActions({
 export default function ReceivingIndex({ orders, counts, filters }: Props) {
     const [query, setQuery] = useState(filters.q ?? '');
     const [printFlags, setPrintFlags] = useState<Record<number, boolean>>({});
+    const [confirmReceiveId, setConfirmReceiveId] = useState<number | null>(
+        null,
+    );
+    const [receiving, setReceiving] = useState(false);
     const { isRefreshing } = useInertiaNavigation();
     const sort = filters.sort === 'newest' ? 'newest' : 'oldest';
+
+    const confirmOrder = useMemo(
+        () =>
+            confirmReceiveId === null
+                ? null
+                : (orders.data.find((order) => order.id === confirmReceiveId) ??
+                  null),
+        [confirmReceiveId, orders.data],
+    );
 
     useEffect(() => {
         setQuery(filters.q ?? '');
@@ -158,6 +200,25 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
             {
                 preserveState: true,
                 replace: true,
+            },
+        );
+    }
+
+    function markReceived() {
+        if (!confirmOrder) {
+            return;
+        }
+
+        setReceiving(true);
+        router.post(
+            `/receiving/${confirmOrder.id}/receive`,
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    setReceiving(false);
+                    setConfirmReceiveId(null);
+                },
             },
         );
     }
@@ -417,6 +478,9 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                                         <OrderActions
                                             order={order}
                                             printed={printed}
+                                            onReceive={(row) =>
+                                                setConfirmReceiveId(row.id)
+                                            }
                                         />
                                     </div>
                                 </article>
@@ -558,6 +622,11 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                                                     <OrderActions
                                                         order={order}
                                                         printed={printed}
+                                                        onReceive={(row) =>
+                                                            setConfirmReceiveId(
+                                                                row.id,
+                                                            )
+                                                        }
                                                     />
                                                 </td>
                                             </tr>
@@ -571,15 +640,18 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                                             >
                                                 <p className="text-sm font-medium text-nppc-900">
                                                     {filters.q ||
-                                                    filters.status
+                                                    filters.status ||
+                                                    filters.day
                                                         ? 'No matching job orders'
                                                         : 'Queue is clear'}
                                                 </p>
                                                 <p className="mt-1 text-xs text-muted-foreground">
-                                                    {filters.q ||
-                                                    filters.status
-                                                        ? 'No job orders match your filters.'
-                                                        : 'No job orders waiting for receiving.'}
+                                                    {filters.day
+                                                        ? `No job orders for intake day ${filters.day}.`
+                                                        : filters.q ||
+                                                            filters.status
+                                                          ? 'No job orders match your filters.'
+                                                          : 'No job orders waiting for receiving.'}
                                                 </p>
                                             </td>
                                         </tr>
@@ -599,6 +671,53 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                     </div>
                 </LimsWorkspace>
             </NavigationLoadingShell>
+
+            <ConfirmDialog
+                open={Boolean(confirmOrder)}
+                onOpenChange={(open) => {
+                    if (!open && !receiving) {
+                        setConfirmReceiveId(null);
+                    }
+                }}
+                title={
+                    confirmOrder
+                        ? `Send ${confirmOrder.reference_no} to analysts?`
+                        : 'Send to analysts?'
+                }
+                description={
+                    confirmOrder &&
+                    !(printFlags[confirmOrder.id] ?? false)
+                        ? 'Samples are already on hand from intake. This assigns analyses to analysts and opens the job in their workspace. Print 3 JO copies for customer, accounting, and Head if you have not already.'
+                        : 'Samples are already on hand from intake. This assigns analyses to analysts and opens the job in their workspace.'
+                }
+                confirmLabel="Send to analysts"
+                processingLabel="Sending…"
+                processing={receiving}
+                onConfirm={markReceived}
+            >
+                {confirmOrder ? (
+                    <div className="rounded-lg border bg-nppc-page px-3 py-2 text-sm">
+                        <p>
+                            <span className="text-muted-foreground">
+                                Customer:{' '}
+                            </span>
+                            {confirmOrder.customer_name}
+                        </p>
+                        <p>
+                            <span className="text-muted-foreground">
+                                Estimated total:{' '}
+                            </span>
+                            {money(confirmOrder.total_cost)}
+                        </p>
+                        <p>
+                            <span className="text-muted-foreground">
+                                Tests:{' '}
+                            </span>
+                            {confirmOrder.analyses_count}
+                        </p>
+                    </div>
+                ) : null}
+            </ConfirmDialog>
         </>
     );
 }

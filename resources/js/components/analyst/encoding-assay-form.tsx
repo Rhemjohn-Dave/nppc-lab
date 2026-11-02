@@ -33,6 +33,8 @@ type Props = {
     formData: EncodingFormData;
     formErrors: EncodingFormErrors;
     readOnly: boolean;
+    /** FO2/FO2A/FO3/FO37: Passed/Failed buttons write into result_remarks. */
+    remarksPassFail?: boolean;
     analysisError?: string | null;
     onFieldChange: (key: keyof EncodingFormData, value: string) => void;
 };
@@ -44,6 +46,7 @@ export default function EncodingAssayForm({
     formData,
     formErrors,
     readOnly,
+    remarksPassFail = false,
     analysisError,
     onFieldChange,
 }: Props) {
@@ -756,31 +759,152 @@ export default function EncodingAssayForm({
                     </div>
                 </div>
             ) : (
-                <div>
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                        <Label
-                            htmlFor={`result_remarks_${task.id}`}
-                            className="text-[11px] font-semibold text-slate-700"
-                        >
-                            Analytical remarks &amp; observations
-                        </Label>
-                        <span className="font-mono text-[10px] text-slate-400">
-                            {remarksLen} / {REMARKS_MAX}
-                        </span>
+                <div className="space-y-2.5">
+                    {remarksPassFail && task.requires_pass_fail !== true ? (
+                        <div>
+                            <Label className="mb-1 block text-[11px] font-semibold text-slate-700">
+                                Remarks — Passed / Failed
+                            </Label>
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                {(
+                                    [
+                                        {
+                                            value: 'Passed',
+                                            title: 'Passed',
+                                            hint: 'Within specification',
+                                            badge: 'Compliant',
+                                            selected:
+                                                'border-2 border-emerald-500 bg-emerald-50 text-emerald-950 shadow-sm ring-2 ring-emerald-500/20',
+                                            badgeClass:
+                                                'bg-emerald-200/80 text-emerald-900',
+                                        },
+                                        {
+                                            value: 'Failed',
+                                            title: 'Failed',
+                                            hint: 'Exceeds specification',
+                                            badge: 'Non-conforming',
+                                            selected:
+                                                'border-2 border-rose-500 bg-rose-50 text-rose-950 shadow-sm ring-2 ring-rose-500/20',
+                                            badgeClass:
+                                                'bg-rose-200/80 text-rose-900',
+                                        },
+                                    ] as const
+                                ).map((option) => {
+                                    const selected =
+                                        formData.result_remarks.trim() ===
+                                        option.value;
+                                    const Icon = selected ? Check : Circle;
+
+                                    return (
+                                        <button
+                                            key={option.value}
+                                            type="button"
+                                            disabled={
+                                                readOnly || resultsLocked
+                                            }
+                                            aria-pressed={selected}
+                                            className={cn(
+                                                'flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none',
+                                                selected
+                                                    ? option.selected
+                                                    : 'border border-dashed border-slate-300 bg-slate-50/50 text-slate-500 hover:border-slate-400 hover:bg-white',
+                                                (readOnly || resultsLocked) &&
+                                                    'cursor-default opacity-90',
+                                            )}
+                                            onClick={() => {
+                                                if (
+                                                    readOnly ||
+                                                    resultsLocked
+                                                ) {
+                                                    return;
+                                                }
+                                                onFieldChange(
+                                                    'result_remarks',
+                                                    option.value,
+                                                );
+                                            }}
+                                        >
+                                            <span className="flex items-center gap-2">
+                                                <Icon
+                                                    className={cn(
+                                                        'size-4 shrink-0',
+                                                        selected
+                                                            ? option.value ===
+                                                              'Passed'
+                                                                ? 'text-emerald-600'
+                                                                : 'text-rose-600'
+                                                            : 'text-slate-400',
+                                                    )}
+                                                    strokeWidth={
+                                                        selected ? 2.5 : 1.5
+                                                    }
+                                                />
+                                                <span>
+                                                    <span
+                                                        className={cn(
+                                                            'block text-xs tracking-wide uppercase',
+                                                            selected
+                                                                ? 'font-bold'
+                                                                : 'font-semibold',
+                                                        )}
+                                                    >
+                                                        {selected ? '✓ ' : '○ '}
+                                                        {option.title}
+                                                    </span>
+                                                    <span className="block text-[11px] opacity-80">
+                                                        {option.hint}
+                                                    </span>
+                                                </span>
+                                            </span>
+                                            <span
+                                                className={cn(
+                                                    'rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wide uppercase',
+                                                    selected
+                                                        ? option.badgeClass
+                                                        : 'bg-transparent text-slate-400',
+                                                )}
+                                            >
+                                                {option.badge}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ) : null}
+                    <div>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                            <Label
+                                htmlFor={`result_remarks_${task.id}`}
+                                className="text-[11px] font-semibold text-slate-700"
+                            >
+                                Analytical remarks &amp; observations
+                            </Label>
+                            <span className="font-mono text-[10px] text-slate-400">
+                                {remarksLen} / {REMARKS_MAX}
+                            </span>
+                        </div>
+                        <Textarea
+                            id={`result_remarks_${task.id}`}
+                            className="min-h-0 text-xs"
+                            rows={2}
+                            maxLength={REMARKS_MAX}
+                            placeholder={
+                                remarksPassFail
+                                    ? 'Passed / Failed or other observations…'
+                                    : 'Detection limits, observations…'
+                            }
+                            readOnly={readOnly}
+                            disabled={readOnly || resultsLocked}
+                            value={formData.result_remarks}
+                            onChange={(e) =>
+                                onFieldChange(
+                                    'result_remarks',
+                                    e.target.value,
+                                )
+                            }
+                        />
                     </div>
-                    <Textarea
-                        id={`result_remarks_${task.id}`}
-                        className="min-h-0 text-xs"
-                        rows={2}
-                        maxLength={REMARKS_MAX}
-                        placeholder="Detection limits, observations…"
-                        readOnly={readOnly}
-                        disabled={readOnly || resultsLocked}
-                        value={formData.result_remarks}
-                        onChange={(e) =>
-                            onFieldChange('result_remarks', e.target.value)
-                        }
-                    />
                 </div>
             )}
         </div>

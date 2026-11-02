@@ -225,20 +225,15 @@ class DynamicTestMatrixReportTest extends TestCase
         $this->assertStringContainsString('Dynamic test matrix', (string) $report->message);
     }
 
-    public function test_proximate_package_is_seeded_as_dynamic_matrix_with_methods(): void
+    public function test_proximate_types_remain_seeded_with_methods_without_package(): void
     {
         $this->seed();
 
-        $package = AnalysisPackage::query()->where('code', 'PKG-PROXIMATE')->firstOrFail();
-        $this->assertSame(AnalysisPackageReportLayout::DynamicMatrix, $package->report_layout);
+        $this->assertDatabaseMissing('analysis_packages', ['code' => 'PKG-PROXIMATE']);
 
         $fat = AnalysisType::query()->where('code', 'PX-01')->firstOrFail();
         $this->assertSame('Soxhlet Extraction Method', $fat->method);
-
-        $rows = \App\Support\DynamicTestMatrix::previewRowsForPackage($package);
-        $this->assertGreaterThanOrEqual(8, count($rows));
-        $this->assertSame($fat->name, $rows[0]['test']);
-        $this->assertSame('Soxhlet Extraction Method', $rows[0]['test_method']);
+        $this->assertTrue($fat->is_active);
     }
 
     public function test_dw_physico_package_is_seeded_as_dynamic_matrix_with_acceptable_values(): void

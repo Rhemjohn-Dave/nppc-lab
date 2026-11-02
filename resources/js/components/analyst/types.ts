@@ -82,9 +82,14 @@ export type ResultSignatoryConfig = {
 };
 
 export type ResultFooterConfig = {
+    temperature_c?: string;
+    humidity_pct?: string;
     lab_conditions: string;
     references: string;
     notes: string;
+    requires_atmosphere?: boolean;
+    atmosphere_complete?: boolean;
+    show_notes_fields?: boolean;
     save_url?: string | null;
     can_edit?: boolean;
 };

@@ -148,10 +148,13 @@ class Fo2AccreditationFootnoteTest extends TestCase
 
         $this->actingAs($analyst)
             ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '24',
+                'humidity_pct' => '60',
                 'notes' => 'Edited before complete',
             ])
             ->assertOk()
-            ->assertJsonPath('footer.notes', 'Edited before complete');
+            ->assertJsonPath('footer.notes', 'Edited before complete')
+            ->assertJsonPath('footer.atmosphere_complete', true);
 
         $this->assertSame('Edited before complete', $job->fresh()->result_footer['notes'] ?? null);
     }

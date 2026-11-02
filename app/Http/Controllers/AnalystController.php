@@ -22,6 +22,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -670,10 +671,12 @@ class AnalystController extends Controller
         abort_unless(
             ResultFooter::formSupportsFooter($form),
             422,
-            'Result footer notes apply only to FO2 / FO2A wastewater physico sheets.',
+            'Lab conditions apply only to FO2 / FO2A / FO3 / FO37 physico result sheets.',
         );
 
         $data = $request->validate([
+            'temperature_c' => ['nullable', 'string', 'max:40'],
+            'humidity_pct' => ['nullable', 'string', 'max:40'],
             'lab_conditions' => ['nullable', 'string', 'max:2000'],
             'references' => ['nullable', 'string', 'max:4000'],
             'notes' => ['nullable', 'string', 'max:8000'],
@@ -683,8 +686,23 @@ class AnalystController extends Controller
         if (($data['reset'] ?? false) === true) {
             $jobOrder->update(['result_footer' => null]);
         } else {
+            if (ResultFooter::formRequiresLabAtmosphere($form)) {
+                $temp = trim((string) ($data['temperature_c'] ?? ''));
+                $humidity = trim((string) ($data['humidity_pct'] ?? ''));
+                $atmosphereErrors = [];
+                if ($temp === '') {
+                    $atmosphereErrors['temperature_c'] = 'Enter laboratory temperature (°C).';
+                }
+                if ($humidity === '') {
+                    $atmosphereErrors['humidity_pct'] = 'Enter laboratory humidity (%).';
+                }
+                if ($atmosphereErrors !== []) {
+                    throw ValidationException::withMessages($atmosphereErrors);
+                }
+            }
+
             $jobOrder->update([
-                'result_footer' => ResultFooter::normalizeForStorage($data),
+                'result_footer' => ResultFooter::normalizeForStorage($data, $form),
             ]);
         }
 

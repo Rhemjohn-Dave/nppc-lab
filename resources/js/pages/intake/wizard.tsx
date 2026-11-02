@@ -2,19 +2,42 @@ import { Head, router, usePage } from '@inertiajs/react';
 import {
     ArrowLeft,
     ArrowRight,
+    Building2,
+    Calendar,
+    Check,
+    ChevronDown,
     CircleHelp,
+    Clock,
+    ContactRound,
     Droplets,
+    Factory,
     Fish,
     FlaskConical,
     GraduationCap,
+    Landmark,
+    Layers,
+    ListChecks,
+    Mail,
+    MapPin,
     MoreHorizontal,
+    Package,
+    Pencil,
+    PenLine,
+    Phone,
     Plus,
+    Sparkles,
     Sprout,
+    Tag,
+    TestTube2,
+    Thermometer,
+    UserRound,
+    Users,
     Waves,
     type LucideIcon,
 } from 'lucide-react';
 import { useMemo, useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
+import ConfirmDialog from '@/components/confirm-dialog';
 import FormSection from '@/components/intake/form-section';
 import IntakeAlert from '@/components/intake/intake-alert';
 import IntakeField from '@/components/intake/intake-field';
@@ -27,7 +50,6 @@ import IntakeSampleRow, {
 } from '@/components/intake/intake-sample-row';
 import IntakeSampleSwitcher from '@/components/intake/intake-sample-switcher';
 import IntakeStepHeader from '@/components/intake/intake-step-header';
-import IntakeStepper from '@/components/intake/intake-stepper';
 import IntakeStickyFooter from '@/components/intake/intake-sticky-footer';
 import IntakeTypePresetRow, {
     type IntakeTypePreset,
@@ -106,9 +128,7 @@ const FO2_PRESET_KEY = 'ww_physico_fo2';
 const FO2_FORM_CODE = 'LSP-7.8-FO2';
 
 function isFo2Preset(preset: IntakeTypePreset): boolean {
-    return (
-        preset.key === FO2_PRESET_KEY || preset.form_code === FO2_FORM_CODE
-    );
+    return preset.key === FO2_PRESET_KEY || preset.form_code === FO2_FORM_CODE;
 }
 
 /** FO2 member type IDs to select for a wastewater sample-description kind. */
@@ -173,6 +193,17 @@ const CLASSIFICATION_ICONS: Record<string, LucideIcon> = {
     Others: MoreHorizontal,
 };
 
+const SOURCE_ICONS: Record<string, LucideIcon> = {
+    'Surface Water': Waves,
+    Groundwater: Droplets,
+    'Process Water': Factory,
+    Effluent: Waves,
+    Pond: Fish,
+    Cage: Fish,
+    Tank: FlaskConical,
+    Others: MoreHorizontal,
+};
+
 type SampleDraft = {
     sample_code: string;
     description: string;
@@ -216,22 +247,29 @@ function ChoiceChip({
     active,
     children,
     onClick,
+    icon: Icon,
+    title,
 }: {
     active: boolean;
     children: ReactNode;
     onClick: () => void;
+    icon?: LucideIcon;
+    title?: string;
 }) {
     return (
         <button
             type="button"
+            title={title}
             onClick={onClick}
+            aria-pressed={active}
             className={cn(
-                'min-h-9 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition',
+                'inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none',
                 active
                     ? 'border-nppc-900 bg-nppc-900 text-white shadow-sm'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-nppc-500',
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-nppc-500 hover:bg-nppc-50/40',
             )}
         >
+            {Icon ? <Icon className="size-3.5 shrink-0" aria-hidden /> : null}
             {children}
         </button>
     );
@@ -241,62 +279,81 @@ function ReviewRow({
     label,
     value,
     className,
+    icon: Icon,
 }: {
     label: string;
     value: string;
     className?: string;
+    icon?: LucideIcon;
 }) {
     return (
         <div className={cn('min-w-0', className)}>
-            <p className="text-xs tracking-wide text-slate-500 uppercase">
+            <p className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+                {Icon ? (
+                    <Icon className="size-3 text-nppc-700" aria-hidden />
+                ) : null}
                 {label}
             </p>
-            <p className="text-sm break-words text-slate-800">
+            <p className="mt-0.5 text-sm font-medium break-words text-slate-900">
                 {value.trim() || '—'}
             </p>
         </div>
     );
 }
 
-function ReviewEditButton({ onClick }: { onClick: () => void }) {
-    return (
-        <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 border-nppc-900/25 text-nppc-900 hover:bg-nppc-50"
-            onClick={onClick}
-        >
-            Edit
-        </Button>
-    );
-}
-
 function ReviewCard({
     title,
+    icon: Icon,
     onEdit,
     children,
-    first = false,
+    defaultOpen = true,
 }: {
     title: string;
+    icon?: LucideIcon;
     onEdit: () => void;
     children: ReactNode;
-    first?: boolean;
+    defaultOpen?: boolean;
 }) {
+    const [open, setOpen] = useState(defaultOpen);
+
     return (
-        <section
-            className={cn(
-                'rounded-xl border border-slate-200 bg-white p-4 shadow-xs',
-                !first && 'mt-0',
-            )}
-        >
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
-                <h3 className="font-heading text-sm font-semibold text-nppc-900">
-                    {title}
-                </h3>
-                <ReviewEditButton onClick={onEdit} />
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/60 px-3 py-2">
+                <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => setOpen((value) => !value)}
+                    className="flex min-w-0 items-center gap-2 rounded-md text-left focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none"
+                >
+                    {Icon ? (
+                        <Icon
+                            className="size-4 shrink-0 text-nppc-700"
+                            aria-hidden
+                        />
+                    ) : null}
+                    <h3 className="text-sm font-semibold text-nppc-900">
+                        {title}
+                    </h3>
+                    <ChevronDown
+                        className={cn(
+                            'size-3.5 shrink-0 text-slate-400 transition',
+                            open && 'rotate-180',
+                        )}
+                        aria-hidden
+                    />
+                </button>
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1 border-nppc-900/25 px-2 text-[11px] text-nppc-900 hover:bg-nppc-50"
+                    onClick={onEdit}
+                >
+                    <Pencil className="size-3" aria-hidden />
+                    Edit
+                </Button>
             </div>
-            {children}
+            {open ? <div className="p-3">{children}</div> : null}
         </section>
     );
 }
@@ -321,7 +378,7 @@ function RadioOption({
     return (
         <label
             className={cn(
-                'flex min-h-[52px] cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 text-xs transition',
+                'flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 text-xs transition',
                 checked
                     ? 'border-nppc-900 bg-nppc-900/[0.06] text-nppc-900 shadow-sm'
                     : 'border-slate-200 bg-white text-slate-700 hover:border-nppc-500',
@@ -333,7 +390,7 @@ function RadioOption({
                 value={value}
                 checked={checked}
                 onChange={onChange}
-                className="size-4 shrink-0 accent-nppc-900"
+                className="size-3.5 shrink-0 accent-nppc-900"
             />
             <span className="min-w-0 flex-1">
                 <span className="font-semibold">{label}</span>
@@ -360,7 +417,8 @@ function RadioOption({
 }
 
 function isGenericOtherCategory(label: string): boolean {
-    return label.trim().toLowerCase() === 'other';}
+    return label.trim().toLowerCase() === 'other';
+}
 
 const FOOD_CATEGORY_SLUGS = new Set([
     'food_products_microbiological',
@@ -454,7 +512,9 @@ function categorySlugsForClassification(
     }
 
     const needle = classification.toLowerCase();
-    for (const [label, slugs] of Object.entries(CLASSIFICATION_CATEGORY_SLUGS)) {
+    for (const [label, slugs] of Object.entries(
+        CLASSIFICATION_CATEGORY_SLUGS,
+    )) {
         if (needle.includes(label.toLowerCase())) {
             return new Set(slugs);
         }
@@ -475,6 +535,8 @@ export default function IntakeWizard({
     };
     const [step, setStep] = useState(0);
     const [submitting, setSubmitting] = useState(false);
+    const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
+    const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
     const [attemptedContinue, setAttemptedContinue] = useState(false);
     const [mobileSummaryOpen, setMobileSummaryOpen] = useState(false);
     const [customer, setCustomer] = useState({
@@ -516,9 +578,9 @@ export default function IntakeWizard({
     const fo2DefaultCodes = options.wastewater_fo2_default_codes;
     const fo2Preset = type_presets.find(isFo2Preset);
     const [activeCategory, setActiveCategory] = useState<string | null>(null);
-    const [browseOpenBySample, setBrowseOpenBySample] = useState<
-        Record<number, boolean>
-    >({});
+    const [testsView, setTestsView] = useState<'packages' | 'individual'>(
+        'packages',
+    );
     const [testsQuery, setTestsQuery] = useState('');
     const [samples, setSamples] = useState<SampleDraft[]>([emptySample()]);
     const [activeTestSample, setActiveTestSample] = useState(0);
@@ -592,8 +654,7 @@ export default function IntakeWizard({
                 );
 
                 return {
-                    label:
-                        sample.sample_code.trim() || `Sample ${index + 1}`,
+                    label: sample.sample_code.trim() || `Sample ${index + 1}`,
                     package_ids: sample.package_ids,
                     analysis_type_ids: sample.analysis_type_ids,
                     subtotal,
@@ -602,8 +663,7 @@ export default function IntakeWizard({
                         .filter(Boolean) as string[],
                     packageNames: sample.package_ids
                         .map(
-                            (id) =>
-                                packages.find((pkg) => pkg.id === id)?.name,
+                            (id) => packages.find((pkg) => pkg.id === id)?.name,
                         )
                         .filter(Boolean) as string[],
                 };
@@ -677,12 +737,7 @@ export default function IntakeWizard({
                     group.category != null && allowedSlugs.has(group.category)
                 );
             });
-    }, [
-        categories,
-        isAquaClassification,
-        classification,
-        classificationOther,
-    ]);
+    }, [categories, isAquaClassification, classification, classificationOther]);
 
     useEffect(() => {
         if (
@@ -741,13 +796,7 @@ export default function IntakeWizard({
         return allTypeIds.some((id) =>
             FOOD_CATEGORY_SLUGS.has(typeCategory.get(id) ?? ''),
         );
-    }, [
-        categories,
-        classification,
-        classificationOther,
-        packages,
-        samples,
-    ]);
+    }, [categories, classification, classificationOther, packages, samples]);
 
     useEffect(() => {
         if (!needsSpecimen && specimen) {
@@ -819,9 +868,7 @@ export default function IntakeWizard({
             preset.analysis_type_ids.forEach((id) => allowedTypeIds.add(id)),
         );
 
-        const allowedPackageIds = new Set(
-            scopedPackages.map((pkg) => pkg.id),
-        );
+        const allowedPackageIds = new Set(scopedPackages.map((pkg) => pkg.id));
         const allowedPresetKeys = new Set(
             type_presets.map((preset) => preset.key),
         );
@@ -859,12 +906,7 @@ export default function IntakeWizard({
 
             return changed ? next : current;
         });
-    }, [
-        isAquaClassification,
-        scopedCategories,
-        scopedPackages,
-        type_presets,
-    ]);
+    }, [isAquaClassification, scopedCategories, scopedPackages, type_presets]);
 
     const catalogItemsForSummary = useMemo(() => {
         const seen = new Set<number>();
@@ -914,31 +956,8 @@ export default function IntakeWizard({
                 preset.analysis_type_ids.forEach((id) => covered.add(id)),
             );
 
-        return sample.analysis_type_ids.filter((id) => !covered.has(id))
-            .length;
+        return sample.analysis_type_ids.filter((id) => !covered.has(id)).length;
     }
-
-    /** Open the catalog automatically when returning with catalog-only picks. */
-    const browseAutoOpenRef = useRef(false);
-    useEffect(() => {
-        if (step !== 3 || browseAutoOpenRef.current) {
-            return;
-        }
-
-        const toOpen: Record<number, boolean> = {};
-        let any = false;
-        samples.forEach((sample, index) => {
-            if (individualSelectedCountFor(sample) > 0) {
-                toOpen[index] = true;
-                any = true;
-            }
-        });
-
-        if (any) {
-            browseAutoOpenRef.current = true;
-            setBrowseOpenBySample((current) => ({ ...current, ...toOpen }));
-        }
-    }, [step, samples, scopedPackages, type_presets]);
 
     function updateSampleSelection(
         index: number,
@@ -1054,10 +1073,7 @@ export default function IntakeWizard({
                     ...sample,
                     package_ids: [...sample.package_ids, pkg.id],
                     analysis_type_ids: [
-                        ...new Set([
-                            ...sample.analysis_type_ids,
-                            ...memberIds,
-                        ]),
+                        ...new Set([...sample.analysis_type_ids, ...memberIds]),
                     ],
                 };
             }),
@@ -1162,9 +1178,7 @@ export default function IntakeWizard({
 
                 return {
                     ...withDescription,
-                    analysis_type_ids: [
-                        ...new Set([...kept, ...defaultIds]),
-                    ],
+                    analysis_type_ids: [...new Set([...kept, ...defaultIds])],
                 };
             }),
         );
@@ -1224,10 +1238,7 @@ export default function IntakeWizard({
                     ...sample,
                     preset_keys: [...sample.preset_keys, preset.key],
                     analysis_type_ids: [
-                        ...new Set([
-                            ...sample.analysis_type_ids,
-                            ...memberIds,
-                        ]),
+                        ...new Set([...sample.analysis_type_ids, ...memberIds]),
                     ],
                 };
             }),
@@ -1377,11 +1388,7 @@ export default function IntakeWizard({
         );
     }
 
-    function updateSample(
-        index: number,
-        key: SampleFieldKey,
-        value: string,
-    ) {
+    function updateSample(index: number, key: SampleFieldKey, value: string) {
         setSamples((current) =>
             current.map((sample, i) =>
                 i === index ? { ...sample, [key]: value } : sample,
@@ -1415,7 +1422,10 @@ export default function IntakeWizard({
                 }
             }
 
-            if (wastewaterSource === 'Others' && !wastewaterSourceOther.trim()) {
+            if (
+                wastewaterSource === 'Others' &&
+                !wastewaterSourceOther.trim()
+            ) {
                 return false;
             }
 
@@ -1497,9 +1507,7 @@ export default function IntakeWizard({
                 const root = document.querySelector('[data-intake-wizard]');
                 const scope = root ?? document;
                 const target =
-                    scope.querySelector<HTMLElement>(
-                        '[aria-invalid="true"]',
-                    ) ??
+                    scope.querySelector<HTMLElement>('[aria-invalid="true"]') ??
                     scope.querySelector<HTMLElement>('[data-intake-error]');
 
                 target?.scrollIntoView({
@@ -1520,7 +1528,44 @@ export default function IntakeWizard({
         setStep((s) => s + 1);
     }
 
+    const requestIsDirty =
+        step > 0 ||
+        Object.values(customer).some((value) => value.trim().length > 0) ||
+        ownershipType.trim().length > 0 ||
+        classification.trim().length > 0 ||
+        paymentMode.trim().length > 0 ||
+        samples.some(
+            (sample) =>
+                sample.sample_code.trim() ||
+                sample.description.trim() ||
+                sample.matrix.trim() ||
+                sample.quantity.trim() ||
+                sample.remarks.trim() ||
+                sample.package_ids.length > 0 ||
+                sample.analysis_type_ids.length > 0,
+        ) ||
+        otherTests.trim().length > 0;
+
+    function requestExit() {
+        if (requestIsDirty) {
+            setExitConfirmOpen(true);
+            return;
+        }
+
+        router.visit('/intake');
+    }
+
     function submit() {
+        if (!canContinue()) {
+            setAttemptedContinue(true);
+            scrollToFirstIntakeIssue();
+            return;
+        }
+
+        setSubmitConfirmOpen(true);
+    }
+
+    function confirmSubmit() {
         setSubmitting(true);
         router.post(
             '/intake/job-orders',
@@ -1561,7 +1606,10 @@ export default function IntakeWizard({
                 })),
             },
             {
-                onFinish: () => setSubmitting(false),
+                onFinish: () => {
+                    setSubmitting(false);
+                    setSubmitConfirmOpen(false);
+                },
             },
         );
     }
@@ -1577,159 +1625,184 @@ export default function IntakeWizard({
                     step,
                     onStepSelect: setStep,
                 }}
+                onExit={requestExit}
             >
-            <IntakeStepper
-                steps={steps}
-                step={step}
-                onStepSelect={setStep}
-            />
+                <div className="flex min-h-0 flex-1 flex-col gap-2">
+                    <div
+                        key={step}
+                        data-intake-wizard
+                        className="intake-enter flex min-h-0 min-w-0 flex-1 flex-col"
+                    >
+                        {errors?.analysis_type_ids ? (
+                            <IntakeAlert
+                                variant="error"
+                                className="mb-1 shrink-0"
+                                data-intake-error=""
+                            >
+                                {errors.analysis_type_ids}
+                            </IntakeAlert>
+                        ) : null}
 
-            <div
-                key={step}
-                data-intake-wizard
-                className="intake-enter min-w-0 space-y-3"
-            >
-                    {errors?.analysis_type_ids ? (
-                        <IntakeAlert
-                            variant="error"
-                            className="mb-1"
-                            data-intake-error=""
-                        >
-                            {errors.analysis_type_ids}
-                        </IntakeAlert>
-                    ) : null}
+                        {step === 0 && (
+                            <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] lg:items-stretch">
+                                <IntakePanel
+                                    title="Contact & Organization Details"
+                                    description="Enter the requestor contact details used for receiving and result release."
+                                    icon={ContactRound}
+                                    className="flex h-full min-h-0 flex-col"
+                                    bodyClassName="flex flex-col"
+                                    action={
+                                        <span className="text-[10px] font-medium text-rose-600">
+                                            * Mandatory fields
+                                        </span>
+                                    }
+                                >
+                                    <div className="flex h-full min-h-0 flex-col gap-3 md:gap-3.5">
+                                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-x-4">
+                                            <IntakeField
+                                                label="Full Name"
+                                                htmlFor="customer_name"
+                                                required
+                                                description="Legal name of the requestor"
+                                                icon={UserRound}
+                                                error={
+                                                    !customer.customer_name.trim() &&
+                                                    attemptedContinue
+                                                        ? 'Full name is required.'
+                                                        : null
+                                                }
+                                            >
+                                                <Input
+                                                    id="customer_name"
+                                                    type="text"
+                                                    autoComplete="name"
+                                                    className={cn(
+                                                        'h-10 w-full border-slate-200 bg-white text-sm',
+                                                        !!stepError(0) &&
+                                                            !customer.customer_name.trim() &&
+                                                            'border-rose-300 focus-visible:border-rose-300 focus-visible:ring-rose-200',
+                                                    )}
+                                                    value={
+                                                        customer.customer_name
+                                                    }
+                                                    aria-invalid={
+                                                        !!stepError(0) &&
+                                                        !customer.customer_name.trim()
+                                                    }
+                                                    onChange={(e) =>
+                                                        setCustomer((c) => ({
+                                                            ...c,
+                                                            customer_name:
+                                                                e.target.value,
+                                                        }))
+                                                    }
+                                                />
+                                            </IntakeField>
+                                            <IntakeField
+                                                label="Email Address"
+                                                htmlFor="customer_email"
+                                                required
+                                                description="Used for result notifications"
+                                                icon={Mail}
+                                                error={
+                                                    !customer.customer_email.trim() &&
+                                                    attemptedContinue
+                                                        ? 'Email is required.'
+                                                        : null
+                                                }
+                                            >
+                                                <Input
+                                                    id="customer_email"
+                                                    type="email"
+                                                    autoComplete="email"
+                                                    className={cn(
+                                                        'h-10 w-full border-slate-200 bg-white text-sm',
+                                                        !!stepError(0) &&
+                                                            !customer.customer_email.trim() &&
+                                                            'border-rose-300 focus-visible:border-rose-300 focus-visible:ring-rose-200',
+                                                    )}
+                                                    value={
+                                                        customer.customer_email
+                                                    }
+                                                    aria-invalid={
+                                                        !!stepError(0) &&
+                                                        !customer.customer_email.trim()
+                                                    }
+                                                    onChange={(e) =>
+                                                        setCustomer((c) => ({
+                                                            ...c,
+                                                            customer_email:
+                                                                e.target.value,
+                                                        }))
+                                                    }
+                                                />
+                                            </IntakeField>
+                                        </div>
 
-                    {step === 0 && (
-                        <div className="w-full space-y-4 pb-4">
-                            <IntakeStepHeader
-                                title="Customer"
-                                badge="Step 1 of 5 · Contact"
-                                hint="Enter your contact information."
-                            />
+                                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-x-4">
+                                            <IntakeField
+                                                label="Contact Phone Number"
+                                                htmlFor="customer_contact"
+                                                hint="(optional)"
+                                                description="Mobile or landline for receiving follow-up"
+                                                icon={Phone}
+                                            >
+                                                <Input
+                                                    id="customer_contact"
+                                                    type="tel"
+                                                    autoComplete="tel"
+                                                    className="h-10 w-full border-slate-200 bg-white text-sm"
+                                                    value={
+                                                        customer.customer_contact
+                                                    }
+                                                    onChange={(e) =>
+                                                        setCustomer((c) => ({
+                                                            ...c,
+                                                            customer_contact:
+                                                                e.target.value,
+                                                        }))
+                                                    }
+                                                />
+                                            </IntakeField>
+                                            <IntakeField
+                                                label="Company / Organization"
+                                                htmlFor="company_name"
+                                                hint="(optional)"
+                                                description="Leave blank for individual requests"
+                                                icon={Building2}
+                                            >
+                                                <Input
+                                                    id="company_name"
+                                                    type="text"
+                                                    autoComplete="organization"
+                                                    placeholder="Enter company or organization"
+                                                    className="h-10 w-full border-slate-200 bg-white text-sm"
+                                                    value={
+                                                        customer.company_name
+                                                    }
+                                                    onChange={(e) =>
+                                                        setCustomer((c) => ({
+                                                            ...c,
+                                                            company_name:
+                                                                e.target.value,
+                                                        }))
+                                                    }
+                                                />
+                                            </IntakeField>
+                                        </div>
 
-                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.75fr)] lg:items-start">
-                                <IntakePanel title="Contact details">
-                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                                        <IntakeField
-                                            label="Full name"
-                                            htmlFor="customer_name"
-                                            required
-                                            error={
-                                                !customer.customer_name.trim() &&
-                                                attemptedContinue
-                                                    ? 'Full name is required.'
-                                                    : null
-                                            }
-                                        >
-                                            <Input
-                                                id="customer_name"
-                                                type="text"
-                                                autoComplete="name"
-                                                className={cn(
-                                                    'h-10 w-full border-slate-200 bg-white text-sm',
-                                                    !!stepError(0) &&
-                                                        !customer.customer_name.trim() &&
-                                                        'border-rose-300 focus-visible:border-rose-300 focus-visible:ring-rose-200',
-                                                )}
-                                                value={customer.customer_name}
-                                                aria-invalid={
-                                                    !!stepError(0) &&
-                                                    !customer.customer_name.trim()
-                                                }
-                                                onChange={(e) =>
-                                                    setCustomer((c) => ({
-                                                        ...c,
-                                                        customer_name:
-                                                            e.target.value,
-                                                    }))
-                                                }
-                                            />
-                                        </IntakeField>
-                                        <IntakeField
-                                            label="Email"
-                                            htmlFor="customer_email"
-                                            required
-                                            error={
-                                                !customer.customer_email.trim() &&
-                                                attemptedContinue
-                                                    ? 'Email is required.'
-                                                    : null
-                                            }
-                                        >
-                                            <Input
-                                                id="customer_email"
-                                                type="email"
-                                                autoComplete="email"
-                                                className={cn(
-                                                    'h-10 w-full border-slate-200 bg-white text-sm',
-                                                    !!stepError(0) &&
-                                                        !customer.customer_email.trim() &&
-                                                        'border-rose-300 focus-visible:border-rose-300 focus-visible:ring-rose-200',
-                                                )}
-                                                value={customer.customer_email}
-                                                aria-invalid={
-                                                    !!stepError(0) &&
-                                                    !customer.customer_email.trim()
-                                                }
-                                                onChange={(e) =>
-                                                    setCustomer((c) => ({
-                                                        ...c,
-                                                        customer_email:
-                                                            e.target.value,
-                                                    }))
-                                                }
-                                            />
-                                        </IntakeField>
-                                        <IntakeField
-                                            label="Contact number"
-                                            htmlFor="customer_contact"
-                                            hint="(optional)"
-                                        >
-                                            <Input
-                                                id="customer_contact"
-                                                type="tel"
-                                                autoComplete="tel"
-                                                className="h-10 w-full border-slate-200 bg-white text-sm"
-                                                value={customer.customer_contact}
-                                                onChange={(e) =>
-                                                    setCustomer((c) => ({
-                                                        ...c,
-                                                        customer_contact:
-                                                            e.target.value,
-                                                    }))
-                                                }
-                                            />
-                                        </IntakeField>
-                                        <IntakeField
-                                            label="Company / Organization"
-                                            htmlFor="company_name"
-                                            hint="(optional)"
-                                        >
-                                            <Input
-                                                id="company_name"
-                                                type="text"
-                                                autoComplete="organization"
-                                                className="h-10 w-full border-slate-200 bg-white text-sm"
-                                                value={customer.company_name}
-                                                onChange={(e) =>
-                                                    setCustomer((c) => ({
-                                                        ...c,
-                                                        company_name:
-                                                            e.target.value,
-                                                    }))
-                                                }
-                                            />
-                                        </IntakeField>
                                         <IntakeField
                                             label="Address"
                                             htmlFor="customer_address"
                                             hint="(optional)"
-                                            className="md:col-span-2"
+                                            description="Street, barangay, city / municipality"
+                                            icon={MapPin}
                                         >
-                                            <Textarea
+                                            <Input
                                                 id="customer_address"
-                                                rows={3}
-                                                className="min-h-[5rem] w-full border-slate-200 bg-white py-2 text-sm"
+                                                type="text"
+                                                autoComplete="street-address"
+                                                className="h-10 w-full border-slate-200 bg-white text-sm"
                                                 placeholder="Street, barangay, city / municipality"
                                                 value={
                                                     customer.customer_address
@@ -1743,277 +1816,355 @@ export default function IntakeWizard({
                                                 }
                                             />
                                         </IntakeField>
-                                        <div className="md:col-span-2">
-                                            <p className="mb-1.5 text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
-                                                Ownership{' '}
-                                                <span className="font-normal normal-case tracking-normal">
+
+                                        <div className="mt-auto border-t border-slate-100 pt-3">
+                                            <p className="mb-0.5 text-[11px] font-semibold text-slate-700">
+                                                Ownership Type{' '}
+                                                <span className="font-normal text-slate-400">
                                                     (optional)
                                                 </span>
                                             </p>
+                                            <p className="mb-2 text-[10px] text-slate-500">
+                                                Used for billing classification
+                                                and laboratory records
+                                            </p>
                                             <div
-                                                className="flex flex-wrap gap-2"
+                                                className="grid grid-cols-1 gap-2 sm:grid-cols-3"
                                                 role="group"
                                                 aria-label="Type of ownership"
                                             >
-                                                {options.ownership.map(
-                                                    (item) => (
-                                                        <ChoiceChip
-                                                            key={item}
-                                                            active={
+                                                {(
+                                                    [
+                                                        {
+                                                            item: 'Private',
+                                                            blurb: 'Individual / Household',
+                                                            Icon: UserRound,
+                                                        },
+                                                        {
+                                                            item: 'Commercial',
+                                                            blurb: 'Business Entity',
+                                                            Icon: Building2,
+                                                        },
+                                                        {
+                                                            item: 'Public',
+                                                            blurb: 'Government / LGU',
+                                                            Icon: Landmark,
+                                                        },
+                                                    ] as const
+                                                )
+                                                    .filter(({ item }) =>
+                                                        options.ownership.includes(
+                                                            item,
+                                                        ),
+                                                    )
+                                                    .map(
+                                                        ({
+                                                            item,
+                                                            blurb,
+                                                            Icon,
+                                                        }) => {
+                                                            const active =
                                                                 ownershipType ===
-                                                                item
-                                                            }
-                                                            onClick={() =>
-                                                                setOwnershipType(
-                                                                    ownershipType ===
-                                                                        item
-                                                                        ? ''
-                                                                        : item,
-                                                                )
-                                                            }
-                                                        >
-                                                            {item}
-                                                        </ChoiceChip>
-                                                    ),
-                                                )}
+                                                                item;
+
+                                                            return (
+                                                                <button
+                                                                    key={item}
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        setOwnershipType(
+                                                                            active
+                                                                                ? ''
+                                                                                : item,
+                                                                        )
+                                                                    }
+                                                                    className={cn(
+                                                                        'inline-flex items-center gap-2 rounded-md border px-2.5 py-2 text-left transition',
+                                                                        active
+                                                                            ? 'border-[#1d3b91] bg-[#eef2ff] shadow-xs ring-1 ring-[#1d3b91]/20'
+                                                                            : 'border-slate-200 bg-white hover:border-[#1d3b91]/35 hover:bg-slate-50/80',
+                                                                    )}
+                                                                >
+                                                                    {active ? (
+                                                                        <Check className="size-3.5 shrink-0 text-[#1d3b91]" />
+                                                                    ) : (
+                                                                        <Icon className="size-3.5 shrink-0 text-slate-500" />
+                                                                    )}
+                                                                    <span className="min-w-0">
+                                                                        <span
+                                                                            className={cn(
+                                                                                'block text-xs font-semibold',
+                                                                                active
+                                                                                    ? 'text-[#112747]'
+                                                                                    : 'text-slate-800',
+                                                                            )}
+                                                                        >
+                                                                            {
+                                                                                item
+                                                                            }
+                                                                        </span>
+                                                                        <span className="block text-[10px] leading-snug text-slate-500">
+                                                                            {
+                                                                                blurb
+                                                                            }
+                                                                        </span>
+                                                                    </span>
+                                                                </button>
+                                                            );
+                                                        },
+                                                    )}
                                             </div>
                                         </div>
                                     </div>
                                 </IntakePanel>
 
-                                <IntakePanel title="Customer summary">
-                                    <dl className="space-y-2.5">
-                                        {(
-                                            [
+                                <aside className="flex min-h-0 flex-col gap-3 lg:h-full">
+                                    <IntakePanel
+                                        title="Live Intake Summary"
+                                        icon={Users}
+                                        variant="summary"
+                                        className="flex min-h-0 flex-1 flex-col"
+                                        bodyClassName="flex flex-1 flex-col"
+                                    >
+                                        <dl className="flex flex-1 flex-col justify-center gap-3">
+                                            {(
                                                 [
-                                                    'Customer',
-                                                    customer.customer_name.trim() ||
-                                                        'Not provided',
-                                                ],
-                                                [
-                                                    'Email',
-                                                    customer.customer_email.trim() ||
-                                                        'Not provided',
-                                                ],
-                                                [
-                                                    'Contact',
-                                                    customer.customer_contact.trim() ||
-                                                        'Not provided',
-                                                ],
-                                                [
-                                                    'Company',
-                                                    customer.company_name.trim() ||
-                                                        'Not provided',
-                                                ],
-                                                [
-                                                    'Ownership',
-                                                    ownershipType.trim() ||
-                                                        'Not provided',
-                                                ],
-                                            ] as const
-                                        ).map(([label, value]) => (
-                                            <div
-                                                key={label}
-                                                className="min-w-0"
-                                            >
-                                                <dt className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
-                                                    {label}
-                                                </dt>
-                                                <dd className="truncate text-sm leading-snug text-slate-800">
-                                                    {value}
-                                                </dd>
-                                            </div>
-                                        ))}
-                                    </dl>
-                                </IntakePanel>
-                            </div>
-                        </div>
-                    )}
+                                                    [
+                                                        'Customer',
+                                                        customer.customer_name.trim() ||
+                                                            'Not provided',
+                                                        UserRound,
+                                                    ],
+                                                    [
+                                                        'Email',
+                                                        customer.customer_email.trim() ||
+                                                            'Not provided',
+                                                        Mail,
+                                                    ],
+                                                    [
+                                                        'Contact',
+                                                        customer.customer_contact.trim() ||
+                                                            'Not provided',
+                                                        Phone,
+                                                    ],
+                                                    [
+                                                        'Company',
+                                                        customer.company_name.trim() ||
+                                                            'Not provided',
+                                                        Building2,
+                                                    ],
+                                                    [
+                                                        'Ownership',
+                                                        ownershipType.trim() ||
+                                                            'Not provided',
+                                                        Tag,
+                                                    ],
+                                                ] as const
+                                            ).map(([label, value, Icon]) => (
+                                                <div
+                                                    key={label}
+                                                    className="flex min-w-0 items-start gap-2"
+                                                >
+                                                    <Icon
+                                                        className="mt-0.5 size-3.5 shrink-0 text-slate-400"
+                                                        aria-hidden
+                                                    />
+                                                    <div className="min-w-0 flex-1">
+                                                        <dt className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+                                                            {label}
+                                                        </dt>
+                                                        <dd className="mt-0.5 truncate text-sm leading-snug font-medium text-slate-900">
+                                                            {value}
+                                                        </dd>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </dl>
+                                    </IntakePanel>
 
-                    {step === 2 && (
-                        <div className="w-full space-y-3">
-                            <IntakeStepHeader
-                                title="Samples"
-                                badge="Step 3 of 5 · Specimens"
-                                hint={
-                                    samples.length > 1
-                                        ? `${samples.length} samples in this request. Same classification only — other types need a new request.`
-                                        : 'Add the samples you are submitting today for laboratory analysis.'
-                                }
-                                action={
-                                    <span className="inline-flex items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-[11px] font-medium text-nppc-800">
-                                        <CircleHelp
-                                            className="size-3.5 text-nppc-700"
-                                            aria-hidden
-                                        />
-                                        Turnaround: 5–7 business days
-                                    </span>
-                                }
-                            />
-
-                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.9fr)] lg:items-start">
-                                <div className="min-w-0 space-y-3">
-                                    <div className="space-y-3 rounded-xl bg-slate-50/80 p-3 sm:p-4">
-                                        {samples.map((sample, index) => (
-                                            <IntakeSampleRow
-                                                key={index}
-                                                sample={sample}
-                                                index={index}
-                                                expanded={
-                                                    samples.length === 1 ||
-                                                    expandedSample === index
-                                                }
-                                                collapsible={
-                                                    samples.length > 1
-                                                }
-                                                removable={samples.length > 1}
-                                                onToggleExpand={() =>
-                                                    setExpandedSample(
-                                                        (current) =>
-                                                            current === index
-                                                                ? null
-                                                                : index,
-                                                    )
-                                                }
-                                                onChange={(key, value) =>
-                                                    updateSample(
-                                                        index,
-                                                        key,
-                                                        value,
-                                                    )
-                                                }
-                                                onDuplicate={() => {
-                                                    nextSampleFocusRef.current =
-                                                        index + 1;
-                                                    setExpandedSample(
-                                                        index + 1,
-                                                    );
-                                                    setSamples((current) => {
-                                                        const copy = {
-                                                            ...current[index],
-                                                            sample_code: '',
-                                                        };
-
-                                                        return [
-                                                            ...current.slice(
-                                                                0,
-                                                                index + 1,
-                                                            ),
-                                                            copy,
-                                                            ...current.slice(
-                                                                index + 1,
-                                                            ),
-                                                        ];
-                                                    });
-                                                }}
-                                                onRemove={() => {
-                                                    setSamples((current) =>
-                                                        current.filter(
-                                                            (_, i) =>
-                                                                i !== index,
-                                                        ),
-                                                    );
-                                                    setActiveTestSample(
-                                                        (current) => {
-                                                            if (
-                                                                current > index
-                                                            ) {
-                                                                return (
-                                                                    current - 1
-                                                                );
-                                                            }
-
-                                                            return Math.min(
-                                                                current,
-                                                                Math.max(
-                                                                    0,
-                                                                    samples.length -
-                                                                        2,
-                                                                ),
-                                                            );
-                                                        },
-                                                    );
-                                                    setExpandedSample(
-                                                        (current) => {
-                                                            if (
-                                                                current === null
-                                                            ) {
-                                                                return null;
-                                                            }
-
-                                                            return current >
-                                                                index
-                                                                ? current - 1
-                                                                : Math.min(
-                                                                      current,
-                                                                      samples.length -
-                                                                          2,
-                                                                  );
-                                                        },
-                                                    );
-                                                }}
-                                            />
-                                        ))}
-
-                                        <Button
-                                            type="button"
-                                            className="h-9 gap-1.5 bg-nppc-50 px-3.5 text-xs font-semibold text-nppc-900 hover:bg-nppc-100"
-                                            onClick={() => {
-                                                nextSampleFocusRef.current =
-                                                    samples.length;
-                                                setExpandedSample(
-                                                    samples.length,
-                                                );
-                                                setSamples((current) => [
-                                                    ...current,
-                                                    emptySample(),
-                                                ]);
-                                            }}
-                                        >
-                                            <Plus className="size-3.5" />
-                                            Add another sample
-                                        </Button>
-                                    </div>
-
-                                    <IntakeSamplesTip />
-                                </div>
-
-                                <aside className="sticky top-2 hidden self-start lg:block">
-                                    <TestsRequestSummary
-                                        packages={scopedPackages}
-                                        samples={sampleSelectionSummaries}
-                                        catalogItems={catalogItemsForSummary}
-                                        otherTests={otherTests}
-                                        estimatedTotal={estimatedTotal}
-                                        customerName={customer.customer_name}
-                                        variant="sidebar"
-                                        mode="samples"
-                                    />
+                                    <IntakeAlert
+                                        variant="warning"
+                                        title="Chain of Custody Notice"
+                                        className="shrink-0 px-2.5 py-2.5 text-xs"
+                                    >
+                                        <p>
+                                            Bring labeled samples to Receiving
+                                            during counter hours. Integrity is
+                                            verified at drop-off before analysis
+                                            begins.
+                                        </p>
+                                        <p className="mt-1.5 font-medium text-amber-900">
+                                            Receiving Hours: 8:00 AM – 5:00 PM
+                                        </p>
+                                    </IntakeAlert>
                                 </aside>
                             </div>
+                        )}
 
-                            <div className="lg:hidden">
-                                <button
-                                    type="button"
-                                    className="flex w-full items-center justify-between rounded-lg border border-nppc-900/20 bg-nppc-50 px-3 py-2 text-xs font-medium text-nppc-900"
-                                    aria-expanded={mobileSummaryOpen}
-                                    onClick={() =>
-                                        setMobileSummaryOpen((open) => !open)
+                        {step === 2 && (
+                            <div className="flex w-full flex-col gap-2 pb-0.5">
+                                <IntakeStepHeader
+                                    title="Samples"
+                                    badge="Step 3 of 5 · Specimens"
+                                    hint={
+                                        samples.length > 1
+                                            ? `${samples.length} samples in this request. Same classification only — other types need a new request.`
+                                            : 'Add the samples you are submitting today for laboratory analysis.'
                                     }
-                                >
-                                    <span>
-                                        {samples.length} sample
-                                        {samples.length === 1 ? '' : 's'} · ₱
-                                        {estimatedTotal.toFixed(2)}
-                                    </span>
-                                    <span>
-                                        {mobileSummaryOpen
-                                            ? 'Hide'
-                                            : 'View summary'}
-                                    </span>
-                                </button>
-                                {mobileSummaryOpen ? (
-                                    <div className="mt-1.5 rounded-lg border border-slate-200 bg-white p-3">
+                                    action={
+                                        <span className="text-nppc-800 inline-flex items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-[11px] font-medium">
+                                            <CircleHelp
+                                                className="size-3.5 text-nppc-700"
+                                                aria-hidden
+                                            />
+                                            Turnaround: 5–7 business days
+                                        </span>
+                                    }
+                                    className="shrink-0 [&_h2]:text-lg sm:[&_h2]:text-xl [&_p]:mt-0.5"
+                                />
+
+                                <div className="grid gap-2 lg:grid-cols-[minmax(0,1.55fr)_minmax(260px,0.78fr)] lg:items-start">
+                                    <div className="min-w-0 space-y-2">
+                                        <div className="space-y-2 rounded-xl border border-slate-200/80 bg-slate-50/50 p-2.5 sm:p-3">
+                                            {samples.map((sample, index) => (
+                                                <IntakeSampleRow
+                                                    key={index}
+                                                    sample={sample}
+                                                    index={index}
+                                                    expanded={
+                                                        samples.length === 1 ||
+                                                        expandedSample === index
+                                                    }
+                                                    collapsible={
+                                                        samples.length > 1
+                                                    }
+                                                    removable={
+                                                        samples.length > 1
+                                                    }
+                                                    onToggleExpand={() =>
+                                                        setExpandedSample(
+                                                            (current) =>
+                                                                current ===
+                                                                index
+                                                                    ? null
+                                                                    : index,
+                                                        )
+                                                    }
+                                                    onChange={(key, value) =>
+                                                        updateSample(
+                                                            index,
+                                                            key,
+                                                            value,
+                                                        )
+                                                    }
+                                                    onDuplicate={() => {
+                                                        nextSampleFocusRef.current =
+                                                            index + 1;
+                                                        setExpandedSample(
+                                                            index + 1,
+                                                        );
+                                                        setSamples(
+                                                            (current) => {
+                                                                const copy = {
+                                                                    ...current[
+                                                                        index
+                                                                    ],
+                                                                    sample_code:
+                                                                        '',
+                                                                };
+
+                                                                return [
+                                                                    ...current.slice(
+                                                                        0,
+                                                                        index +
+                                                                            1,
+                                                                    ),
+                                                                    copy,
+                                                                    ...current.slice(
+                                                                        index +
+                                                                            1,
+                                                                    ),
+                                                                ];
+                                                            },
+                                                        );
+                                                    }}
+                                                    onRemove={() => {
+                                                        setSamples((current) =>
+                                                            current.filter(
+                                                                (_, i) =>
+                                                                    i !== index,
+                                                            ),
+                                                        );
+                                                        setActiveTestSample(
+                                                            (current) => {
+                                                                if (
+                                                                    current >
+                                                                    index
+                                                                ) {
+                                                                    return (
+                                                                        current -
+                                                                        1
+                                                                    );
+                                                                }
+
+                                                                return Math.min(
+                                                                    current,
+                                                                    Math.max(
+                                                                        0,
+                                                                        samples.length -
+                                                                            2,
+                                                                    ),
+                                                                );
+                                                            },
+                                                        );
+                                                        setExpandedSample(
+                                                            (current) => {
+                                                                if (
+                                                                    current ===
+                                                                    null
+                                                                ) {
+                                                                    return null;
+                                                                }
+
+                                                                return current >
+                                                                    index
+                                                                    ? current -
+                                                                          1
+                                                                    : Math.min(
+                                                                          current,
+                                                                          samples.length -
+                                                                              2,
+                                                                      );
+                                                            },
+                                                        );
+                                                    }}
+                                                />
+                                            ))}
+
+                                            <Button
+                                                type="button"
+                                                className="h-9 gap-1.5 bg-sky-50 px-3.5 text-xs font-semibold text-nppc-900 hover:bg-sky-100"
+                                                onClick={() => {
+                                                    nextSampleFocusRef.current =
+                                                        samples.length;
+                                                    setExpandedSample(
+                                                        samples.length,
+                                                    );
+                                                    setSamples((current) => [
+                                                        ...current,
+                                                        emptySample(),
+                                                    ]);
+                                                }}
+                                            >
+                                                <Plus className="size-3.5" />
+                                                Add Another Sample
+                                            </Button>
+                                        </div>
+
+                                        <IntakeSamplesTip />
+                                    </div>
+
+                                    <aside className="hidden self-start lg:sticky lg:top-0 lg:block">
                                         <TestsRequestSummary
                                             packages={scopedPackages}
                                             samples={sampleSelectionSummaries}
@@ -2025,1188 +2176,395 @@ export default function IntakeWizard({
                                             customerName={
                                                 customer.customer_name
                                             }
-                                            variant="inline"
+                                            variant="sidebar"
                                             mode="samples"
                                         />
-                                    </div>
-                                ) : null}
+                                    </aside>
+                                </div>
+
+                                <div className="lg:hidden">
+                                    <button
+                                        type="button"
+                                        className="flex w-full items-center justify-between rounded-lg border border-nppc-900/20 bg-nppc-50 px-3 py-2 text-xs font-medium text-nppc-900"
+                                        aria-expanded={mobileSummaryOpen}
+                                        onClick={() =>
+                                            setMobileSummaryOpen(
+                                                (open) => !open,
+                                            )
+                                        }
+                                    >
+                                        <span>
+                                            {samples.length} sample
+                                            {samples.length === 1 ? '' : 's'} ·
+                                            ₱{estimatedTotal.toFixed(2)}
+                                        </span>
+                                        <span>
+                                            {mobileSummaryOpen
+                                                ? 'Hide'
+                                                : 'View summary'}
+                                        </span>
+                                    </button>
+                                    {mobileSummaryOpen ? (
+                                        <div className="mt-1.5">
+                                            <TestsRequestSummary
+                                                packages={scopedPackages}
+                                                samples={
+                                                    sampleSelectionSummaries
+                                                }
+                                                catalogItems={
+                                                    catalogItemsForSummary
+                                                }
+                                                otherTests={otherTests}
+                                                estimatedTotal={estimatedTotal}
+                                                customerName={
+                                                    customer.customer_name
+                                                }
+                                                variant="inline"
+                                                mode="samples"
+                                            />
+                                        </div>
+                                    ) : null}
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    {step === 1 && (
-                        <div className="w-full space-y-4 pb-4">
-                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(360px,1fr)] lg:items-start">
-                                <div className="min-w-0 space-y-3">
-                                    <IntakeStepHeader
-                                        title="Request details"
-                                        badge="Step 2 of 5 · Job specs & sampling site"
-                                        hint="Specify sample classification, source, collection timeline, and billing terms."
-                                    />
+                        {step === 1 && (
+                            <div className="flex w-full flex-col gap-2 pb-0.5">
+                                <IntakeStepHeader
+                                    title="Request Details"
+                                    badge="Step 2 of 5 · Job specs & sampling site"
+                                    hint="Specify sample classification, source, collection timeline, and billing terms."
+                                    className="shrink-0 [&_h2]:text-lg sm:[&_h2]:text-xl [&_p]:mt-0.5"
+                                />
 
-                                    <FormSection title="Classification" first>
-                                        <div
-                                            className="flex flex-wrap gap-2"
-                                            role="group"
-                                            aria-label="Sample classification"
+                                <div className="grid gap-2 lg:grid-cols-[minmax(0,1.55fr)_minmax(260px,0.78fr)] lg:items-start">
+                                    <div className="min-w-0 space-y-2.5">
+                                        <FormSection
+                                            title="Classification"
+                                            first
                                         >
-                                            {options.classifications.map(
-                                                (item) => {
-                                                    const active =
-                                                        classification === item;
-                                                    const Icon =
-                                                        CLASSIFICATION_ICONS[
-                                                            item
-                                                        ] ?? FlaskConical;
+                                            <div
+                                                className="flex flex-wrap gap-1.5"
+                                                role="group"
+                                                aria-label="Sample classification"
+                                            >
+                                                {options.classifications.map(
+                                                    (item) => {
+                                                        const active =
+                                                            classification ===
+                                                            item;
+                                                        const Icon =
+                                                            CLASSIFICATION_ICONS[
+                                                                item
+                                                            ] ?? FlaskConical;
 
-                                                    return (
-                                                        <button
-                                                            key={item}
-                                                            type="button"
-                                                            title={
-                                                                CLASSIFICATION_BLURBS[
-                                                                    item
-                                                                ] ??
-                                                                'Laboratory analysis request'
-                                                            }
-                                                            aria-pressed={
-                                                                active
-                                                            }
-                                                            onClick={() => {
-                                                                setClassification(
-                                                                    item,
-                                                                );
-                                                                setWastewaterSource(
-                                                                    '',
-                                                                );
-                                                                setWastewaterSourceOther(
-                                                                    '',
-                                                                );
-                                                                if (
-                                                                    item !==
-                                                                    'Wastewater'
-                                                                ) {
-                                                                    const kindSet =
-                                                                        new Set(
-                                                                            wastewaterKinds,
-                                                                        );
-                                                                    setWastewaterKind(
-                                                                        '',
-                                                                    );
-                                                                    setFo2NeedsKind(
-                                                                        false,
-                                                                    );
-                                                                    setSamples(
-                                                                        (current) =>
-                                                                            current.map(
-                                                                                (
-                                                                                    sample,
-                                                                                ) =>
-                                                                                    kindSet.has(
-                                                                                        sample.description,
-                                                                                    )
-                                                                                        ? {
-                                                                                              ...sample,
-                                                                                              description:
-                                                                                                  '',
-                                                                                          }
-                                                                                        : sample,
-                                                                            ),
-                                                                    );
+                                                        return (
+                                                            <ChoiceChip
+                                                                key={item}
+                                                                active={active}
+                                                                icon={Icon}
+                                                                title={
+                                                                    CLASSIFICATION_BLURBS[
+                                                                        item
+                                                                    ] ??
+                                                                    'Laboratory analysis request'
                                                                 }
-                                                                if (
-                                                                    item !==
-                                                                    'Others'
-                                                                ) {
-                                                                    setClassificationOther(
+                                                                onClick={() => {
+                                                                    setClassification(
+                                                                        item,
+                                                                    );
+                                                                    setWastewaterSource(
                                                                         '',
                                                                     );
+                                                                    setWastewaterSourceOther(
+                                                                        '',
+                                                                    );
+                                                                    if (
+                                                                        item !==
+                                                                        'Wastewater'
+                                                                    ) {
+                                                                        const kindSet =
+                                                                            new Set(
+                                                                                wastewaterKinds,
+                                                                            );
+                                                                        setWastewaterKind(
+                                                                            '',
+                                                                        );
+                                                                        setFo2NeedsKind(
+                                                                            false,
+                                                                        );
+                                                                        setSamples(
+                                                                            (
+                                                                                current,
+                                                                            ) =>
+                                                                                current.map(
+                                                                                    (
+                                                                                        sample,
+                                                                                    ) =>
+                                                                                        kindSet.has(
+                                                                                            sample.description,
+                                                                                        )
+                                                                                            ? {
+                                                                                                  ...sample,
+                                                                                                  description:
+                                                                                                      '',
+                                                                                              }
+                                                                                            : sample,
+                                                                                ),
+                                                                        );
+                                                                    }
+                                                                    if (
+                                                                        item !==
+                                                                        'Others'
+                                                                    ) {
+                                                                        setClassificationOther(
+                                                                            '',
+                                                                        );
+                                                                        setClassificationOtherSpecify(
+                                                                            '',
+                                                                        );
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {item}
+                                                            </ChoiceChip>
+                                                        );
+                                                    },
+                                                )}
+                                            </div>
+                                            {attemptedContinue &&
+                                            !classification ? (
+                                                <p
+                                                    className="mt-1.5 border-l-2 border-rose-300 py-1 pl-2 text-xs font-medium text-rose-700"
+                                                    role="alert"
+                                                    data-intake-error=""
+                                                >
+                                                    Please select a
+                                                    classification.
+                                                </p>
+                                            ) : null}
+                                            {classification === 'Others' && (
+                                                <div className="grid grid-cols-1 gap-2 pt-1 md:grid-cols-2">
+                                                    <IntakeField
+                                                        label="Parameter category"
+                                                        htmlFor="classification_other"
+                                                        required
+                                                        error={
+                                                            errors?.classification
+                                                        }
+                                                    >
+                                                        <Select
+                                                            value={
+                                                                classificationOther ||
+                                                                undefined
+                                                            }
+                                                            onValueChange={(
+                                                                value,
+                                                            ) => {
+                                                                setClassificationOther(
+                                                                    value,
+                                                                );
+                                                                if (
+                                                                    !isGenericOtherCategory(
+                                                                        value,
+                                                                    )
+                                                                ) {
                                                                     setClassificationOtherSpecify(
                                                                         '',
                                                                     );
                                                                 }
                                                             }}
-                                                            className={cn(
-                                                                'inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none',
-                                                                active
-                                                                    ? 'border-nppc-900 bg-nppc-900 text-white shadow-sm'
-                                                                    : 'border-slate-200 bg-white text-slate-700 hover:border-nppc-500',
-                                                            )}
                                                         >
-                                                            <Icon
-                                                                className="size-3.5 shrink-0"
-                                                                aria-hidden
+                                                            <SelectTrigger
+                                                                id="classification_other"
+                                                                className="h-9 w-full rounded-lg border-slate-200 bg-white text-sm shadow-none focus-visible:border-nppc-900 focus-visible:ring-nppc-900/20"
+                                                            >
+                                                                <SelectValue placeholder="Select category…" />
+                                                            </SelectTrigger>
+                                                            <SelectContent
+                                                                position="popper"
+                                                                align="start"
+                                                                className="max-h-80 w-[var(--radix-select-trigger-width)]"
+                                                            >
+                                                                {(
+                                                                    options.other_classification_options ??
+                                                                    []
+                                                                ).map(
+                                                                    (label) => (
+                                                                        <SelectItem
+                                                                            key={
+                                                                                label
+                                                                            }
+                                                                            value={
+                                                                                label
+                                                                            }
+                                                                        >
+                                                                            {
+                                                                                label
+                                                                            }
+                                                                        </SelectItem>
+                                                                    ),
+                                                                )}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </IntakeField>
+                                                    {isGenericOtherCategory(
+                                                        classificationOther,
+                                                    ) && (
+                                                        <IntakeField
+                                                            label="Specify"
+                                                            htmlFor="classification_other_specify"
+                                                            required
+                                                        >
+                                                            <Input
+                                                                id="classification_other_specify"
+                                                                className="h-9 text-sm"
+                                                                placeholder="Describe the analysis type"
+                                                                value={
+                                                                    classificationOtherSpecify
+                                                                }
+                                                                onChange={(e) =>
+                                                                    setClassificationOtherSpecify(
+                                                                        e.target
+                                                                            .value,
+                                                                    )
+                                                                }
                                                             />
-                                                            {item}
-                                                        </button>
-                                                    );
-                                                },
+                                                        </IntakeField>
+                                                    )}
+                                                </div>
                                             )}
-                                        </div>
-                                        {attemptedContinue &&
-                                        !classification ? (
-                                            <p
-                                                className="mt-1.5 border-l-2 border-rose-300 py-1 pl-2 text-xs font-medium text-rose-700"
-                                                role="alert"
-                                                data-intake-error=""
-                                            >
-                                                Please select a classification.
-                                            </p>
-                                        ) : null}
-                                        {classification === 'Others' && (
-                                            <div className="grid grid-cols-1 gap-2.5 pt-1 md:grid-cols-2">
-                                                <IntakeField
-                                                    label="Parameter category"
-                                                    htmlFor="classification_other"
-                                                    required
-                                                    error={
-                                                        errors?.classification
-                                                    }
-                                                >
-                                                    <Select
-                                                        value={
-                                                            classificationOther ||
-                                                            undefined
-                                                        }
-                                                        onValueChange={(
-                                                            value,
-                                                        ) => {
-                                                            setClassificationOther(
-                                                                value,
-                                                            );
-                                                            if (
-                                                                !isGenericOtherCategory(
-                                                                    value,
-                                                                )
-                                                            ) {
-                                                                setClassificationOtherSpecify(
-                                                                    '',
-                                                                );
-                                                            }
-                                                        }}
+                                            {classification ===
+                                                'Wastewater' && (
+                                                <div className="space-y-1.5 pt-1.5">
+                                                    <Label className="text-[11px] font-semibold tracking-wide text-slate-600">
+                                                        Sample description{' '}
+                                                        <span className="text-rose-600">
+                                                            *
+                                                        </span>
+                                                    </Label>
+                                                    <p className="text-[11px] leading-snug text-slate-500">
+                                                        Printed on the FO2
+                                                        result. Wastewater and
+                                                        River water default to
+                                                        the full physico panel;
+                                                        Abstracted water
+                                                        defaults to pH, DO, BOD,
+                                                        and TSS.
+                                                    </p>
+                                                    <div
+                                                        className="flex flex-wrap gap-1.5"
+                                                        role="group"
+                                                        aria-label="Sample description"
                                                     >
-                                                        <SelectTrigger
-                                                            id="classification_other"
-                                                            className="h-10 w-full rounded-lg border-slate-200 bg-white text-sm shadow-none focus-visible:border-nppc-900 focus-visible:ring-nppc-900/20"
-                                                        >
-                                                            <SelectValue placeholder="Select category…" />
-                                                        </SelectTrigger>
-                                                        <SelectContent
-                                                            position="popper"
-                                                            align="start"
-                                                            className="max-h-80 w-[var(--radix-select-trigger-width)]"
-                                                        >
-                                                            {(
-                                                                options.other_classification_options ??
-                                                                []
-                                                            ).map((label) => (
-                                                                <SelectItem
-                                                                    key={label}
-                                                                    value={
-                                                                        label
+                                                        {wastewaterKinds.map(
+                                                            (kind) => (
+                                                                <ChoiceChip
+                                                                    key={kind}
+                                                                    active={
+                                                                        wastewaterKind ===
+                                                                        kind
+                                                                    }
+                                                                    onClick={() =>
+                                                                        applyWastewaterKind(
+                                                                            wastewaterKind ===
+                                                                                kind
+                                                                                ? ''
+                                                                                : kind,
+                                                                        )
                                                                     }
                                                                 >
-                                                                    {label}
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </IntakeField>
-                                                {isGenericOtherCategory(
-                                                    classificationOther,
-                                                ) && (
-                                                    <IntakeField
-                                                        label="Specify"
-                                                        htmlFor="classification_other_specify"
-                                                        required
-                                                    >
-                                                        <Input
-                                                            id="classification_other_specify"
-                                                            className="h-10 text-sm"
-                                                            placeholder="Describe the analysis type"
-                                                            value={
-                                                                classificationOtherSpecify
-                                                            }
-                                                            onChange={(e) =>
-                                                                setClassificationOtherSpecify(
-                                                                    e.target
-                                                                        .value,
-                                                                )
-                                                            }
-                                                        />
-                                                    </IntakeField>
-                                                )}
-                                            </div>
-                                        )}
-                                        {classification === 'Wastewater' && (
-                                            <div className="space-y-2 pt-2">
-                                                <Label
-                                                    htmlFor="wastewater_kind"
-                                                    className="text-xs font-semibold text-slate-700"
-                                                >
-                                                    Sample description{' '}
-                                                    <span className="text-rose-600">
-                                                        *
-                                                    </span>
-                                                </Label>
-                                                <p className="text-[11px] text-slate-500">
-                                                    Printed on the FO2 result.
-                                                    Wastewater and River water
-                                                    default to the full physico
-                                                    panel; Abstracted water
-                                                    defaults to pH, DO, BOD, and
-                                                    TSS.
-                                                </p>
-                                                <div
-                                                    className="flex flex-wrap gap-2"
-                                                    role="group"
-                                                    aria-label="Sample description"
-                                                >
-                                                    {wastewaterKinds.map(
-                                                        (kind) => (
-                                                            <ChoiceChip
-                                                                key={kind}
-                                                                active={
-                                                                    wastewaterKind ===
-                                                                    kind
-                                                                }
-                                                                onClick={() =>
-                                                                    applyWastewaterKind(
-                                                                        wastewaterKind ===
-                                                                            kind
-                                                                            ? ''
-                                                                            : kind,
-                                                                    )
-                                                                }
-                                                            >
-                                                                {kind}
-                                                            </ChoiceChip>
-                                                        ),
-                                                    )}
-                                                </div>
-                                                {attemptedContinue &&
-                                                !wastewaterKind ? (
-                                                    <p
-                                                        className="border-l-2 border-rose-300 py-1 pl-2 text-xs font-medium text-rose-700"
-                                                        role="alert"
-                                                        data-intake-error=""
-                                                    >
-                                                        Choose Wastewater, River
-                                                        water, or Abstracted
-                                                        water.
-                                                    </p>
-                                                ) : null}
-                                            </div>
-                                        )}
-                                    </FormSection>
-                                </div>
-
-                                <IntakePanel
-                                    title="Request snapshot"
-                                    action={
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-6 border-nppc-900/25 px-2 text-[11px] text-nppc-900 hover:bg-nppc-50"
-                                            onClick={() => setStep(0)}
-                                        >
-                                            Edit
-                                        </Button>
-                                    }
-                                >
-                                    <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
-                                        {(
-                                            [
-                                                [
-                                                    'Customer',
-                                                    customer.customer_name.trim() ||
-                                                        '—',
-                                                ],
-                                                [
-                                                    'Email',
-                                                    customer.customer_email.trim() ||
-                                                        '—',
-                                                ],
-                                                [
-                                                    'Company',
-                                                    customer.company_name.trim() ||
-                                                        '—',
-                                                ],
-                                                [
-                                                    'Ownership',
-                                                    ownershipType.trim() || '—',
-                                                ],
-                                                [
-                                                    'Classification',
-                                                    classification
-                                                        ? resolvedClassification ||
-                                                          classification
-                                                        : 'Not selected',
-                                                ],
-                                                [
-                                                    'Payment',
-                                                    PAYMENT_MODE_OPTIONS.find(
-                                                        (o) =>
-                                                            o.value ===
-                                                            paymentMode,
-                                                    )?.label ?? 'Not selected',
-                                                ],
-                                            ] as const
-                                        ).map(([label, value]) => (
-                                            <div
-                                                key={label}
-                                                className="min-w-0"
-                                            >
-                                                <dt className="text-[9px] font-semibold tracking-wider text-slate-500 uppercase">
-                                                    {label}
-                                                </dt>
-                                                <dd className="truncate text-xs leading-tight text-slate-800">
-                                                    {value}
-                                                </dd>
-                                            </div>
-                                        ))}
-                                    </dl>
-                                </IntakePanel>
-                            </div>
-
-                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(360px,1fr)] lg:items-start">
-                                <div className="space-y-3">
-                                <IntakePanel
-                                    title="Sampling details"
-                                    description="Document custody on-site conditions, personnel, and timestamp."
-                                >
-                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                                        <IntakeField
-                                            label="Sampling date"
-                                            htmlFor="sampling_date"
-                                            hint="(YYYY-MM-DD)"
-                                        >
-                                            <Input
-                                                id="sampling_date"
-                                                type="date"
-                                                className="h-10 w-full border-slate-200 bg-white text-sm"
-                                                value={samplingDate}
-                                                onChange={(e) =>
-                                                    setSamplingDate(
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                        </IntakeField>
-                                        <IntakeField
-                                            label="Sampling time"
-                                            htmlFor="sampling_time"
-                                        >
-                                            <Input
-                                                id="sampling_time"
-                                                type="time"
-                                                className="h-10 w-full border-slate-200 bg-white text-sm"
-                                                value={samplingTime}
-                                                onChange={(e) =>
-                                                    setSamplingTime(
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                        </IntakeField>
-                                        <IntakeField
-                                            label="Sample collected by"
-                                            htmlFor="sample_collected_by"
-                                            className="md:col-span-2"
-                                        >
-                                            <Input
-                                                id="sample_collected_by"
-                                                className="h-10 w-full border-slate-200 bg-white text-sm"
-                                                value={sampleCollectedBy}
-                                                onChange={(e) =>
-                                                    setSampleCollectedBy(
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                        </IntakeField>
-                                        {needsSpecimen ? (
-                                            <IntakeField
-                                                label="Specimen"
-                                                htmlFor="specimen"
-                                                error={errors?.specimen}
-                                                hint="Printed on Food / Proximate result sheets when mapped in Form Designer."
-                                                className="md:col-span-2"
-                                            >
-                                                <Input
-                                                    id="specimen"
-                                                    className="h-10 w-full border-slate-200 bg-white text-sm"
-                                                    placeholder="e.g. Dried fish / Chicken breast"
-                                                    value={specimen}
-                                                    onChange={(e) =>
-                                                        setSpecimen(
-                                                            e.target.value,
-                                                        )
-                                                    }
-                                                />
-                                            </IntakeField>
-                                        ) : null}
-                                        <IntakeField
-                                            label="Sampling site"
-                                            htmlFor="sampling_site"
-                                            error={errors?.sampling_site}
-                                        >
-                                            <Input
-                                                id="sampling_site"
-                                                className="h-10 w-full border-slate-200 bg-white text-sm"
-                                                placeholder="e.g. Plant gate / Well location"
-                                                value={samplingSite}
-                                                onChange={(e) =>
-                                                    setSamplingSite(
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                        </IntakeField>
-                                        <IntakeField
-                                            label="Sample storage temp."
-                                            htmlFor="sample_storage_temp"
-                                            hint="(as received)"
-                                        >
-                                            <Input
-                                                id="sample_storage_temp"
-                                                className="h-10 w-full border-slate-200 bg-white text-sm"
-                                                placeholder="e.g. Ambient / 4°C"
-                                                value={sampleStorageTemp}
-                                                onChange={(e) =>
-                                                    setSampleStorageTemp(
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                        </IntakeField>
-                                        {classification !== 'Aqua' && (
-                                            <div className="md:col-span-2">
-                                                {potabilityOpen ? (
-                                                    <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50/60 p-2.5">
-                                                        <div className="flex items-center justify-between gap-2">
-                                                            <Label>
-                                                                Field data
-                                                                (Potability)
-                                                            </Label>
-                                                            <button
-                                                                type="button"
-                                                                className="text-xs font-medium text-nppc-700 hover:underline"
-                                                                onClick={() =>
-                                                                    setPotabilityOpen(
-                                                                        false,
-                                                                    )
-                                                                }
-                                                            >
-                                                                Hide
-                                                            </button>
-                                                        </div>
-                                                        <label className="flex min-h-8 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs">
-                                                            <Checkbox
-                                                                checked={
-                                                                    sterileBottle
-                                                                }
-                                                                onCheckedChange={(
-                                                                    checked,
-                                                                ) =>
-                                                                    setSterileBottle(
-                                                                        checked ===
-                                                                            true,
-                                                                    )
-                                                                }
-                                                            />
-                                                            <span>
-                                                                Water in sterile
-                                                                bottle
-                                                            </span>
-                                                        </label>
-                                                        <Textarea
-                                                            id="field_data"
-                                                            rows={2}
-                                                            className="min-h-0 bg-white py-2 text-sm"
-                                                            placeholder="Other potability notes or site observations (optional)"
-                                                            value={fieldData}
-                                                            onChange={(e) =>
-                                                                setFieldData(
-                                                                    e.target
-                                                                        .value,
-                                                                )
-                                                            }
-                                                        />
-                                                    </div>
-                                                ) : (
-                                                    <Button
-                                                        type="button"
-                                                        variant="outline"
-                                                        className="h-9 w-full border-dashed border-nppc-900/40 text-xs text-nppc-900 hover:bg-nppc-50 sm:w-auto"
-                                                        onClick={() =>
-                                                            setPotabilityOpen(
-                                                                true,
-                                                            )
-                                                        }
-                                                    >
-                                                        <Plus className="size-3.5" />
-                                                        {hasPotabilityData
-                                                            ? 'Edit potability field data'
-                                                            : 'Add potability field data'}
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </IntakePanel>
-
-                                    <IntakePanel
-                                        title="Sample source"
-                                        description="Where the specimen was obtained."
-                                    >
-                                        <div className="flex flex-wrap gap-2">
-                                            {(classification === 'Aqua'
-                                                ? options.aqua_sources
-                                                : options.wastewater_sources
-                                            ).map((item) => (
-                                                <ChoiceChip
-                                                    key={item}
-                                                    active={
-                                                        wastewaterSource ===
-                                                        item
-                                                    }
-                                                    onClick={() => {
-                                                        setWastewaterSource(
-                                                            wastewaterSource ===
-                                                                item
-                                                                ? ''
-                                                                : item,
-                                                        );
-                                                        if (
-                                                            item !== 'Others'
-                                                        ) {
-                                                            setWastewaterSourceOther(
-                                                                '',
-                                                            );
-                                                        }
-                                                    }}
-                                                >
-                                                    {item}
-                                                </ChoiceChip>
-                                            ))}
-                                        </div>
-                                        {wastewaterSource === 'Others' && (
-                                            <Input
-                                                className="mt-2 h-10 text-sm"
-                                                placeholder="Please specify sample source"
-                                                value={wastewaterSourceOther}
-                                                onChange={(e) =>
-                                                    setWastewaterSourceOther(
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                        )}
-                                    </IntakePanel>
-                                </div>
-
-                                <div className="space-y-3">
-                                    <IntakePanel
-                                        title="Payment method"
-                                        description="How settlement will be handled at reception."
-                                    >
-                                        <div className="flex flex-col gap-2">
-                                            {PAYMENT_MODE_OPTIONS.map(
-                                                (option) => (
-                                                    <RadioOption
-                                                        key={option.value}
-                                                        name="payment_mode"
-                                                        value={option.value}
-                                                        checked={
-                                                            paymentMode ===
-                                                            option.value
-                                                        }
-                                                        label={option.label}
-                                                        hint={option.hint}
-                                                        badge={option.badge}
-                                                        onChange={() => {
-                                                            setPaymentMode(
-                                                                option.value,
-                                                            );
-                                                            if (
-                                                                option.value !==
-                                                                'billing_partial'
-                                                            ) {
-                                                                setPaymentTerms(
-                                                                    '',
-                                                                );
-                                                            }
-                                                        }}
-                                                    />
-                                                ),
-                                            )}
-                                        </div>
-                                        {errors?.payment_mode ? (
-                                            <IntakeAlert
-                                                variant="error"
-                                                className="mt-2"
-                                                data-intake-error=""
-                                            >
-                                                {errors.payment_mode}
-                                            </IntakeAlert>
-                                        ) : null}
-                                        {paymentMode ===
-                                            'billing_partial' && (
-                                            <div className="mt-2 space-y-2 border-t border-slate-200 pt-2">
-                                                <Label>
-                                                    Payment terms *{' '}
-                                                    <span className="font-normal text-slate-500">
-                                                        (required for Billing /
-                                                        Partial)
-                                                    </span>
-                                                </Label>
-                                                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                                                    {PAYMENT_TERMS_OPTIONS.map(
-                                                        (option) => (
-                                                            <RadioOption
-                                                                key={
-                                                                    option.value
-                                                                }
-                                                                name="payment_terms"
-                                                                value={
-                                                                    option.value
-                                                                }
-                                                                checked={
-                                                                    paymentTerms ===
-                                                                    option.value
-                                                                }
-                                                                label={
-                                                                    option.label
-                                                                }
-                                                                onChange={() =>
-                                                                    setPaymentTerms(
-                                                                        option.value,
-                                                                    )
-                                                                }
-                                                            />
-                                                        ),
-                                                    )}
-                                                </div>
-                                                {errors?.payment_terms ? (
-                                                    <IntakeAlert
-                                                        variant="error"
-                                                        data-intake-error=""
-                                                    >
-                                                        {errors.payment_terms}
-                                                    </IntakeAlert>
-                                                ) : null}
-                                            </div>
-                                        )}
-                                    </IntakePanel>
-
-                                    <IntakeAlert variant="info">
-                                        All microbiology samples must reach the
-                                        analytical holding chamber within{' '}
-                                        <strong>24 hours of collection</strong>{' '}
-                                        under verified cold chain conditions
-                                        (&lt; 10°C).
-                                    </IntakeAlert>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {step === 3 && (
-                        <div className="w-full space-y-3">
-                            <IntakeStepHeader
-                                title="Select Tests"
-                                badge="Step 4 of 5 · Test parameters"
-                                hint={
-                                    samples.length > 1
-                                        ? 'Each sample is billed separately · …A / …B on forms.'
-                                        : 'Select packages or individual analyses for this sample.'
-                                }
-                                action={
-                                    <span className="inline-flex items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-[11px] font-medium text-nppc-800">
-                                        <CircleHelp
-                                            className="size-3.5 text-nppc-700"
-                                            aria-hidden
-                                        />
-                                        Turnaround: 5–7 business days
-                                    </span>
-                                }
-                            />
-
-                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.9fr)] lg:items-start">
-                                <div className="min-w-0 space-y-3">
-                                    {(() => {
-                                        const sampleIndex = activeTestSample;
-                                        const sample =
-                                            samples[sampleIndex] ?? samples[0];
-                                        if (!sample) {
-                                            return null;
-                                        }
-
-                                        const individualCount =
-                                            individualSelectedCountFor(sample);
-                                        const missingSelection =
-                                            attemptedContinue &&
-                                            !sampleHasSelection(
-                                                sample,
-                                                sampleIndex,
-                                            );
-                                        const packageCoveredIds = new Set<number>();
-                                        sample.package_ids.forEach((pkgId) => {
-                                            const pkg = packages.find(
-                                                (row) => row.id === pkgId,
-                                            );
-                                            pkg?.analysis_type_ids.forEach(
-                                                (id) => {
-                                                    if (
-                                                        sample.analysis_type_ids.includes(
-                                                            id,
-                                                        )
-                                                    ) {
-                                                        packageCoveredIds.add(
-                                                            id,
-                                                        );
-                                                    }
-                                                },
-                                            );
-                                        });
-                                        const sampleMeta = [
-                                            sample.description.trim() || null,
-                                            sample.quantity.trim()
-                                                ? `${sample.quantity.trim()}${sample.unit.trim() ? ` ${sample.unit.trim()}` : ''}`
-                                                : null,
-                                            sample.matrix.trim() || null,
-                                        ]
-                                            .filter(Boolean)
-                                            .join(' · ');
-
-                                        return (
-                                            <>
-                                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                                    <IntakeSampleSwitcher
-                                                        samples={samples.map(
-                                                            (row, index) => ({
-                                                                label: `Sample ${index + 1}${
-                                                                    row.sample_code.trim()
-                                                                        ? ` (#${row.sample_code.trim()})`
-                                                                        : ''
-                                                                }`,
-                                                                hasSelection:
-                                                                    sampleHasSelection(
-                                                                        row,
-                                                                        index,
-                                                                    ),
-                                                                analysisCount:
-                                                                    row
-                                                                        .analysis_type_ids
-                                                                        .length,
-                                                            }),
+                                                                    {kind}
+                                                                </ChoiceChip>
+                                                            ),
                                                         )}
-                                                        activeIndex={
-                                                            sampleIndex
-                                                        }
-                                                        onSelect={
-                                                            setActiveTestSample
-                                                        }
-                                                        showMissing={
-                                                            attemptedContinue
-                                                        }
-                                                        meta={
-                                                            samples.length === 1
-                                                                ? sampleMeta
-                                                                : sampleMeta ||
-                                                                  `Sample ${sampleIndex + 1}`
-                                                        }
-                                                    />
-                                                    {sampleIndex > 0 ? (
-                                                        <button
-                                                            type="button"
-                                                            className="text-[11px] font-medium text-nppc-700 hover:underline focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none"
-                                                            onClick={() =>
-                                                                copyTestsFromSample(
-                                                                    0,
-                                                                    sampleIndex,
-                                                                )
-                                                            }
+                                                    </div>
+                                                    {attemptedContinue &&
+                                                    !wastewaterKind ? (
+                                                        <p
+                                                            className="border-l-2 border-rose-300 py-1 pl-2 text-xs font-medium text-rose-700"
+                                                            role="alert"
+                                                            data-intake-error=""
                                                         >
-                                                            Same as Sample 1
-                                                        </button>
+                                                            Choose Wastewater,
+                                                            River water, or
+                                                            Abstracted water.
+                                                        </p>
                                                     ) : null}
                                                 </div>
+                                            )}
+                                        </FormSection>
 
-                                                {missingSelection ? (
-                                                    <IntakeAlert
-                                                        variant="error"
-                                                        data-intake-error=""
-                                                    >
-                                                        Select at least one
-                                                        package or test for this
-                                                        sample
-                                                        {sampleIndex === 0
-                                                            ? ', or describe another test below.'
-                                                            : '.'}
-                                                    </IntakeAlert>
-                                                ) : null}
-
-                                                {type_presets.length > 0 && (
-                                                    <div className="space-y-1.5">
-                                                        <p className="text-xs font-semibold text-slate-900">
-                                                            Test panels
-                                                        </p>
-                                                        {fo2NeedsKind ? (
-                                                            <IntakeAlert
-                                                                variant="error"
-                                                                data-intake-error=""
-                                                            >
-                                                                Choose a Sample
-                                                                description on
-                                                                Details
-                                                                (Wastewater,
-                                                                River water, or
-                                                                Abstracted
-                                                                water) before
-                                                                selecting the
-                                                                Physico-Chemical
-                                                                panel.
-                                                            </IntakeAlert>
-                                                        ) : null}
-                                                        <div className="space-y-1.5">
-                                                            {(suggestedTypePresets.length >
-                                                            0
-                                                                ? suggestedTypePresets
-                                                                : type_presets
-                                                            ).map((preset) =>
-                                                                renderTypePresetRow(
-                                                                    sampleIndex,
-                                                                    preset,
-                                                                ),
-                                                            )}
-                                                        </div>
-                                                        {suggestedTypePresets.length >
-                                                            0 &&
-                                                            otherTypePresets.length >
-                                                                0 && (
-                                                                <details className="group">
-                                                                    <summary className="cursor-pointer text-xs font-medium text-nppc-700 hover:underline [&::-webkit-details-marker]:hidden">
-                                                                        Other
-                                                                        panels (
-                                                                        {
-                                                                            otherTypePresets.length
-                                                                        }
-                                                                        )
-                                                                    </summary>
-                                                                    <div className="mt-1.5 space-y-1.5">
-                                                                        {otherTypePresets.map(
-                                                                            (
-                                                                                preset,
-                                                                            ) =>
-                                                                                renderTypePresetRow(
-                                                                                    sampleIndex,
-                                                                                    preset,
-                                                                                ),
-                                                                        )}
-                                                                    </div>
-                                                                </details>
-                                                            )}
-                                                    </div>
-                                                )}
-
-                                                {scopedPackages.length > 0 && (
-                                                    <div className="space-y-1.5">
-                                                        <p className="text-xs font-semibold text-slate-900">
-                                                            Recommended packages
-                                                        </p>
-                                                        <p className="text-[11px] text-slate-500">
-                                                            Start here — expand
-                                                            a package to see
-                                                            included tests
-                                                        </p>
-                                                        <div className="space-y-2">
-                                                            {(isAquaClassification
-                                                                ? scopedPackages
-                                                                : suggestedPackages.length >
-                                                                    0
-                                                                  ? suggestedPackages
-                                                                  : scopedPackages
-                                                            ).map((pkg) =>
-                                                                renderPackageRow(
-                                                                    sampleIndex,
-                                                                    pkg,
-                                                                ),
-                                                            )}
-                                                        </div>
-                                                        {!isAquaClassification &&
-                                                            suggestedPackages.length >
-                                                                0 &&
-                                                            otherPackages.length >
-                                                                0 && (
-                                                                <details className="group">
-                                                                    <summary className="cursor-pointer text-xs font-medium text-nppc-700 hover:underline [&::-webkit-details-marker]:hidden">
-                                                                        Other
-                                                                        packages
-                                                                        (
-                                                                        {
-                                                                            otherPackages.length
-                                                                        }
-                                                                        )
-                                                                    </summary>
-                                                                    <div className="mt-1.5 space-y-2">
-                                                                        {otherPackages.map(
-                                                                            (
-                                                                                pkg,
-                                                                            ) =>
-                                                                                renderPackageRow(
-                                                                                    sampleIndex,
-                                                                                    pkg,
-                                                                                ),
-                                                                        )}
-                                                                    </div>
-                                                                </details>
-                                                            )}
-                                                    </div>
-                                                )}
-
-                                                <div className="space-y-1.5 border-t border-slate-100 pt-2.5">
-                                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                                        <div className="min-w-0">
-                                                            <p className="text-xs font-semibold text-slate-900">
-                                                                Individual
-                                                                tests
-                                                                {individualCount >
-                                                                0
-                                                                    ? ` · ${individualCount} selected`
-                                                                    : ''}
-                                                            </p>
-                                                            <p className="text-[11px] text-slate-500">
-                                                                Secondary —
-                                                                packages cover
-                                                                most requests
-                                                            </p>
-                                                        </div>
-                                                        <Button
-                                                            type="button"
-                                                            variant="outline"
-                                                            size="sm"
-                                                            className="h-8 border-nppc-900/30 px-2.5 text-xs text-nppc-900 hover:bg-nppc-50"
-                                                            aria-expanded={
-                                                                Boolean(
-                                                                    browseOpenBySample[
-                                                                        sampleIndex
-                                                                    ],
-                                                                )
-                                                            }
-                                                            onClick={() =>
-                                                                setBrowseOpenBySample(
-                                                                    (current) => ({
-                                                                        ...current,
-                                                                        [sampleIndex]:
-                                                                            !current[
-                                                                                sampleIndex
-                                                                            ],
-                                                                    }),
-                                                                )
-                                                            }
-                                                        >
-                                                            {browseOpenBySample[
-                                                                sampleIndex
-                                                            ]
-                                                                ? 'Hide catalog'
-                                                                : 'View individual tests'}
-                                                        </Button>
-                                                    </div>
-
-                                                    {browseOpenBySample[
-                                                        sampleIndex
-                                                    ] && (
-                                                        <IntakeIndividualTestCatalog
-                                                            categories={
-                                                                scopedCategories
-                                                            }
-                                                            query={testsQuery}
-                                                            onQueryChange={
-                                                                setTestsQuery
-                                                            }
-                                                            activeCategory={
-                                                                activeCategory
-                                                            }
-                                                            onActiveCategoryChange={
-                                                                setActiveCategory
-                                                            }
-                                                            selectedTypeIds={
-                                                                new Set(
-                                                                    sample.analysis_type_ids,
-                                                                )
-                                                            }
-                                                            packageCoveredIds={
-                                                                packageCoveredIds
-                                                            }
-                                                            onToggleType={(
-                                                                id,
-                                                            ) =>
-                                                                toggleType(
-                                                                    sampleIndex,
-                                                                    id,
-                                                                )
-                                                            }
-                                                        />
-                                                    )}
-                                                </div>
-                                            </>
-                                        );
-                                    })()}
-
-                                    <FormSection title="Other / special test request">
-                                        <Textarea
-                                            id="other_tests"
-                                            rows={2}
-                                            className="w-full border-slate-200/80 bg-slate-50"
-                                            value={otherTests}
-                                            onChange={(e) =>
-                                                setOtherTests(e.target.value)
-                                            }
-                                            placeholder="Describe an analysis that is not listed…"
-                                        />
-                                    </FormSection>
-                                </div>
-
-                                <aside className="sticky top-2 hidden self-start lg:block">
-                                    <TestsRequestSummary
-                                        packages={scopedPackages}
-                                        samples={sampleSelectionSummaries}
-                                        catalogItems={catalogItemsForSummary}
-                                        otherTests={otherTests}
-                                        estimatedTotal={estimatedTotal}
-                                        customerName={customer.customer_name}
-                                        variant="sidebar"
-                                    />
-                                </aside>
-                            </div>
-
-                            <div className="lg:hidden">
-                                <button
-                                    type="button"
-                                    className="flex w-full items-center justify-between rounded-lg border border-nppc-900/20 bg-nppc-50 px-3 py-2 text-xs font-medium text-nppc-900"
-                                    aria-expanded={mobileSummaryOpen}
-                                    onClick={() =>
-                                        setMobileSummaryOpen((open) => !open)
-                                    }
-                                >
-                                    <span>
-                                        {totalSelectedAnalyses} analyses · ₱
-                                        {estimatedTotal.toFixed(2)}
-                                    </span>
-                                    <span>
-                                        {mobileSummaryOpen
-                                            ? 'Hide'
-                                            : 'View selected'}
-                                    </span>
-                                </button>
-                                {mobileSummaryOpen && (
-                                    <div className="mt-1.5 rounded-lg border border-slate-200 bg-white p-3">
-                                        <TestsRequestSummary
-                                            packages={scopedPackages}
-                                            samples={sampleSelectionSummaries}
-                                            catalogItems={
-                                                catalogItemsForSummary
-                                            }
-                                            otherTests={otherTests}
-                                            estimatedTotal={estimatedTotal}
-                                            customerName={
-                                                customer.customer_name
-                                            }
-                                            variant="inline"
-                                        />
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {step === 4 && (
-                        <div className="w-full space-y-3">
-                            <IntakeStepHeader
-                                title="Review your submission"
-                                badge="Step 5 of 5 · Final verification"
-                                hint="Double-check your information before submitting."
-                            />
-
-                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.9fr)] lg:items-start">
-                                <div className="min-w-0 space-y-2">
-                                    <ReviewCard
-                                        title="Customer information"
-                                        first
-                                        onEdit={() => setStep(0)}
-                                    >
-                                        <div className="grid gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-3">
-                                            <ReviewRow
-                                                label="Name"
-                                                value={customer.customer_name}
-                                            />
-                                            <ReviewRow
-                                                label="Email"
-                                                value={customer.customer_email}
-                                            />
-                                            <ReviewRow
-                                                label="Contact"
-                                                value={
-                                                    customer.customer_contact
-                                                }
-                                            />
-                                            <ReviewRow
-                                                label="Company"
-                                                value={customer.company_name}
-                                            />
-                                            <ReviewRow
-                                                label="Ownership"
-                                                value={ownershipType}
-                                            />
-                                            <ReviewRow
-                                                label="Address"
-                                                value={
-                                                    customer.customer_address
-                                                }
-                                                className="sm:col-span-2 xl:col-span-3"
-                                            />
-                                        </div>
-                                    </ReviewCard>
-
-                                    <ReviewCard
-                                        title="Job & sampling specifications"
-                                        onEdit={() => setStep(1)}
-                                    >
-                                        <div className="grid gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-3">
-                                            <ReviewRow
-                                                label="Classification"
-                                                value={resolvedClassification}
-                                            />
-                                            <ReviewRow
-                                                label="Sampling"
-                                                value={[
-                                                    samplingDate,
-                                                    samplingTime,
-                                                ]
-                                                    .filter(Boolean)
-                                                    .join(' ')}
-                                            />
-                                            <ReviewRow
-                                                label="Collected by"
-                                                value={sampleCollectedBy}
-                                            />
-                                            <ReviewRow
-                                                label="Sampling site"
-                                                value={samplingSite}
-                                            />
-                                            {needsSpecimen ? (
-                                                <div className="sm:col-span-2 xl:col-span-3">
+                                        <IntakePanel
+                                            title="Sampling Details"
+                                            className="[&_[data-intake-panel-body]]:p-2.5 sm:[&_[data-intake-panel-body]]:p-3 [&_[data-intake-panel-head]]:px-3 [&_[data-intake-panel-head]]:py-1.5 sm:[&_[data-intake-panel-head]]:px-3.5"
+                                        >
+                                            <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-x-3 md:gap-y-2">
+                                                <IntakeField
+                                                    label="Sampling Date"
+                                                    htmlFor="sampling_date"
+                                                    icon={Calendar}
+                                                >
+                                                    <Input
+                                                        id="sampling_date"
+                                                        type="date"
+                                                        className="h-9 w-full rounded-lg border-slate-200 bg-white text-sm"
+                                                        value={samplingDate}
+                                                        onChange={(e) =>
+                                                            setSamplingDate(
+                                                                e.target.value,
+                                                            )
+                                                        }
+                                                    />
+                                                </IntakeField>
+                                                <IntakeField
+                                                    label="Sampling Time"
+                                                    htmlFor="sampling_time"
+                                                    icon={Clock}
+                                                >
+                                                    <Input
+                                                        id="sampling_time"
+                                                        type="time"
+                                                        className="h-9 w-full rounded-lg border-slate-200 bg-white text-sm"
+                                                        value={samplingTime}
+                                                        onChange={(e) =>
+                                                            setSamplingTime(
+                                                                e.target.value,
+                                                            )
+                                                        }
+                                                    />
+                                                </IntakeField>
+                                                <IntakeField
+                                                    label="Sample Collected By"
+                                                    htmlFor="sample_collected_by"
+                                                    icon={UserRound}
+                                                    className="md:col-span-2"
+                                                >
+                                                    <Input
+                                                        id="sample_collected_by"
+                                                        className="h-9 w-full rounded-lg border-slate-200 bg-white text-sm"
+                                                        placeholder="Collector name"
+                                                        value={
+                                                            sampleCollectedBy
+                                                        }
+                                                        onChange={(e) =>
+                                                            setSampleCollectedBy(
+                                                                e.target.value,
+                                                            )
+                                                        }
+                                                    />
+                                                </IntakeField>
+                                                {needsSpecimen ? (
                                                     <IntakeField
                                                         label="Specimen"
-                                                        htmlFor="specimen_review"
+                                                        htmlFor="specimen"
                                                         error={errors?.specimen}
+                                                        hint="(food / proximate sheets)"
+                                                        className="md:col-span-2"
                                                     >
                                                         <Input
-                                                            id="specimen_review"
-                                                            className="h-11 w-full border-slate-200 bg-white text-sm"
+                                                            id="specimen"
+                                                            className="h-9 w-full rounded-lg border-slate-200 bg-white text-sm"
                                                             placeholder="e.g. Dried fish / Chicken breast"
                                                             value={specimen}
                                                             onChange={(e) =>
@@ -3217,356 +2575,1369 @@ export default function IntakeWizard({
                                                             }
                                                         />
                                                     </IntakeField>
-                                                </div>
-                                            ) : null}
-                                            <ReviewRow
-                                                label="Sample source"
-                                                value={resolvedSampleSource}
-                                            />
-                                            <ReviewRow
-                                                label="Storage temp"
-                                                value={sampleStorageTemp}
-                                            />
-                                            <ReviewRow
-                                                label="Payment"
-                                                value={
-                                                    paymentMode
-                                                        ? [
-                                                              PAYMENT_MODE_OPTIONS.find(
-                                                                  (o) =>
-                                                                      o.value ===
-                                                                      paymentMode,
-                                                              )?.label ??
-                                                                  paymentMode,
-                                                              paymentMode ===
-                                                                  'billing_partial' &&
-                                                              paymentTerms
-                                                                  ? PAYMENT_TERMS_OPTIONS.find(
-                                                                        (o) =>
-                                                                            o.value ===
-                                                                            paymentTerms,
-                                                                    )?.label
-                                                                  : null,
-                                                          ]
-                                                              .filter(Boolean)
-                                                              .join(' · ')
-                                                        : ''
-                                                }
-                                            />
-                                        </div>
-                                    </ReviewCard>
-
-                                    <ReviewCard
-                                        title="Registered samples & tests"
-                                        onEdit={() => setStep(2)}
-                                    >
-                                        <ul className="space-y-2">
-                                            {samples.map((sample, index) => {
-                                                const summary =
-                                                    sampleSelectionSummaries[
-                                                        index
-                                                    ];
-                                                const covered =
-                                                    new Set<number>();
-                                                summary?.package_ids.forEach(
-                                                    (pkgId) => {
-                                                        const pkg =
-                                                            packages.find(
-                                                                (row) =>
-                                                                    row.id ===
-                                                                    pkgId,
-                                                            );
-                                                        pkg?.analysis_type_ids.forEach(
-                                                            (id) => {
-                                                                if (
-                                                                    summary.analysis_type_ids.includes(
-                                                                        id,
+                                                ) : null}
+                                                <IntakeField
+                                                    label="Sampling Site"
+                                                    htmlFor="sampling_site"
+                                                    icon={MapPin}
+                                                    error={
+                                                        errors?.sampling_site
+                                                    }
+                                                >
+                                                    <Input
+                                                        id="sampling_site"
+                                                        className="h-9 w-full rounded-lg border-slate-200 bg-white text-sm"
+                                                        placeholder="e.g. Plant gate / Well location"
+                                                        value={samplingSite}
+                                                        onChange={(e) =>
+                                                            setSamplingSite(
+                                                                e.target.value,
+                                                            )
+                                                        }
+                                                    />
+                                                </IntakeField>
+                                                <IntakeField
+                                                    label="Sample Storage Temp."
+                                                    htmlFor="sample_storage_temp"
+                                                    hint="(as received)"
+                                                    icon={Thermometer}
+                                                >
+                                                    <Input
+                                                        id="sample_storage_temp"
+                                                        className="h-9 w-full rounded-lg border-slate-200 bg-white text-sm"
+                                                        placeholder="e.g. Ambient / 4°C"
+                                                        value={
+                                                            sampleStorageTemp
+                                                        }
+                                                        onChange={(e) =>
+                                                            setSampleStorageTemp(
+                                                                e.target.value,
+                                                            )
+                                                        }
+                                                    />
+                                                </IntakeField>
+                                                {classification !== 'Aqua' && (
+                                                    <div className="md:col-span-2">
+                                                        {potabilityOpen ? (
+                                                            <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50/60 p-2.5">
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <Label>
+                                                                        Field
+                                                                        data
+                                                                        (Potability)
+                                                                    </Label>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="text-xs font-medium text-nppc-700 hover:underline"
+                                                                        onClick={() =>
+                                                                            setPotabilityOpen(
+                                                                                false,
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        Hide
+                                                                    </button>
+                                                                </div>
+                                                                <label className="flex min-h-8 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs">
+                                                                    <Checkbox
+                                                                        checked={
+                                                                            sterileBottle
+                                                                        }
+                                                                        onCheckedChange={(
+                                                                            checked,
+                                                                        ) =>
+                                                                            setSterileBottle(
+                                                                                checked ===
+                                                                                    true,
+                                                                            )
+                                                                        }
+                                                                    />
+                                                                    <span>
+                                                                        Water in
+                                                                        sterile
+                                                                        bottle
+                                                                    </span>
+                                                                </label>
+                                                                <Textarea
+                                                                    id="field_data"
+                                                                    rows={2}
+                                                                    className="min-h-0 bg-white py-1.5 text-sm"
+                                                                    placeholder="Other potability notes or site observations (optional)"
+                                                                    value={
+                                                                        fieldData
+                                                                    }
+                                                                    onChange={(
+                                                                        e,
+                                                                    ) =>
+                                                                        setFieldData(
+                                                                            e
+                                                                                .target
+                                                                                .value,
+                                                                        )
+                                                                    }
+                                                                />
+                                                            </div>
+                                                        ) : (
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                className="h-9 w-full border-dashed border-nppc-900/40 text-xs text-nppc-900 hover:bg-nppc-50 sm:w-auto"
+                                                                onClick={() =>
+                                                                    setPotabilityOpen(
+                                                                        true,
                                                                     )
+                                                                }
+                                                            >
+                                                                <Plus className="size-3.5" />
+                                                                {hasPotabilityData
+                                                                    ? 'Edit Potability Field Data'
+                                                                    : 'Add Potability Field Data'}
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </IntakePanel>
+                                    </div>
+
+                                    <aside className="space-y-2 lg:sticky lg:top-0">
+                                        <IntakePanel
+                                            title="Sample Source"
+                                            className="[&_[data-intake-panel-body]]:p-2.5 sm:[&_[data-intake-panel-body]]:p-3 [&_[data-intake-panel-head]]:px-3 [&_[data-intake-panel-head]]:py-1.5"
+                                        >
+                                            <div
+                                                className="flex flex-wrap gap-1.5"
+                                                role="group"
+                                                aria-label="Sample source"
+                                            >
+                                                {(classification === 'Aqua'
+                                                    ? options.aqua_sources
+                                                    : options.wastewater_sources
+                                                ).map((item) => (
+                                                    <ChoiceChip
+                                                        key={item}
+                                                        active={
+                                                            wastewaterSource ===
+                                                            item
+                                                        }
+                                                        icon={
+                                                            SOURCE_ICONS[
+                                                                item
+                                                            ] ?? Droplets
+                                                        }
+                                                        onClick={() => {
+                                                            setWastewaterSource(
+                                                                wastewaterSource ===
+                                                                    item
+                                                                    ? ''
+                                                                    : item,
+                                                            );
+                                                            if (
+                                                                item !==
+                                                                'Others'
+                                                            ) {
+                                                                setWastewaterSourceOther(
+                                                                    '',
+                                                                );
+                                                            }
+                                                        }}
+                                                    >
+                                                        {item}
+                                                    </ChoiceChip>
+                                                ))}
+                                            </div>
+                                            {wastewaterSource === 'Others' && (
+                                                <Input
+                                                    className="mt-2 h-9 text-sm"
+                                                    placeholder="Please specify sample source"
+                                                    value={
+                                                        wastewaterSourceOther
+                                                    }
+                                                    onChange={(e) =>
+                                                        setWastewaterSourceOther(
+                                                            e.target.value,
+                                                        )
+                                                    }
+                                                />
+                                            )}
+                                        </IntakePanel>
+
+                                        <IntakePanel
+                                            title="Payment Method"
+                                            className="[&_[data-intake-panel-body]]:p-2.5 sm:[&_[data-intake-panel-body]]:p-3 [&_[data-intake-panel-head]]:px-3 [&_[data-intake-panel-head]]:py-1.5"
+                                        >
+                                            <div className="flex flex-col gap-1.5">
+                                                {PAYMENT_MODE_OPTIONS.map(
+                                                    (option) => (
+                                                        <RadioOption
+                                                            key={option.value}
+                                                            name="payment_mode"
+                                                            value={option.value}
+                                                            checked={
+                                                                paymentMode ===
+                                                                option.value
+                                                            }
+                                                            label={option.label}
+                                                            hint={option.hint}
+                                                            badge={option.badge}
+                                                            onChange={() => {
+                                                                setPaymentMode(
+                                                                    option.value,
+                                                                );
+                                                                if (
+                                                                    option.value !==
+                                                                    'billing_partial'
                                                                 ) {
-                                                                    covered.add(
-                                                                        id,
+                                                                    setPaymentTerms(
+                                                                        '',
                                                                     );
                                                                 }
-                                                            },
-                                                        );
-                                                    },
+                                                            }}
+                                                        />
+                                                    ),
+                                                )}
+                                            </div>
+                                            {errors?.payment_mode ? (
+                                                <IntakeAlert
+                                                    variant="error"
+                                                    className="mt-2"
+                                                    data-intake-error=""
+                                                >
+                                                    {errors.payment_mode}
+                                                </IntakeAlert>
+                                            ) : null}
+                                            {paymentMode ===
+                                                'billing_partial' && (
+                                                <div className="mt-2 space-y-1.5 border-t border-slate-200 pt-2">
+                                                    <Label className="text-[11px] font-semibold tracking-wide text-slate-600">
+                                                        Payment terms{' '}
+                                                        <span className="text-rose-600">
+                                                            *
+                                                        </span>
+                                                    </Label>
+                                                    <div className="grid grid-cols-2 gap-1.5">
+                                                        {PAYMENT_TERMS_OPTIONS.map(
+                                                            (option) => (
+                                                                <RadioOption
+                                                                    key={
+                                                                        option.value
+                                                                    }
+                                                                    name="payment_terms"
+                                                                    value={
+                                                                        option.value
+                                                                    }
+                                                                    checked={
+                                                                        paymentTerms ===
+                                                                        option.value
+                                                                    }
+                                                                    label={
+                                                                        option.label
+                                                                    }
+                                                                    onChange={() =>
+                                                                        setPaymentTerms(
+                                                                            option.value,
+                                                                        )
+                                                                    }
+                                                                />
+                                                            ),
+                                                        )}
+                                                    </div>
+                                                    {errors?.payment_terms ? (
+                                                        <IntakeAlert
+                                                            variant="error"
+                                                            data-intake-error=""
+                                                        >
+                                                            {
+                                                                errors.payment_terms
+                                                            }
+                                                        </IntakeAlert>
+                                                    ) : null}
+                                                </div>
+                                            )}
+                                        </IntakePanel>
+
+                                        <IntakeAlert
+                                            variant="info"
+                                            className="px-2.5 py-2 text-xs"
+                                        >
+                                            All microbiology samples must reach
+                                            the analytical holding chamber
+                                            within{' '}
+                                            <strong>
+                                                24 hours of collection
+                                            </strong>{' '}
+                                            under verified cold chain conditions
+                                            (&lt; 10°C).
+                                        </IntakeAlert>
+                                    </aside>
+                                </div>
+                            </div>
+                        )}
+
+                        {step === 3 && (
+                            <div className="flex w-full flex-col gap-2 pb-0.5">
+                                <IntakeStepHeader
+                                    title="Select Tests"
+                                    badge="Step 4 of 5 · Test parameters"
+                                    hint={
+                                        samples.length > 1
+                                            ? 'Each sample is billed separately · …A / …B on forms.'
+                                            : 'Select packages or individual analyses for this sample.'
+                                    }
+                                    action={
+                                        <span className="text-nppc-800 inline-flex items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-[11px] font-medium">
+                                            <CircleHelp
+                                                className="size-3.5 text-nppc-700"
+                                                aria-hidden
+                                            />
+                                            Turnaround: 5–7 business days
+                                        </span>
+                                    }
+                                    className="shrink-0 [&_h2]:text-lg sm:[&_h2]:text-xl [&_p]:mt-0.5"
+                                />
+
+                                <div className="grid gap-2 lg:grid-cols-[minmax(0,1.55fr)_minmax(260px,0.78fr)] lg:items-start">
+                                    <div className="min-w-0 space-y-2.5">
+                                        {(() => {
+                                            const sampleIndex =
+                                                activeTestSample;
+                                            const sample =
+                                                samples[sampleIndex] ??
+                                                samples[0];
+                                            if (!sample) {
+                                                return null;
+                                            }
+
+                                            const individualCount =
+                                                individualSelectedCountFor(
+                                                    sample,
                                                 );
-                                                const paramLines =
-                                                    summary?.analysis_type_ids.map(
+                                            const missingSelection =
+                                                attemptedContinue &&
+                                                !sampleHasSelection(
+                                                    sample,
+                                                    sampleIndex,
+                                                );
+                                            const packageCoveredIds =
+                                                new Set<number>();
+                                            sample.package_ids.forEach(
+                                                (pkgId) => {
+                                                    const pkg = packages.find(
+                                                        (row) =>
+                                                            row.id === pkgId,
+                                                    );
+                                                    pkg?.analysis_type_ids.forEach(
                                                         (id) => {
-                                                            const meta =
-                                                                typePriceMap.get(
+                                                            if (
+                                                                sample.analysis_type_ids.includes(
+                                                                    id,
+                                                                )
+                                                            ) {
+                                                                packageCoveredIds.add(
                                                                     id,
                                                                 );
-                                                            return {
-                                                                id,
-                                                                name:
-                                                                    meta?.name ??
-                                                                    `Test #${id}`,
-                                                                price:
-                                                                    meta?.price ??
-                                                                    '0',
-                                                                included:
-                                                                    covered.has(
-                                                                        id,
-                                                                    ),
-                                                            };
+                                                            }
                                                         },
-                                                    ) ?? [];
+                                                    );
+                                                },
+                                            );
+                                            const sampleMeta = [
+                                                sample.description.trim() ||
+                                                    null,
+                                                sample.quantity.trim()
+                                                    ? `${sample.quantity.trim()}${sample.unit.trim() ? ` ${sample.unit.trim()}` : ''}`
+                                                    : null,
+                                                sample.matrix.trim() || null,
+                                            ]
+                                                .filter(Boolean)
+                                                .join(' · ');
 
-                                                return (
-                                                    <li
-                                                        key={index}
-                                                        className="rounded-md border border-slate-100 bg-slate-50/40 p-2.5"
-                                                    >
-                                                        <div className="flex flex-wrap items-start justify-between gap-2">
-                                                            <div className="min-w-0">
-                                                                <div className="flex flex-wrap items-center gap-1.5">
-                                                                    <p className="text-sm font-medium text-nppc-900">
-                                                                        Sample{' '}
-                                                                        {index +
-                                                                            1}
-                                                                        {sample.description.trim()
-                                                                            ? `: ${sample.description.trim()}`
-                                                                            : ''}
-                                                                    </p>
-                                                                    {sample.sample_code.trim() ? (
-                                                                        <span className="rounded bg-nppc-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-nppc-800 ring-1 ring-nppc-200">
-                                                                            #
-                                                                            {
-                                                                                sample.sample_code
-                                                                            }
-                                                                        </span>
-                                                                    ) : null}
-                                                                </div>
-                                                                <p className="mt-0.5 text-[11px] text-slate-500">
-                                                                    {[
-                                                                        sample.matrix ||
-                                                                            null,
-                                                                        sample.quantity
-                                                                            ? `${sample.quantity}${sample.unit ? ` ${sample.unit}` : ''}`
-                                                                            : null,
-                                                                        sample.remarks ||
-                                                                            null,
-                                                                    ]
-                                                                        .filter(
-                                                                            Boolean,
+                                            const packageList =
+                                                isAquaClassification
+                                                    ? scopedPackages
+                                                    : suggestedPackages.length >
+                                                        0
+                                                      ? suggestedPackages
+                                                      : scopedPackages;
+
+                                            return (
+                                                <>
+                                                    {samples.length > 1 ? (
+                                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                                            <IntakeSampleSwitcher
+                                                                samples={samples.map(
+                                                                    (
+                                                                        row,
+                                                                        index,
+                                                                    ) => ({
+                                                                        label: `Sample ${index + 1}${
+                                                                            row.sample_code.trim()
+                                                                                ? ` (#${row.sample_code.trim()})`
+                                                                                : ''
+                                                                        }`,
+                                                                        hasSelection:
+                                                                            sampleHasSelection(
+                                                                                row,
+                                                                                index,
+                                                                            ),
+                                                                        analysisCount:
+                                                                            row
+                                                                                .analysis_type_ids
+                                                                                .length,
+                                                                    }),
+                                                                )}
+                                                                activeIndex={
+                                                                    sampleIndex
+                                                                }
+                                                                onSelect={
+                                                                    setActiveTestSample
+                                                                }
+                                                                showMissing={
+                                                                    attemptedContinue
+                                                                }
+                                                                meta={
+                                                                    sampleMeta ||
+                                                                    `Sample ${sampleIndex + 1}`
+                                                                }
+                                                            />
+                                                            {sampleIndex > 0 ? (
+                                                                <button
+                                                                    type="button"
+                                                                    className="text-[11px] font-medium text-nppc-700 hover:underline focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none"
+                                                                    onClick={() =>
+                                                                        copyTestsFromSample(
+                                                                            0,
+                                                                            sampleIndex,
                                                                         )
-                                                                        .join(
-                                                                            ' · ',
-                                                                        ) ||
-                                                                        'No additional sample details'}
-                                                                </p>
-                                                            </div>
-                                                            {summary ? (
-                                                                <span className="font-heading text-sm font-bold tabular-nums text-nppc-900">
-                                                                    ₱
-                                                                    {summary.subtotal.toFixed(
-                                                                        2,
-                                                                    )}
-                                                                </span>
+                                                                    }
+                                                                >
+                                                                    Same as
+                                                                    Sample 1
+                                                                </button>
                                                             ) : null}
                                                         </div>
-                                                        {paramLines.length >
-                                                        0 ? (
-                                                            <ul className="mt-1.5 grid gap-1 sm:grid-cols-2">
-                                                                {paramLines.map(
-                                                                    (line) => (
-                                                                        <li
-                                                                            key={
-                                                                                line.id
-                                                                            }
-                                                                            className="flex items-center justify-between gap-2 rounded border border-slate-200/80 bg-white px-2 py-1 text-[11px]"
-                                                                        >
-                                                                            <span className="min-w-0 truncate font-medium text-slate-800">
-                                                                                {
-                                                                                    line.name
-                                                                                }
-                                                                                {line.included ? (
-                                                                                    <span className="ml-1 font-normal text-emerald-700">
-                                                                                        (incl.)
-                                                                                    </span>
-                                                                                ) : null}
-                                                                            </span>
-                                                                            <span className="shrink-0 tabular-nums text-slate-600">
-                                                                                ₱
-                                                                                {Number(
-                                                                                    line.price,
-                                                                                ).toFixed(
-                                                                                    2,
-                                                                                )}
-                                                                            </span>
-                                                                        </li>
-                                                                    ),
-                                                                )}
-                                                            </ul>
-                                                        ) : (
-                                                            <p className="mt-1.5 text-[11px] text-slate-500">
-                                                                {index === 0 &&
-                                                                otherTests.trim()
-                                                                    ? 'Covered by other test request'
-                                                                    : 'No analyses selected'}
-                                                            </p>
-                                                        )}
+                                                    ) : null}
+
+                                                    {missingSelection ? (
+                                                        <IntakeAlert
+                                                            variant="error"
+                                                            data-intake-error=""
+                                                        >
+                                                            Select at least one
+                                                            package or test for
+                                                            this sample
+                                                            {sampleIndex === 0
+                                                                ? ', or describe another test below.'
+                                                                : '.'}
+                                                        </IntakeAlert>
+                                                    ) : null}
+
+                                                    <div
+                                                        className="grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-slate-50/80 p-1"
+                                                        role="tablist"
+                                                        aria-label="Test selection mode"
+                                                    >
                                                         <button
                                                             type="button"
-                                                            className="mt-1.5 text-[11px] font-medium text-nppc-700 hover:underline"
-                                                            onClick={() =>
-                                                                setStep(3)
+                                                            role="tab"
+                                                            aria-selected={
+                                                                testsView ===
+                                                                'packages'
                                                             }
+                                                            onClick={() =>
+                                                                setTestsView(
+                                                                    'packages',
+                                                                )
+                                                            }
+                                                            className={cn(
+                                                                'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none',
+                                                                testsView ===
+                                                                    'packages'
+                                                                    ? 'bg-nppc-900 text-white shadow-sm'
+                                                                    : 'text-nppc-800 hover:bg-white',
+                                                            )}
                                                         >
-                                                            Edit analyses →
+                                                            <Package
+                                                                className="size-3.5"
+                                                                aria-hidden
+                                                            />
+                                                            Test Packages
                                                         </button>
-                                                    </li>
-                                                );
-                                            })}
-                                        </ul>
-                                        {otherTests.trim() ? (
-                                            <p className="mt-2 border-t border-slate-100 pt-2 text-sm text-slate-700">
-                                                <span className="font-medium">
-                                                    Other:{' '}
-                                                </span>
-                                                {otherTests.trim()}
-                                            </p>
-                                        ) : null}
-                                    </ReviewCard>
+                                                        <button
+                                                            type="button"
+                                                            role="tab"
+                                                            aria-selected={
+                                                                testsView ===
+                                                                'individual'
+                                                            }
+                                                            onClick={() =>
+                                                                setTestsView(
+                                                                    'individual',
+                                                                )
+                                                            }
+                                                            className={cn(
+                                                                'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none',
+                                                                testsView ===
+                                                                    'individual'
+                                                                    ? 'bg-nppc-900 text-white shadow-sm'
+                                                                    : 'text-nppc-800 hover:bg-white',
+                                                            )}
+                                                        >
+                                                            <ListChecks
+                                                                className="size-3.5"
+                                                                aria-hidden
+                                                            />
+                                                            Individual Tests
+                                                            {individualCount > 0
+                                                                ? ` · ${individualCount}`
+                                                                : ''}
+                                                        </button>
+                                                    </div>
+
+                                                    {testsView ===
+                                                    'packages' ? (
+                                                        <>
+                                                            {type_presets.length >
+                                                            0 ? (
+                                                                <section className="space-y-1.5">
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <Layers
+                                                                            className="size-3.5 text-nppc-700"
+                                                                            aria-hidden
+                                                                        />
+                                                                        <h3 className="text-sm font-semibold text-nppc-900">
+                                                                            Test
+                                                                            Panels
+                                                                        </h3>
+                                                                    </div>
+                                                                    {fo2NeedsKind ? (
+                                                                        <IntakeAlert
+                                                                            variant="error"
+                                                                            data-intake-error=""
+                                                                        >
+                                                                            Choose
+                                                                            a
+                                                                            Sample
+                                                                            description
+                                                                            on
+                                                                            Details
+                                                                            (Wastewater,
+                                                                            River
+                                                                            water,
+                                                                            or
+                                                                            Abstracted
+                                                                            water)
+                                                                            before
+                                                                            selecting
+                                                                            the
+                                                                            Physico-Chemical
+                                                                            panel.
+                                                                        </IntakeAlert>
+                                                                    ) : null}
+                                                                    <div className="space-y-1.5">
+                                                                        {(suggestedTypePresets.length >
+                                                                        0
+                                                                            ? suggestedTypePresets
+                                                                            : type_presets
+                                                                        ).map(
+                                                                            (
+                                                                                preset,
+                                                                            ) =>
+                                                                                renderTypePresetRow(
+                                                                                    sampleIndex,
+                                                                                    preset,
+                                                                                ),
+                                                                        )}
+                                                                    </div>
+                                                                    {suggestedTypePresets.length >
+                                                                        0 &&
+                                                                    otherTypePresets.length >
+                                                                        0 ? (
+                                                                        <details className="group">
+                                                                            <summary className="cursor-pointer text-xs font-medium text-nppc-700 hover:underline [&::-webkit-details-marker]:hidden">
+                                                                                ▸
+                                                                                Other
+                                                                                panels
+                                                                                (
+                                                                                {
+                                                                                    otherTypePresets.length
+                                                                                }
+
+                                                                                )
+                                                                            </summary>
+                                                                            <div className="mt-1.5 space-y-1.5">
+                                                                                {otherTypePresets.map(
+                                                                                    (
+                                                                                        preset,
+                                                                                    ) =>
+                                                                                        renderTypePresetRow(
+                                                                                            sampleIndex,
+                                                                                            preset,
+                                                                                        ),
+                                                                                )}
+                                                                            </div>
+                                                                        </details>
+                                                                    ) : null}
+                                                                </section>
+                                                            ) : null}
+
+                                                            {scopedPackages.length >
+                                                            0 ? (
+                                                                <section className="space-y-1.5">
+                                                                    <div className="min-w-0">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <Sparkles
+                                                                                className="size-3.5 text-nppc-700"
+                                                                                aria-hidden
+                                                                            />
+                                                                            <h3 className="text-sm font-semibold text-nppc-900">
+                                                                                Recommended
+                                                                                Packages
+                                                                            </h3>
+                                                                        </div>
+                                                                        <p className="mt-0.5 text-[11px] text-slate-500">
+                                                                            Start
+                                                                            here
+                                                                            —
+                                                                            expand
+                                                                            a
+                                                                            package
+                                                                            to
+                                                                            see
+                                                                            included
+                                                                            tests.
+                                                                        </p>
+                                                                    </div>
+                                                                    <div className="space-y-2">
+                                                                        {packageList.map(
+                                                                            (
+                                                                                pkg,
+                                                                            ) =>
+                                                                                renderPackageRow(
+                                                                                    sampleIndex,
+                                                                                    pkg,
+                                                                                ),
+                                                                        )}
+                                                                    </div>
+                                                                    {!isAquaClassification &&
+                                                                    suggestedPackages.length >
+                                                                        0 &&
+                                                                    otherPackages.length >
+                                                                        0 ? (
+                                                                        <details className="group">
+                                                                            <summary className="cursor-pointer text-xs font-medium text-nppc-700 hover:underline [&::-webkit-details-marker]:hidden">
+                                                                                ▸
+                                                                                Other
+                                                                                packages
+                                                                                (
+                                                                                {
+                                                                                    otherPackages.length
+                                                                                }
+
+                                                                                )
+                                                                            </summary>
+                                                                            <div className="mt-1.5 space-y-2">
+                                                                                {otherPackages.map(
+                                                                                    (
+                                                                                        pkg,
+                                                                                    ) =>
+                                                                                        renderPackageRow(
+                                                                                            sampleIndex,
+                                                                                            pkg,
+                                                                                        ),
+                                                                                )}
+                                                                            </div>
+                                                                        </details>
+                                                                    ) : null}
+                                                                </section>
+                                                            ) : null}
+                                                        </>
+                                                    ) : (
+                                                        <section className="space-y-1.5">
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <ListChecks
+                                                                        className="size-3.5 text-nppc-700"
+                                                                        aria-hidden
+                                                                    />
+                                                                    <h3 className="text-sm font-semibold text-nppc-900">
+                                                                        Individual
+                                                                        Tests
+                                                                        {individualCount >
+                                                                        0
+                                                                            ? ` · ${individualCount} selected`
+                                                                            : ''}
+                                                                    </h3>
+                                                                </div>
+                                                                <p className="mt-0.5 text-[11px] text-slate-500">
+                                                                    Browse the
+                                                                    catalog for
+                                                                    analyses not
+                                                                    covered by a
+                                                                    package.
+                                                                </p>
+                                                            </div>
+                                                            <IntakeIndividualTestCatalog
+                                                                categories={
+                                                                    scopedCategories
+                                                                }
+                                                                query={
+                                                                    testsQuery
+                                                                }
+                                                                onQueryChange={
+                                                                    setTestsQuery
+                                                                }
+                                                                activeCategory={
+                                                                    activeCategory
+                                                                }
+                                                                onActiveCategoryChange={
+                                                                    setActiveCategory
+                                                                }
+                                                                selectedTypeIds={
+                                                                    new Set(
+                                                                        sample.analysis_type_ids,
+                                                                    )
+                                                                }
+                                                                packageCoveredIds={
+                                                                    packageCoveredIds
+                                                                }
+                                                                onToggleType={(
+                                                                    id,
+                                                                ) =>
+                                                                    toggleType(
+                                                                        sampleIndex,
+                                                                        id,
+                                                                    )
+                                                                }
+                                                            />
+                                                        </section>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
+
+                                        <section className="space-y-1.5 border-t border-slate-100 pt-2">
+                                            <div className="flex items-center gap-1.5">
+                                                <PenLine
+                                                    className="size-3.5 text-nppc-700"
+                                                    aria-hidden
+                                                />
+                                                <h3 className="text-sm font-semibold text-nppc-900">
+                                                    Other / Special Test Request
+                                                </h3>
+                                            </div>
+                                            <Textarea
+                                                id="other_tests"
+                                                rows={2}
+                                                className="min-h-[2.75rem] w-full rounded-lg border-slate-200 bg-white py-1.5 text-sm"
+                                                value={otherTests}
+                                                onChange={(e) =>
+                                                    setOtherTests(
+                                                        e.target.value,
+                                                    )
+                                                }
+                                                placeholder="Describe an analysis that is not listed…"
+                                            />
+                                        </section>
+                                    </div>
+
+                                    <aside className="hidden self-start lg:sticky lg:top-0 lg:block">
+                                        <TestsRequestSummary
+                                            packages={scopedPackages}
+                                            samples={sampleSelectionSummaries}
+                                            catalogItems={
+                                                catalogItemsForSummary
+                                            }
+                                            otherTests={otherTests}
+                                            estimatedTotal={estimatedTotal}
+                                            customerName={
+                                                customer.customer_name
+                                            }
+                                            variant="sidebar"
+                                        />
+                                    </aside>
                                 </div>
 
-                                <aside className="sticky top-2 self-start space-y-2">
-                                    <TestsRequestSummary
-                                        packages={scopedPackages}
-                                        samples={sampleSelectionSummaries}
-                                        catalogItems={catalogItemsForSummary}
-                                        otherTests={otherTests}
-                                        estimatedTotal={estimatedTotal}
-                                        customerName={customer.customer_name}
-                                        variant="sidebar"
-                                    />
-                                    <div className="rounded-xl border border-nppc-100 bg-nppc-50/60 px-3 py-3 text-[11px] leading-snug text-nppc-900">
-                                        <p className="text-[10px] font-semibold tracking-wider text-nppc-700 uppercase">
-                                            What happens next
-                                        </p>
-                                        <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-slate-700">
-                                            <li>Your request is received.</li>
-                                            <li>
-                                                Receiving reviews pricing and
-                                                prints the RFA.
-                                            </li>
-                                            <li>
-                                                The lab processes your analyses.
-                                            </li>
-                                            <li>
-                                                Results are released after Head
-                                                review.
-                                            </li>
-                                        </ol>
-                                    </div>
-                                    <p className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-[10px] leading-snug text-slate-500">
-                                        Payment is settled at reception. Sample
-                                        integrity is verified at drop-off.
-                                    </p>
-                                </aside>
+                                <div className="lg:hidden">
+                                    <button
+                                        type="button"
+                                        className="flex w-full items-center justify-between rounded-lg border border-nppc-900/20 bg-nppc-50 px-3 py-2 text-xs font-medium text-nppc-900"
+                                        aria-expanded={mobileSummaryOpen}
+                                        onClick={() =>
+                                            setMobileSummaryOpen(
+                                                (open) => !open,
+                                            )
+                                        }
+                                    >
+                                        <span>
+                                            {totalSelectedAnalyses} analyses · ₱
+                                            {estimatedTotal.toFixed(2)}
+                                        </span>
+                                        <span>
+                                            {mobileSummaryOpen
+                                                ? 'Hide'
+                                                : 'View selected'}
+                                        </span>
+                                    </button>
+                                    {mobileSummaryOpen ? (
+                                        <div className="mt-1.5">
+                                            <TestsRequestSummary
+                                                packages={scopedPackages}
+                                                samples={
+                                                    sampleSelectionSummaries
+                                                }
+                                                catalogItems={
+                                                    catalogItemsForSummary
+                                                }
+                                                otherTests={otherTests}
+                                                estimatedTotal={estimatedTotal}
+                                                customerName={
+                                                    customer.customer_name
+                                                }
+                                                variant="inline"
+                                            />
+                                        </div>
+                                    ) : null}
+                                </div>
                             </div>
-                        </div>
-                    )}
-            </div>
+                        )}
 
-            <IntakeStickyFooter
-                hint={
-                    step > 1 && stepError(step) ? (
-                        <IntakeAlert variant="warning">
-                            {stepError(step)}
-                        </IntakeAlert>
-                    ) : null
-                }
-            >
-                <div className="grid grid-cols-2 items-center gap-2 sm:grid-cols-[1fr_auto_1fr] sm:gap-3">
-                    <div className="justify-self-start">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            className="h-10 gap-1.5 border-slate-200 px-5 text-sm"
-                            disabled={step === 0 || submitting}
-                            onClick={() => setStep((s) => Math.max(0, s - 1))}
-                        >
-                            <ArrowLeft className="size-3.5" aria-hidden />
-                            {step === 1
-                                ? 'Back to Customer'
-                                : step === 2
-                                  ? 'Back to Details'
-                                  : step === 3
-                                    ? 'Back to Samples'
-                                    : step === 4
-                                      ? 'Back to Tests'
-                                      : 'Back'}
-                        </Button>
-                    </div>
-                    {(step === 0 && !stepError(step)
-                        ? 'Step 1 of 5 · Enter contact details'
-                        : step === 0
-                          ? 'Step 1 of 5'
-                          : step === 1 && !stepError(step)
-                            ? 'Step 2 of 5 · Complete sampling specs to continue'
-                            : step === 1
-                              ? 'Step 2 of 5'
-                              : step === 2
-                                ? `${samples.length} sample${samples.length === 1 ? '' : 's'} listed`
-                                : step === 3
-                                  ? `${samples.length} sample${samples.length === 1 ? '' : 's'} · ${totalSelectedAnalyses} tests configured`
-                                  : step === 4
-                                    ? 'Ready for final submit'
-                                    : null) ? (
-                        <p className="col-span-2 order-first text-center text-xs text-slate-500 sm:col-span-1 sm:order-none sm:whitespace-nowrap">
-                            {step === 0 && !stepError(step)
-                                ? 'Step 1 of 5 · Enter contact details'
-                                : step === 0
-                                  ? 'Step 1 of 5'
-                                  : step === 1 && !stepError(step)
-                                    ? 'Step 2 of 5 · Complete sampling specs to continue'
-                                    : step === 1
-                                      ? 'Step 2 of 5'
-                                      : step === 2
-                                        ? `${samples.length} sample${samples.length === 1 ? '' : 's'} listed`
-                                        : step === 3
-                                          ? `${samples.length} sample${samples.length === 1 ? '' : 's'} · ${totalSelectedAnalyses} tests configured`
-                                          : 'Ready for final submit'}
-                        </p>
-                    ) : (
-                        <span className="hidden sm:block" aria-hidden />
-                    )}
-                    <div className="justify-self-end">
-                        {step < steps.length - 1 ? (
-                            <Button
-                                type="button"
-                                className="h-10 gap-2 bg-nppc-900 px-5 text-sm font-semibold hover:bg-nppc-700 sm:min-w-44"
-                                onClick={goNext}
-                            >
-                                {step === 2
-                                    ? 'Continue to Test Selection'
-                                    : step === 3
-                                      ? 'Continue to Review'
-                                      : 'Continue'}
-                                <ArrowRight className="size-4" />
-                            </Button>
-                        ) : (
-                            <Button
-                                type="button"
-                                className="h-10 gap-2 bg-nppc-900 px-5 text-sm font-semibold hover:bg-nppc-700 sm:min-w-44"
-                                disabled={submitting}
-                                onClick={submit}
-                            >
-                                {submitting
-                                    ? 'Submitting…'
-                                    : 'Submit Request for Analysis'}
-                                {!submitting ? (
-                                    <ArrowRight className="size-4" />
-                                ) : null}
-                            </Button>
+                        {step === 4 && (
+                            <div className="flex w-full flex-col gap-2 pb-0.5">
+                                <IntakeStepHeader
+                                    title="Review Request"
+                                    badge="Step 5 of 5 · Final verification"
+                                    hint="Confirm requester, sampling, and selected analyses before submission."
+                                    className="shrink-0 [&_h2]:text-lg sm:[&_h2]:text-xl [&_p]:mt-0.5"
+                                />
+
+                                <div className="grid gap-2 lg:grid-cols-[minmax(0,1.55fr)_minmax(260px,0.78fr)] lg:items-start">
+                                    <div className="min-w-0 space-y-2">
+                                        <ReviewCard
+                                            title="Requester Information"
+                                            icon={UserRound}
+                                            onEdit={() => setStep(0)}
+                                        >
+                                            <div className="grid gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-5">
+                                                <ReviewRow
+                                                    label="Customer"
+                                                    icon={UserRound}
+                                                    value={
+                                                        customer.customer_name
+                                                    }
+                                                />
+                                                <ReviewRow
+                                                    label="Contact"
+                                                    icon={Phone}
+                                                    value={
+                                                        customer.customer_contact
+                                                    }
+                                                />
+                                                <ReviewRow
+                                                    label="Email"
+                                                    icon={Mail}
+                                                    value={
+                                                        customer.customer_email
+                                                    }
+                                                />
+                                                <ReviewRow
+                                                    label="Ownership"
+                                                    icon={Tag}
+                                                    value={ownershipType}
+                                                />
+                                                <ReviewRow
+                                                    label="Address"
+                                                    icon={MapPin}
+                                                    value={
+                                                        customer.customer_address
+                                                    }
+                                                    className="sm:col-span-2 xl:col-span-1"
+                                                />
+                                                <ReviewRow
+                                                    label="Company"
+                                                    icon={Building2}
+                                                    value={
+                                                        customer.company_name
+                                                    }
+                                                    className="sm:col-span-2 xl:col-span-5"
+                                                />
+                                            </div>
+                                        </ReviewCard>
+
+                                        <ReviewCard
+                                            title="Job & Sampling Specifications"
+                                            icon={FlaskConical}
+                                            onEdit={() => setStep(1)}
+                                        >
+                                            <div className="grid gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-3">
+                                                <ReviewRow
+                                                    label="Classification"
+                                                    value={
+                                                        resolvedClassification
+                                                    }
+                                                />
+                                                <ReviewRow
+                                                    label="Sampling Site"
+                                                    value={samplingSite}
+                                                />
+                                                <ReviewRow
+                                                    label="Sampling"
+                                                    value={[
+                                                        samplingDate,
+                                                        samplingTime,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(' · ')}
+                                                />
+                                                <ReviewRow
+                                                    label="Sample Source"
+                                                    value={resolvedSampleSource}
+                                                />
+                                                <ReviewRow
+                                                    label="Collected By"
+                                                    value={sampleCollectedBy}
+                                                />
+                                                <ReviewRow
+                                                    label="Storage Temp"
+                                                    value={sampleStorageTemp}
+                                                />
+                                                {needsSpecimen ? (
+                                                    <div className="sm:col-span-2 xl:col-span-3">
+                                                        <IntakeField
+                                                            label="Specimen"
+                                                            htmlFor="specimen_review"
+                                                            error={
+                                                                errors?.specimen
+                                                            }
+                                                        >
+                                                            <Input
+                                                                id="specimen_review"
+                                                                className="h-9 w-full rounded-lg border-slate-200 bg-white text-sm"
+                                                                placeholder="e.g. Dried fish / Chicken breast"
+                                                                value={specimen}
+                                                                onChange={(e) =>
+                                                                    setSpecimen(
+                                                                        e.target
+                                                                            .value,
+                                                                    )
+                                                                }
+                                                            />
+                                                        </IntakeField>
+                                                    </div>
+                                                ) : null}
+                                                <ReviewRow
+                                                    label="Payment"
+                                                    value={
+                                                        paymentMode
+                                                            ? [
+                                                                  PAYMENT_MODE_OPTIONS.find(
+                                                                      (o) =>
+                                                                          o.value ===
+                                                                          paymentMode,
+                                                                  )?.label ??
+                                                                      paymentMode,
+                                                                  paymentMode ===
+                                                                      'billing_partial' &&
+                                                                  paymentTerms
+                                                                      ? PAYMENT_TERMS_OPTIONS.find(
+                                                                            (
+                                                                                o,
+                                                                            ) =>
+                                                                                o.value ===
+                                                                                paymentTerms,
+                                                                        )?.label
+                                                                      : null,
+                                                              ]
+                                                                  .filter(
+                                                                      Boolean,
+                                                                  )
+                                                                  .join(' · ')
+                                                            : ''
+                                                    }
+                                                />
+                                            </div>
+                                        </ReviewCard>
+
+                                        <ReviewCard
+                                            title="Registered Samples & Tests"
+                                            icon={TestTube2}
+                                            onEdit={() => setStep(2)}
+                                        >
+                                            <ul className="space-y-2">
+                                                {samples.map(
+                                                    (sample, index) => {
+                                                        const summary =
+                                                            sampleSelectionSummaries[
+                                                                index
+                                                            ];
+                                                        const covered =
+                                                            new Set<number>();
+                                                        const packageNames: string[] =
+                                                            [];
+                                                        summary?.package_ids.forEach(
+                                                            (pkgId) => {
+                                                                const pkg =
+                                                                    packages.find(
+                                                                        (row) =>
+                                                                            row.id ===
+                                                                            pkgId,
+                                                                    );
+                                                                if (pkg?.name) {
+                                                                    packageNames.push(
+                                                                        pkg.name,
+                                                                    );
+                                                                }
+                                                                pkg?.analysis_type_ids.forEach(
+                                                                    (id) => {
+                                                                        if (
+                                                                            summary.analysis_type_ids.includes(
+                                                                                id,
+                                                                            )
+                                                                        ) {
+                                                                            covered.add(
+                                                                                id,
+                                                                            );
+                                                                        }
+                                                                    },
+                                                                );
+                                                            },
+                                                        );
+                                                        const paramLines =
+                                                            summary?.analysis_type_ids.map(
+                                                                (id) => {
+                                                                    const meta =
+                                                                        typePriceMap.get(
+                                                                            id,
+                                                                        );
+                                                                    return {
+                                                                        id,
+                                                                        name:
+                                                                            meta?.name ??
+                                                                            `Test #${id}`,
+                                                                        price:
+                                                                            meta?.price ??
+                                                                            '0',
+                                                                        included:
+                                                                            covered.has(
+                                                                                id,
+                                                                            ),
+                                                                    };
+                                                                },
+                                                            ) ?? [];
+                                                        const sampleTitle =
+                                                            packageNames[0] ||
+                                                            sample.description.trim() ||
+                                                            sample.matrix.trim() ||
+                                                            null;
+
+                                                        return (
+                                                            <li
+                                                                key={index}
+                                                                className="overflow-hidden rounded-lg border border-slate-200"
+                                                            >
+                                                                <details
+                                                                    open={
+                                                                        samples.length ===
+                                                                        1
+                                                                    }
+                                                                    className="group"
+                                                                >
+                                                                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 bg-sky-50/80 px-2.5 py-2 [&::-webkit-details-marker]:hidden">
+                                                                        <div className="min-w-0">
+                                                                            <p className="truncate text-sm font-semibold text-nppc-900">
+                                                                                Sample{' '}
+                                                                                {index +
+                                                                                    1}
+                                                                                {sampleTitle
+                                                                                    ? `: ${sampleTitle}`
+                                                                                    : ''}
+                                                                            </p>
+                                                                            <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                                                                                {[
+                                                                                    sample.sample_code.trim()
+                                                                                        ? `#${sample.sample_code.trim()}`
+                                                                                        : null,
+                                                                                    sample.matrix ||
+                                                                                        null,
+                                                                                    sample.quantity
+                                                                                        ? `${sample.quantity}${sample.unit ? ` ${sample.unit}` : ''}`
+                                                                                        : null,
+                                                                                ]
+                                                                                    .filter(
+                                                                                        Boolean,
+                                                                                    )
+                                                                                    .join(
+                                                                                        ' · ',
+                                                                                    ) ||
+                                                                                    'No sample meta'}
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="flex shrink-0 items-center gap-2">
+                                                                            {summary ? (
+                                                                                <span className="font-heading text-sm font-bold text-nppc-900 tabular-nums">
+                                                                                    ₱
+                                                                                    {summary.subtotal.toFixed(
+                                                                                        2,
+                                                                                    )}
+                                                                                </span>
+                                                                            ) : null}
+                                                                            <ChevronDown
+                                                                                className="size-3.5 text-slate-400 transition group-open:rotate-180"
+                                                                                aria-hidden
+                                                                            />
+                                                                        </div>
+                                                                    </summary>
+                                                                    <div className="space-y-2 border-t border-slate-100 bg-white p-2.5">
+                                                                        {paramLines.length >
+                                                                        0 ? (
+                                                                            <ul className="grid gap-1 sm:grid-cols-2">
+                                                                                {paramLines.map(
+                                                                                    (
+                                                                                        line,
+                                                                                    ) => (
+                                                                                        <li
+                                                                                            key={
+                                                                                                line.id
+                                                                                            }
+                                                                                            className="flex items-center justify-between gap-2 rounded border border-slate-200/80 bg-slate-50/50 px-2 py-1 text-[11px]"
+                                                                                        >
+                                                                                            <span className="min-w-0 truncate font-medium text-slate-800">
+                                                                                                {
+                                                                                                    line.name
+                                                                                                }
+                                                                                                {line.included ? (
+                                                                                                    <span className="ml-1 font-normal text-emerald-700">
+                                                                                                        (incl.)
+                                                                                                    </span>
+                                                                                                ) : null}
+                                                                                            </span>
+                                                                                            <span className="shrink-0 text-slate-600 tabular-nums">
+                                                                                                ₱
+                                                                                                {Number(
+                                                                                                    line.price,
+                                                                                                ).toFixed(
+                                                                                                    2,
+                                                                                                )}
+                                                                                            </span>
+                                                                                        </li>
+                                                                                    ),
+                                                                                )}
+                                                                            </ul>
+                                                                        ) : (
+                                                                            <p className="text-[11px] text-slate-500">
+                                                                                {index ===
+                                                                                    0 &&
+                                                                                otherTests.trim()
+                                                                                    ? 'Covered by other test request'
+                                                                                    : 'No analyses selected'}
+                                                                            </p>
+                                                                        )}
+                                                                        <button
+                                                                            type="button"
+                                                                            className="text-[11px] font-medium text-nppc-700 hover:underline"
+                                                                            onClick={() =>
+                                                                                setStep(
+                                                                                    3,
+                                                                                )
+                                                                            }
+                                                                        >
+                                                                            Edit
+                                                                            analyses
+                                                                            →
+                                                                        </button>
+                                                                    </div>
+                                                                </details>
+                                                            </li>
+                                                        );
+                                                    },
+                                                )}
+                                            </ul>
+                                            {otherTests.trim() ? (
+                                                <p className="mt-2 border-t border-slate-100 pt-2 text-sm text-slate-700">
+                                                    <span className="font-medium">
+                                                        Other:{' '}
+                                                    </span>
+                                                    {otherTests.trim()}
+                                                </p>
+                                            ) : null}
+                                        </ReviewCard>
+                                    </div>
+
+                                    <aside className="space-y-2 lg:sticky lg:top-0">
+                                        <TestsRequestSummary
+                                            packages={scopedPackages}
+                                            samples={sampleSelectionSummaries}
+                                            catalogItems={
+                                                catalogItemsForSummary
+                                            }
+                                            otherTests={otherTests}
+                                            estimatedTotal={estimatedTotal}
+                                            customerName={
+                                                customer.customer_name
+                                            }
+                                            variant="sidebar"
+                                        />
+                                        <IntakeAlert
+                                            variant="info"
+                                            title="What happens next"
+                                            className="px-2.5 py-2 text-xs"
+                                        >
+                                            <ol className="mt-1 list-decimal space-y-1 pl-4 text-slate-700">
+                                                <li>
+                                                    Your request is received.
+                                                </li>
+                                                <li>
+                                                    Receiving reviews pricing
+                                                    and prepares the Request for
+                                                    Analysis (RFA).
+                                                </li>
+                                                <li>
+                                                    The laboratory processes
+                                                    your samples.
+                                                </li>
+                                                <li>
+                                                    Results are released after
+                                                    authorized review.
+                                                </li>
+                                            </ol>
+                                        </IntakeAlert>
+                                        <p className="rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-2 text-[10px] leading-snug text-slate-500">
+                                            Receiving may adjust final pricing.
+                                            Payment is settled at reception ·
+                                            Sample integrity is verified at
+                                            drop-off.
+                                        </p>
+                                    </aside>
+                                </div>
+                            </div>
                         )}
                     </div>
+
+                    <IntakeStickyFooter
+                        hint={
+                            step > 1 && stepError(step) ? (
+                                <IntakeAlert variant="warning">
+                                    {stepError(step)}
+                                </IntakeAlert>
+                            ) : null
+                        }
+                    >
+                        <div className="grid grid-cols-2 items-center gap-2 sm:grid-cols-[1fr_auto_1fr] sm:gap-3">
+                            <div className="justify-self-start">
+                                {step === 0 ? (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="h-9 gap-1.5 border-slate-200 px-4 text-sm"
+                                        onClick={requestExit}
+                                    >
+                                        <ArrowLeft
+                                            className="size-3.5"
+                                            aria-hidden
+                                        />
+                                        Back to Dashboard
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="h-9 gap-1.5 border-slate-200 px-4 text-sm"
+                                        disabled={submitting}
+                                        onClick={() =>
+                                            setStep((s) => Math.max(0, s - 1))
+                                        }
+                                    >
+                                        <ArrowLeft
+                                            className="size-3.5"
+                                            aria-hidden
+                                        />
+                                        {step === 1
+                                            ? 'Back to Customer'
+                                            : step === 2
+                                              ? 'Back to Details'
+                                              : step === 3
+                                                ? 'Back to Samples'
+                                                : 'Back to Tests'}
+                                    </Button>
+                                )}
+                            </div>
+                            <p className="order-first col-span-2 text-center text-xs text-slate-500 sm:order-none sm:col-span-1 sm:whitespace-nowrap">
+                                {step === 0 && !stepError(step)
+                                    ? 'Step 1 of 5 · Enter contact details'
+                                    : step === 0
+                                      ? 'Step 1 of 5'
+                                      : step === 1 && !stepError(step)
+                                        ? 'Step 2 of 5 · Complete sampling specs to continue'
+                                        : step === 1
+                                          ? 'Step 2 of 5'
+                                          : step === 2
+                                            ? `${samples.length} sample${samples.length === 1 ? '' : 's'} listed`
+                                            : step === 3
+                                              ? 'Step 4 of 5 · Select tests and packages'
+                                              : 'Step 5 of 5 · Review and confirm'}
+                            </p>
+                            <div className="justify-self-end">
+                                {step < steps.length - 1 ? (
+                                    <Button
+                                        type="button"
+                                        className="h-9 gap-2 bg-[#1d3b91] px-5 text-sm font-semibold hover:bg-[#112747] sm:min-w-40"
+                                        onClick={goNext}
+                                    >
+                                        {step === 0
+                                            ? 'Continue to Step 2: Details'
+                                            : step === 1
+                                              ? 'Continue to Samples'
+                                              : step === 2
+                                                ? 'Continue to Test Selection'
+                                                : 'Continue to Review'}
+                                        <ArrowRight className="size-4" />
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        type="button"
+                                        className="h-9 gap-2 bg-[#1d3b91] px-5 text-sm font-semibold hover:bg-[#112747] sm:min-w-40"
+                                        disabled={submitting}
+                                        onClick={submit}
+                                    >
+                                        {submitting
+                                            ? 'Submitting…'
+                                            : 'Submit Request for Analysis'}
+                                        {!submitting ? (
+                                            <ArrowRight className="size-4" />
+                                        ) : null}
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+                    </IntakeStickyFooter>
                 </div>
-            </IntakeStickyFooter>
-        </IntakePageShell>
+            </IntakePageShell>
+
+            <ConfirmDialog
+                open={exitConfirmOpen}
+                onOpenChange={setExitConfirmOpen}
+                title="Exit this request?"
+                description="Your unfinished intake details will not be saved. You can start a new request from the intake portal."
+                confirmLabel="Exit without saving"
+                cancelLabel="Keep editing"
+                variant="destructive"
+                onConfirm={() => {
+                    setExitConfirmOpen(false);
+                    router.visit('/intake');
+                }}
+            />
+
+            <ConfirmDialog
+                open={submitConfirmOpen}
+                onOpenChange={setSubmitConfirmOpen}
+                title="Submit request for analysis?"
+                description="Please confirm that requester, sampling, and selected tests are correct. Receiving may still adjust final pricing."
+                confirmLabel="Submit request"
+                cancelLabel="Review again"
+                processing={submitting}
+                processingLabel="Submitting…"
+                onConfirm={confirmSubmit}
+            />
         </>
     );
 }

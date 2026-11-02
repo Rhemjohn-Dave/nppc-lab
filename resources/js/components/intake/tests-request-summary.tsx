@@ -1,8 +1,15 @@
+import {
+    ChevronDown,
+    ClipboardList,
+    FlaskConical,
+    Package,
+    TestTube2,
+    UserRound,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import type { IntakePackageRowPackage } from '@/components/intake/intake-package-row';
 import { samplePackagePricing } from '@/lib/package-pricing';
+import { cn } from '@/lib/utils';
 
 type CatalogItem = {
     id: number;
@@ -35,6 +42,7 @@ function buildTypeMap(items: CatalogItem[]) {
     items.forEach((item) =>
         map.set(item.id, { name: item.name, price: item.default_price }),
     );
+
     return map;
 }
 
@@ -71,6 +79,7 @@ function buildSampleGroups(
         .filter((id) => !coveredByPackage.has(id))
         .map((id) => {
             const meta = typeMap.get(id);
+
             return {
                 id,
                 name: meta?.name ?? `Test #${id}`,
@@ -128,7 +137,9 @@ function SampleSummaryRow({
             </button>
 
             {!hasDetails ? (
-                <p className="text-xs text-slate-500">No analyses yet</p>
+                <p className="text-xs text-slate-500">
+                    No analyses yet. No packages selected yet.
+                </p>
             ) : null}
 
             {open && hasDetails ? (
@@ -164,10 +175,21 @@ function SampleSummaryRow({
     );
 }
 
-function StatRow({ label, value }: { label: string; value: string | number }) {
+function StatRow({
+    label,
+    value,
+    icon: Icon,
+}: {
+    label: string;
+    value: string | number;
+    icon: typeof FlaskConical;
+}) {
     return (
         <div className="flex items-center justify-between gap-2 text-xs">
-            <span className="text-slate-600">{label}</span>
+            <span className="inline-flex items-center gap-1.5 text-slate-600">
+                <Icon className="size-3.5 text-nppc-700" aria-hidden />
+                {label}
+            </span>
             <span className="font-semibold tabular-nums text-nppc-900">
                 {value}
             </span>
@@ -225,93 +247,111 @@ export default function TestsRequestSummary({
     return (
         <div
             className={cn(
+                'overflow-hidden rounded-xl border border-nppc-900/20 bg-white shadow-xs',
                 className,
-                variant === 'sidebar' &&
-                    'rounded-xl border border-slate-200 bg-white p-4 shadow-xs',
             )}
         >
-            <div className="flex items-center justify-between gap-2">
-                <p className="text-[10px] font-semibold tracking-wider text-nppc-700 uppercase">
-                    Request summary
-                </p>
-                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-slate-600 uppercase">
+            <div className="flex items-center gap-2 bg-nppc-900 px-3 py-2 text-white sm:px-3.5">
+                <ClipboardList className="size-4 shrink-0 text-white/90" aria-hidden />
+                <p className="text-sm font-semibold">Request Summary</p>
+                <span className="ml-auto rounded bg-white/15 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase">
                     Estimated
                 </span>
             </div>
 
-            {customerName?.trim() ? (
-                <p className="mt-2 truncate text-sm font-medium text-nppc-900">
-                    {customerName.trim()}
-                </p>
-            ) : (
-                <p className="mt-2 text-xs text-slate-500">
-                    Customer details from step 1
-                </p>
-            )}
+            <div className="space-y-2.5 p-3 sm:p-3.5">
+                {customerName?.trim() ? (
+                    <p className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-nppc-900">
+                        <UserRound
+                            className="size-3.5 shrink-0 text-nppc-700"
+                            aria-hidden
+                        />
+                        <span className="truncate">{customerName.trim()}</span>
+                    </p>
+                ) : (
+                    <p className="text-xs text-slate-500">
+                        Customer details from step 1
+                    </p>
+                )}
 
-            <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
-                <StatRow label="Samples" value={samples.length} />
-                <StatRow label="Packages" value={totalPackages} />
-                <StatRow label="Analyses" value={totalAnalyses} />
-            </div>
-
-            {showBreakdown ? (
-                <div
-                    className={cn(
-                        'nppc-scroll mt-3 space-y-1.5 overflow-y-auto border-t border-slate-100 pt-3 text-xs',
-                        variant === 'sidebar'
-                            ? 'max-h-[min(40vh,calc(100vh-18rem))]'
-                            : 'max-h-56',
-                    )}
-                >
-                    {sampleBlocks.map(
-                        (
-                            { sample, packageGroups, individualLines },
-                            index,
-                        ) => (
-                            <SampleSummaryRow
-                                key={`sample-summary-${index}`}
-                                label={sample.label}
-                                subtotal={sample.subtotal}
-                                packageGroups={packageGroups}
-                                individualLines={individualLines}
-                                defaultOpen={samples.length === 1}
-                            />
-                        ),
-                    )}
-
-                    {otherTests.trim() ? (
-                        <p className="text-slate-700">
-                            <span className="font-medium">Other: </span>
-                            {otherTests.trim()}
-                        </p>
-                    ) : null}
-
-                    {!hasContent ? (
-                        <p className="text-slate-500">
-                            No analyses selected yet.
-                        </p>
-                    ) : null}
+                <div className="space-y-1.5 border-t border-slate-100 pt-2.5">
+                    <StatRow
+                        label="Samples"
+                        value={samples.length}
+                        icon={TestTube2}
+                    />
+                    <StatRow
+                        label="Packages"
+                        value={totalPackages}
+                        icon={Package}
+                    />
+                    <StatRow
+                        label="Analyses"
+                        value={totalAnalyses}
+                        icon={FlaskConical}
+                    />
                 </div>
-            ) : (
-                <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
-                    Select packages and tests in the next step. Estimated total
-                    updates as you choose analyses.
-                </p>
-            )}
 
-            <div className="mt-3 flex items-baseline justify-between border-t border-slate-100 pt-3">
-                <span className="text-xs font-medium text-slate-700">
-                    Estimated total
-                </span>
-                <span className="font-heading text-2xl font-extrabold tabular-nums text-nppc-900">
-                    ₱{estimatedTotal.toFixed(2)}
-                </span>
+                {showBreakdown ? (
+                    <div
+                        className={cn(
+                            'nppc-scroll space-y-1.5 overflow-y-auto border-t border-slate-100 pt-2.5 text-xs',
+                            variant === 'sidebar'
+                                ? 'max-h-[min(40vh,calc(100vh-18rem))]'
+                                : 'max-h-56',
+                        )}
+                    >
+                        {sampleBlocks.map(
+                            (
+                                { sample, packageGroups, individualLines },
+                                index,
+                            ) => (
+                                <SampleSummaryRow
+                                    key={`sample-summary-${index}`}
+                                    label={sample.label}
+                                    subtotal={sample.subtotal}
+                                    packageGroups={packageGroups}
+                                    individualLines={individualLines}
+                                    defaultOpen={samples.length === 1}
+                                />
+                            ),
+                        )}
+
+                        {otherTests.trim() ? (
+                            <p className="text-slate-700">
+                                <span className="font-medium">Other: </span>
+                                {otherTests.trim()}
+                            </p>
+                        ) : null}
+
+                        {!hasContent ? (
+                            <p className="text-slate-500">
+                                No analyses selected yet.
+                            </p>
+                        ) : null}
+                    </div>
+                ) : (
+                    <p className="rounded-lg border border-sky-100 bg-sky-50/80 px-2.5 py-2 text-[11px] leading-snug text-nppc-800">
+                        Packages and tests are selected in the next step.
+                        Estimated total updates as you choose analyses.
+                    </p>
+                )}
+
+                <div className="rounded-lg border border-sky-100 bg-sky-50/90 px-3 py-2.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-xs font-medium text-slate-700">
+                            Estimated Total
+                        </span>
+                        <span className="font-heading text-2xl font-extrabold tabular-nums text-nppc-900">
+                            ₱{estimatedTotal.toFixed(2)}
+                        </span>
+                    </div>
+                </div>
+                <p className="text-[10px] leading-snug text-slate-500">
+                    Receiving may adjust final pricing. Typical turnaround 5–7
+                    business days · ISO/IEC 17025.
+                </p>
             </div>
-            <p className="mt-2 text-[10px] leading-snug text-slate-500">
-                Receiving may adjust final pricing. Typical turnaround 5–7
-                business days · ISO/IEC 17025.
-            </p>
         </div>
     );
 }

@@ -11,6 +11,7 @@ use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
 use App\Support\DynamicTestMatrix;
 use App\Support\OfficialAnalysisCatalog;
+use App\Support\ResultFooter;
 use App\Support\ResultSignatories;
 use App\Support\SampleControlNumber;
 use DateTimeInterface;
@@ -76,6 +77,10 @@ class FieldValueResolver
                 $form?->form_code,
                 $jobOrder,
             );
+        }
+
+        if (in_array($form?->form_code, ['LSP-7.8-FO3', 'LSP-7.8-FO37'], true)) {
+            $this->putDwLabConditionsBag($bag, $form?->form_code, $jobOrder);
         }
 
         if ($orderedAnalyses !== null) {
@@ -233,22 +238,54 @@ class FieldValueResolver
             ? 'abstracted'
             : 'full';
         $bag['fo2_footer_variant'] = $variant;
-        $bag['fo2_lab_conditions'] = OfficialAnalysisCatalog::fo2LabConditionsText($variant);
         $bag['fo2_references'] = OfficialAnalysisCatalog::fo2ReferencesText();
         $bag['fo2_notes'] = $variant === 'abstracted'
             ? OfficialAnalysisCatalog::fo2AbstractedNotesText()
             : OfficialAnalysisCatalog::fo2FullNotesText();
 
         $footer = is_array($jobOrder?->result_footer) ? $jobOrder->result_footer : [];
-        foreach (['lab_conditions', 'references', 'notes'] as $key) {
+        $form = $formCode !== null
+            ? new \App\Models\ControlledForm(['form_code' => $formCode])
+            : null;
+        $bag['fo2_lab_conditions'] = ResultFooter::composeLabConditionsText($form, $footer, $variant);
+
+        foreach (['references', 'notes'] as $key) {
             $override = trim((string) ($footer[$key] ?? ''));
             if ($override !== '') {
                 $bag['fo2_'.$key] = $override;
             }
         }
+        $composedOverride = trim((string) ($footer['lab_conditions'] ?? ''));
+        if ($composedOverride !== '' && trim((string) ($footer['temperature_c'] ?? '')) === '') {
+            // Legacy free-text override without structured atmosphere.
+            $bag['fo2_lab_conditions'] = $composedOverride;
+        }
 
         // Cover rect draws white only — keep a non-empty value so fill runs.
         $bag['fo2_footer_cover'] = ' ';
+    }
+
+    /**
+     * FO3 / FO37 lab-conditions bag keys from analyst result_footer atmosphere.
+     *
+     * @param  array<string, mixed>  $bag
+     */
+    private function putDwLabConditionsBag(
+        array &$bag,
+        ?string $formCode,
+        ?JobOrder $jobOrder = null,
+    ): void {
+        $footer = is_array($jobOrder?->result_footer) ? $jobOrder->result_footer : [];
+        $form = $formCode !== null
+            ? new \App\Models\ControlledForm(['form_code' => $formCode])
+            : null;
+        $text = ResultFooter::composeLabConditionsText($form, $footer);
+
+        if ($formCode === 'LSP-7.8-FO37') {
+            $bag['fo37_lab_conditions'] = $text;
+        } elseif ($formCode === 'LSP-7.8-FO3') {
+            $bag['fo3_lab_conditions'] = $text;
+        }
     }
 
     /**

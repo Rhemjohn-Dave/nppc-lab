@@ -27,15 +27,15 @@ export default function IntakeStepHeader({
         >
             <div className="min-w-0">
                 {badge ? (
-                    <p className="mb-1 text-[11px] font-semibold tracking-[0.16em] text-nppc-700 uppercase">
+                    <p className="mb-1 text-[10px] font-semibold tracking-[0.18em] text-slate-500 uppercase">
                         {badge}
                     </p>
                 ) : null}
-                <h2 className="font-heading text-xl font-semibold text-nppc-900">
+                <h2 className="font-heading text-xl font-bold tracking-tight text-nppc-900 sm:text-2xl">
                     {title}
                 </h2>
                 {hint ? (
-                    <p className="mt-1 text-xs leading-snug text-slate-600 sm:text-[13px]">
+                    <p className="mt-1 text-xs leading-snug text-slate-600 sm:text-sm">
                         {hint}
                     </p>
                 ) : null}

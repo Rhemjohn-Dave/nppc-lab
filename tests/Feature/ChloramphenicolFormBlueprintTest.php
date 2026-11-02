@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\AnalysisPackage;
 use App\Models\AnalysisType;
 use App\Models\ControlledForm;
 use App\Models\JobOrder;
@@ -20,8 +19,7 @@ class ChloramphenicolFormBlueprintTest extends TestCase
     {
         $this->seed();
 
-        $package = AnalysisPackage::query()->where('code', 'PKG-CAP')->firstOrFail();
-        $this->assertFalse($package->is_active);
+        $this->assertDatabaseMissing('analysis_packages', ['code' => 'PKG-CAP']);
 
         $form = ControlledForm::query()->where('form_code', 'LSP-7.8-F016-CAP')->firstOrFail();
         $this->assertNull($form->analysis_package_id);

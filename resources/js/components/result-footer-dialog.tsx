@@ -1,14 +1,28 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
 export type ResultFooterConfig = {
+    temperature_c?: string;
+    humidity_pct?: string;
     lab_conditions: string;
     references: string;
     notes: string;
+    requires_atmosphere?: boolean;
+    atmosphere_complete?: boolean;
+    show_notes_fields?: boolean;
     save_url?: string | null;
     can_edit?: boolean;
+};
+
+export type ResultFooterValues = {
+    temperature_c: string;
+    humidity_pct: string;
+    lab_conditions: string;
+    references: string;
+    notes: string;
 };
 
 type Props = {
@@ -17,39 +31,50 @@ type Props = {
     error?: string | null;
     confirmLabel?: string;
     onCancel: () => void;
-    onConfirm: (footer: {
-        lab_conditions: string;
-        references: string;
-        notes: string;
-    }) => void;
+    onConfirm: (footer: ResultFooterValues) => void;
     onReset?: () => void;
 };
 
 /**
- * Edit FO2 / FO2A flowing footer text (lab conditions, references, notes).
+ * Lab conditions (required Temp/Humidity) plus FO2/FO2A references and notes.
  */
 export default function ResultFooterPanel({
     config,
     submitting = false,
     error = null,
-    confirmLabel = 'Save footer notes',
+    confirmLabel = 'Save lab conditions',
     onCancel,
     onConfirm,
     onReset,
 }: Props) {
+    const requiresAtmosphere = config.requires_atmosphere !== false;
+    const showNotes = config.show_notes_fields === true;
+
+    const [temperature, setTemperature] = useState(config.temperature_c ?? '');
+    const [humidity, setHumidity] = useState(config.humidity_pct ?? '');
     const [labConditions, setLabConditions] = useState(config.lab_conditions);
     const [references, setReferences] = useState(config.references);
     const [notes, setNotes] = useState(config.notes);
 
     useEffect(() => {
+        setTemperature(config.temperature_c ?? '');
+        setHumidity(config.humidity_pct ?? '');
         setLabConditions(config.lab_conditions);
         setReferences(config.references);
         setNotes(config.notes);
-    }, [config.lab_conditions, config.references, config.notes]);
+    }, [
+        config.temperature_c,
+        config.humidity_pct,
+        config.lab_conditions,
+        config.references,
+        config.notes,
+    ]);
 
     function submit(event: FormEvent) {
         event.preventDefault();
         onConfirm({
+            temperature_c: temperature.trim(),
+            humidity_pct: humidity.trim(),
             lab_conditions: labConditions,
             references,
             notes,
@@ -63,12 +88,11 @@ export default function ResultFooterPanel({
         >
             <div className="shrink-0 border-b px-5 pt-4 pb-3">
                 <h2 className="font-heading text-base font-semibold text-nppc-900 sm:text-lg">
-                    Result footer notes
+                    Lab conditions
                 </h2>
                 <p className="mt-1 text-xs text-slate-600">
-                    Lab conditions, references, and notes print under the FO2 /
-                    FO2A test matrix. Leave blank sections to keep the default
-                    text for this sample kind.
+                    Enter temperature and humidity before encoding results. Values
+                    print on FO2 / FO2A / FO3 / FO37 result sheets.
                 </p>
             </div>
 
@@ -82,41 +106,86 @@ export default function ResultFooterPanel({
                     </p>
                 ) : null}
 
-                <div className="space-y-1.5">
-                    <Label htmlFor="fo2_lab_conditions">Lab conditions</Label>
-                    <Textarea
-                        id="fo2_lab_conditions"
-                        rows={3}
-                        className="text-sm"
-                        value={labConditions}
-                        onChange={(e) => setLabConditions(e.target.value)}
-                        disabled={submitting}
-                    />
-                </div>
+                {requiresAtmosphere ? (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                            <Label htmlFor="lab_temperature_c">
+                                Temperature (°C)
+                            </Label>
+                            <Input
+                                id="lab_temperature_c"
+                                type="text"
+                                inputMode="decimal"
+                                required
+                                className="text-sm"
+                                value={temperature}
+                                onChange={(e) => setTemperature(e.target.value)}
+                                disabled={submitting}
+                                placeholder="e.g. 25"
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="lab_humidity_pct">Humidity (%)</Label>
+                            <Input
+                                id="lab_humidity_pct"
+                                type="text"
+                                inputMode="decimal"
+                                required
+                                className="text-sm"
+                                value={humidity}
+                                onChange={(e) => setHumidity(e.target.value)}
+                                disabled={submitting}
+                                placeholder="e.g. 55"
+                            />
+                        </div>
+                    </div>
+                ) : null}
 
-                <div className="space-y-1.5">
-                    <Label htmlFor="fo2_references">References</Label>
-                    <Textarea
-                        id="fo2_references"
-                        rows={3}
-                        className="text-sm"
-                        value={references}
-                        onChange={(e) => setReferences(e.target.value)}
-                        disabled={submitting}
-                    />
-                </div>
+                {showNotes ? (
+                    <>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="fo2_lab_conditions">
+                                Lab conditions preview
+                            </Label>
+                            <Textarea
+                                id="fo2_lab_conditions"
+                                rows={3}
+                                className="text-sm"
+                                value={
+                                    temperature.trim() && humidity.trim()
+                                        ? `Laboratory Conditions during the conduct of test: Temp = ${temperature.trim()} °C ; Humidity = ${humidity.trim()} %\nNA – Not Applicable for specified water body .`
+                                        : labConditions
+                                }
+                                readOnly
+                                disabled={submitting}
+                            />
+                        </div>
 
-                <div className="space-y-1.5">
-                    <Label htmlFor="fo2_notes">Notes</Label>
-                    <Textarea
-                        id="fo2_notes"
-                        rows={8}
-                        className="font-mono text-xs leading-relaxed"
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        disabled={submitting}
-                    />
-                </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="fo2_references">References</Label>
+                            <Textarea
+                                id="fo2_references"
+                                rows={3}
+                                className="text-sm"
+                                value={references}
+                                onChange={(e) => setReferences(e.target.value)}
+                                disabled={submitting}
+                            />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label htmlFor="fo2_notes">Notes</Label>
+                            <Textarea
+                                id="fo2_notes"
+                                rows={8}
+                                className="font-mono text-xs leading-relaxed"
+                                value={notes}
+                                onChange={(e) => setNotes(e.target.value)}
+                                disabled={submitting}
+                            />
+                        </div>
+                    </>
+                ) : null}
             </div>
 
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t bg-slate-50/80 px-5 py-3">
@@ -128,7 +197,7 @@ export default function ResultFooterPanel({
                         disabled={submitting}
                         onClick={onReset}
                     >
-                        Reset to default
+                        Reset
                     </Button>
                 ) : null}
                 <Button

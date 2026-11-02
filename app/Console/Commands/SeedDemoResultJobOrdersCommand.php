@@ -10,6 +10,7 @@ use App\Models\JobOrderAnalysis;
 use App\Models\User;
 use App\Services\JobOrderService;
 use App\Support\OfficialAnalysisCatalog;
+use App\Support\ResultFooter;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -196,7 +197,17 @@ class SeedDemoResultJobOrdersCommand extends Command
             }
         }
 
-        $job = $job->fresh(['analyses.analysisType', 'analyses.assignee']) ?? $job;
+        $job = $job->fresh(['analyses.analysisType', 'analyses.assignee', 'samples']) ?? $job;
+
+        if (ResultFooter::formRequiresLabAtmosphere($form)) {
+            $job->update([
+                'result_footer' => ResultFooter::normalizeForStorage([
+                    'temperature_c' => '25',
+                    'humidity_pct' => '55',
+                ], $form),
+            ]);
+            $job = $job->fresh(['analyses.analysisType', 'analyses.assignee', 'samples']) ?? $job;
+        }
 
         foreach ($job->analyses as $line) {
             if ($line->status === JobOrderAnalysisStatus::Completed) {

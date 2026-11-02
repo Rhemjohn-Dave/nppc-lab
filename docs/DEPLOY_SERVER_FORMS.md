@@ -100,10 +100,20 @@ php artisan db:seed --class=DatabaseSeeder --force
 
 ## 5. Front-end assets and caches
 
+Vite’s Wayfinder plugin runs `php artisan wayfinder:generate --with-form` during `npm run build`. That command must succeed as the **deploy user** (the account that owns the app tree and runs `npm`), and must be able to write `resources/js/routes` and `resources/js/actions`.
+
 ```bash
 cd /var/www/nppc-lab
+
+# Clear any stale config/route caches before generating types / building
+php artisan optimize:clear
+
+# Fail fast with a readable PHP error (do not skip if this fails)
+php artisan wayfinder:generate --with-form
+
 npm ci
 npm run build
+
 sudo php artisan config:cache
 sudo php artisan route:cache
 sudo php artisan view:cache
@@ -112,12 +122,18 @@ sudo chown -R www-data:www-data storage bootstrap/cache
 sudo chmod -R ug+rwx storage bootstrap/cache
 ```
 
+If `wayfinder:generate` fails with permission errors, the deploy user cannot write under the app root (often after an accidental `chown -R www-data` on the whole tree). Restore deploy-user ownership, keep runtime dirs for PHP-FPM:
+
+```bash
+sudo chown -R "$USER":www-data /var/www/nppc-lab
+sudo chown -R www-data:www-data /var/www/nppc-lab/storage /var/www/nppc-lab/bootstrap/cache
+```
+
 Restart Supervisor workers if `queue:restart` alone is not enough:
 
 ```bash
 sudo supervisorctl restart all
 ```
-
 ---
 
 ## 6. Calibri fonts (PDF bold)

@@ -142,17 +142,15 @@ class DualJobOrderFormTest extends TestCase
             'form_code' => ControlledForm::RFA_AQUA_FORM_CODE,
             'job_order_variant' => JobOrderVariant::Aqua->value,
         ]);
-        $this->assertDatabaseHas('analysis_packages', ['code' => 'PKG-AQUA-MIC']);
-        $this->assertDatabaseHas('analysis_packages', ['code' => 'PKG-AQUA-WATER']);
-        $this->assertDatabaseHas('analysis_packages', ['code' => 'PKG-DW-PHYSICO']);
+        $this->assertDatabaseMissing('analysis_packages', ['code' => 'PKG-AQUA-MIC']);
+        $this->assertDatabaseMissing('analysis_packages', ['code' => 'PKG-AQUA-WATER']);
+        $this->assertDatabaseMissing('analysis_packages', ['code' => 'PKG-PROXIMATE']);
+        $this->assertDatabaseMissing('analysis_packages', ['code' => 'PKG-MIC-FOOD']);
+        $this->assertDatabaseMissing('analysis_packages', ['code' => 'PKG-MIC-DW']);
         $this->assertDatabaseHas('analysis_packages', [
-            'code' => 'PKG-PROXIMATE',
+            'code' => 'PKG-DW-PHYSICO',
+            'is_active' => true,
             'report_layout' => 'dynamic_matrix',
-            'is_active' => false,
-        ]);
-        $this->assertDatabaseHas('analysis_packages', [
-            'code' => 'PKG-MIC-FOOD',
-            'is_active' => false,
         ]);
         $this->assertDatabaseHas('analysis_packages', [
             'code' => 'PKG-MIC-NDW',
@@ -164,6 +162,7 @@ class DualJobOrderFormTest extends TestCase
             'is_active' => true,
             'default_price' => 300,
         ]);
+        $this->assertSame(3, \App\Models\AnalysisPackage::query()->count());
         $this->assertDatabaseHas('controlled_forms', [
             'form_code' => 'LSP-7.8-FO4',
         ]);

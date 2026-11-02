@@ -53,6 +53,7 @@ type Props = {
     readOnly: boolean;
     saveStateLabel: string;
     analysisError?: string | null;
+    sendGateError?: string | null;
     queuePendingCount?: number;
     focusPosition?: { index: number; total: number } | null;
     canGoPrev?: boolean;
@@ -95,6 +96,7 @@ export default function AnalystEncodingStudio({
     readOnly,
     saveStateLabel,
     analysisError,
+    sendGateError = null,
     queuePendingCount = 0,
     focusPosition = null,
     canGoPrev = false,
@@ -142,6 +144,17 @@ export default function AnalystEncodingStudio({
     const canEditFooter = Boolean(
         consolidation?.footer?.can_edit || releasedPrint?.footer?.can_edit,
     );
+    const atmosphereComplete = Boolean(
+        consolidation?.footer?.atmosphere_complete ??
+            releasedPrint?.footer?.atmosphere_complete ??
+            true,
+    );
+    const requiresAtmosphere = Boolean(
+        consolidation?.footer?.requires_atmosphere ||
+            releasedPrint?.footer?.requires_atmosphere,
+    );
+    const encodeBlockedByAtmosphere =
+        requiresAtmosphere && !atmosphereComplete;
     const canEditSignatories = Boolean(
         consolidation?.signatory?.can_edit ||
             releasedPrint?.signatory?.can_edit,
@@ -457,6 +470,36 @@ export default function AnalystEncodingStudio({
                                     </div>
 
                                     <div className="p-3.5 sm:p-4">
+                                        {encodeBlockedByAtmosphere ? (
+                                            <div className="mb-2.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-950">
+                                                <p className="font-semibold">
+                                                    Lab conditions required
+                                                </p>
+                                                <p className="mt-0.5">
+                                                    Enter temperature and humidity
+                                                    before encoding dates and
+                                                    results.
+                                                    {canEditFooter &&
+                                                    onEditFooter ? (
+                                                        <>
+                                                            {' '}
+                                                            <button
+                                                                type="button"
+                                                                className="font-semibold underline"
+                                                                onClick={() =>
+                                                                    onEditFooter(
+                                                                        job.id,
+                                                                    )
+                                                                }
+                                                            >
+                                                                Open Lab
+                                                                conditions
+                                                            </button>
+                                                        </>
+                                                    ) : null}
+                                                </p>
+                                            </div>
+                                        ) : null}
                                         {active.status === 'returned' &&
                                         reviewNotes ? (
                                             <div className="mb-2.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-950">
@@ -472,7 +515,13 @@ export default function AnalystEncodingStudio({
                                             task={active}
                                             formData={formData}
                                             formErrors={formErrors}
-                                            readOnly={readOnly}
+                                            readOnly={
+                                                readOnly ||
+                                                encodeBlockedByAtmosphere
+                                            }
+                                            remarksPassFail={
+                                                requiresAtmosphere
+                                            }
                                             analysisError={analysisError}
                                             onFieldChange={onFieldChange}
                                         />
@@ -594,7 +643,10 @@ export default function AnalystEncodingStudio({
                                 <span className="hidden sm:inline">Preview</span>
                             </Button>
                         ) : null}
-                        {active && !readOnly && !isCompletedLine ? (
+                        {active &&
+                        !readOnly &&
+                        !encodeBlockedByAtmosphere &&
+                        !isCompletedLine ? (
                             <Button
                                 type="button"
                                 variant="outline"
@@ -614,7 +666,7 @@ export default function AnalystEncodingStudio({
                                 className="h-9 border-slate-200 text-xs shadow-xs"
                                 onClick={() => onEditFooter(job.id)}
                             >
-                                Edit notes
+                                Lab conditions
                             </Button>
                         ) : null}
                         {canEditSignatories && onEditSignatories ? (
@@ -628,7 +680,7 @@ export default function AnalystEncodingStudio({
                                 Signatories
                             </Button>
                         ) : null}
-                        {active && !readOnly ? (
+                        {active && !readOnly && !encodeBlockedByAtmosphere ? (
                             <Button
                                 type="submit"
                                 size="sm"
@@ -646,15 +698,25 @@ export default function AnalystEncodingStudio({
                             </Button>
                         ) : null}
                         {canSend ? (
-                            <Button
-                                type="button"
-                                size="sm"
-                                className="h-9 gap-1 bg-nppc-900 text-xs font-semibold hover:bg-nppc-700"
-                                onClick={() => onSendToHead(job.id)}
-                            >
-                                {hasReturned ? 'Resubmit' : 'Send to Head'}
-                                <Send className="size-3.5" />
-                            </Button>
+                            <div className="flex flex-col items-end gap-1">
+                                {sendGateError ? (
+                                    <p
+                                        className="max-w-xs text-right text-[11px] font-medium text-rose-700"
+                                        role="alert"
+                                    >
+                                        {sendGateError}
+                                    </p>
+                                ) : null}
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    className="h-9 gap-1 bg-nppc-900 text-xs font-semibold hover:bg-nppc-700"
+                                    onClick={() => onSendToHead(job.id)}
+                                >
+                                    {hasReturned ? 'Resubmit' : 'Send to Head'}
+                                    <Send className="size-3.5" />
+                                </Button>
+                            </div>
                         ) : null}
                     </div>
                 </footer>

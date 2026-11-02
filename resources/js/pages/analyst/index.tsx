@@ -216,6 +216,7 @@ export default function AnalystIndex({
     const [footerContinueSubmit, setFooterContinueSubmit] = useState(false);
     const [footerError, setFooterError] = useState<string | null>(null);
     const [footerSaving, setFooterSaving] = useState(false);
+    const [sendGateError, setSendGateError] = useState<string | null>(null);
     const { isRefreshing } = useInertiaNavigation();
     const form = useForm({
         performed_at: '',
@@ -507,6 +508,17 @@ export default function AnalystIndex({
             loadTaskIntoForm(focus);
         } else {
             setActive(null);
+        }
+
+        const footer = consolidationsById.get(jobId)?.footer;
+        if (
+            footer?.can_edit &&
+            footer.requires_atmosphere &&
+            !footer.atmosphere_complete
+        ) {
+            setFooterError(null);
+            setFooterContinueSubmit(false);
+            setFooterJobId(jobId);
         }
     }
 
@@ -1103,19 +1115,26 @@ export default function AnalystIndex({
 
     function submitJob(jobId: number) {
         const consolidation = consolidationsById.get(jobId);
-        if (consolidation?.footer?.can_edit) {
-            setFooterError(null);
-            setFooterContinueSubmit(true);
-            setFooterJobId(jobId);
+        const footer = consolidation?.footer;
+        if (
+            footer?.requires_atmosphere &&
+            !footer.atmosphere_complete
+        ) {
+            setSendGateError(
+                'Enter lab temperature and humidity (Lab conditions) before Send to Head.',
+            );
 
             return;
         }
 
+        setSendGateError(null);
+        // Lab conditions are captured at encode time — Send to Head goes to signatories only.
         proceedSubmitAfterFooter(jobId);
     }
 
     function openEditFooter(jobId: number) {
         setFooterError(null);
+        setSendGateError(null);
         setFooterContinueSubmit(false);
         setFooterJobId(jobId);
     }
@@ -1457,6 +1476,7 @@ export default function AnalystIndex({
                             }
                             queuePendingCount={needsAction}
                             focusPosition={focusPosition}
+                            sendGateError={sendGateError}
                             canGoPrev={prevJobId != null}
                             canGoNext={nextJobId != null}
                             onBackToQueue={backToQueue}

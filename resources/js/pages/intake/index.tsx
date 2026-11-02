@@ -1,520 +1,502 @@
-import { Form, Head, Link, usePage } from '@inertiajs/react';
+import { Form, Head, Link, router, usePage } from '@inertiajs/react';
 import {
     ArrowRight,
-    Check,
-    FileCheck2,
+    Award,
+    Clock,
+    FilePlus2,
     FlaskConical,
-    Lock,
-    Package,
-    RotateCcw,
-    ShieldCheck,
-    UserPlus,
+    History,
+    LoaderCircle,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import type { KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import InputError from '@/components/input-error';
 import IntakePortalChrome from '@/components/intake/intake-portal-chrome';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { limsPageBackground } from '@/lib/lims-page-shell';
 import { cn } from '@/lib/utils';
 
-type LandingPackage = {
+type CustomerSuggestion = {
     id: number;
-    code: string;
-    name: string;
-    description: string | null;
-    default_price: string | number;
-    form_code: string | null;
-    category: string | null;
-    category_label: string | null;
-    tests: Array<{ id: number; name: string }>;
+    customer_name: string;
+    customer_email: string | null;
+    customer_contact: string | null;
+    customer_address: string | null;
+    company_name: string | null;
+    ownership_type: string | null;
 };
 
-type Props = {
-    packages: LandingPackage[];
-};
-
-const PROCEDURE = [
-    {
-        step: '01',
-        title: 'Online Pre-Registration',
-        body: 'Complete this portal to receive a system-allocated job order reference and sample labels before you arrive.',
-        meta: 'Input time: ~3–5 mins',
-        accent: 'Instant JO reference',
-    },
-    {
-        step: '02',
-        title: 'Counter Receiving & Custody',
-        body: 'Bring labeled samples to Receiving for container inspection, temperature check, and Chain of Custody logging.',
-        meta: 'Inspection: ~2 mins',
-        accent: 'Temp verification',
-    },
-    {
-        step: '03',
-        title: 'Digital COA Certificate Release',
-        body: 'After analysis and Head release, encrypted PDF Certificates of Analysis are delivered using your registered contacts.',
-        meta: 'Delivery: Email / pickup',
-        accent: 'ISO 17025 ready',
-    },
-] as const;
-
-export default function IntakeIndex({ packages }: Props) {
+export default function IntakeIndex() {
     const { errors } = usePage().props as {
         errors?: Record<string, string>;
     };
     const [mode, setMode] = useState<'choose' | 'returning'>(() =>
         errors?.query ? 'returning' : 'choose',
     );
-    const [filter, setFilter] = useState<string>('all');
+    const [query, setQuery] = useState('');
+    const [selectedId, setSelectedId] = useState<number | null>(null);
+    const [suggestions, setSuggestions] = useState<CustomerSuggestion[]>([]);
+    const [suggestOpen, setSuggestOpen] = useState(false);
+    const [suggestLoading, setSuggestLoading] = useState(false);
+    const [activeIndex, setActiveIndex] = useState(-1);
+    const suggestListId = useId();
+    const suggestAbort = useRef<AbortController | null>(null);
 
-    const categoryFilters = useMemo(() => {
-        const labels = new Map<string, string>();
-        packages.forEach((pkg) => {
-            if (pkg.category && pkg.category_label) {
-                labels.set(pkg.category, pkg.category_label);
-            }
-        });
-        return Array.from(labels.entries()).map(([slug, label]) => ({
-            slug,
-            label,
-        }));
-    }, [packages]);
-
-    const filteredPackages = useMemo(() => {
-        if (filter === 'all') {
-            return packages;
+    useEffect(() => {
+        if (mode !== 'returning') {
+            return;
         }
-        return packages.filter((pkg) => pkg.category === filter);
-    }, [filter, packages]);
+
+        const trimmed = query.trim();
+        if (trimmed.length < 2) {
+            suggestAbort.current?.abort();
+            setSuggestions([]);
+            setSuggestLoading(false);
+            setSuggestOpen(false);
+            setActiveIndex(-1);
+
+            return;
+        }
+
+        const timer = window.setTimeout(async () => {
+            suggestAbort.current?.abort();
+            const controller = new AbortController();
+            suggestAbort.current = controller;
+            setSuggestLoading(true);
+
+            try {
+                const response = await fetch(
+                    `/intake/customers/suggest?q=${encodeURIComponent(trimmed)}`,
+                    {
+                        headers: {
+                            Accept: 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        signal: controller.signal,
+                    },
+                );
+
+                if (!response.ok) {
+                    throw new Error('Suggest failed');
+                }
+
+                const payload = (await response.json()) as {
+                    customers?: CustomerSuggestion[];
+                };
+                const rows = payload.customers ?? [];
+                setSuggestions(rows);
+                setSuggestOpen(true);
+                setActiveIndex(rows.length > 0 ? 0 : -1);
+            } catch (error) {
+                if ((error as Error).name === 'AbortError') {
+                    return;
+                }
+                setSuggestions([]);
+                setSuggestOpen(true);
+                setActiveIndex(-1);
+            } finally {
+                if (!controller.signal.aborted) {
+                    setSuggestLoading(false);
+                }
+            }
+        }, 300);
+
+        return () => {
+            window.clearTimeout(timer);
+        };
+    }, [query, mode]);
+
+    function prefillFromCustomer(customer: CustomerSuggestion) {
+        setSelectedId(customer.id);
+        setSuggestOpen(false);
+        router.get('/intake/create', {
+            customer_name: customer.customer_name,
+            customer_email: customer.customer_email ?? '',
+            customer_contact: customer.customer_contact ?? '',
+            customer_address: customer.customer_address ?? '',
+            company_name: customer.company_name ?? '',
+            ownership_type: customer.ownership_type ?? '',
+        });
+    }
+
+    function onQueryKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+        if (!suggestOpen || suggestions.length === 0) {
+            if (event.key === 'Escape') {
+                setSuggestOpen(false);
+            }
+
+            return;
+        }
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setActiveIndex((index) =>
+                index < suggestions.length - 1 ? index + 1 : 0,
+            );
+
+            return;
+        }
+
+        if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setActiveIndex((index) =>
+                index > 0 ? index - 1 : suggestions.length - 1,
+            );
+
+            return;
+        }
+
+        if (event.key === 'Enter' && activeIndex >= 0) {
+            event.preventDefault();
+            prefillFromCustomer(suggestions[activeIndex]);
+
+            return;
+        }
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            setSuggestOpen(false);
+        }
+    }
 
     return (
-        <div
-            className={cn(
-                'relative min-h-screen text-slate-900',
-                limsPageBackground,
-            )}
-        >
+        <div className="relative flex h-dvh max-h-dvh flex-col overflow-hidden bg-[#f7f9fc] text-slate-900">
             <Head title="Customer Intake Portal" />
             <IntakePortalChrome />
 
-            {/* Hero: brand + intake actions */}
-            <section className="mx-auto grid w-full max-w-[1680px] gap-0 px-4 py-6 sm:px-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-6 lg:px-6 lg:py-8 xl:px-8">
-                <aside className="relative hidden min-h-[28rem] overflow-hidden rounded-xl lg:block">
+            <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(226,232,240,0.55),transparent_55%),linear-gradient(180deg,#ffffff_0%,#f7f9fc_100%)]"
+                />
+                <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-y-0 right-0 hidden w-[46%] lg:block"
+                >
                     <img
-                        src="/nppc.jpg"
-                        alt="NPPC laboratory analysts at work"
-                        className="absolute inset-0 size-full object-cover object-[center_30%]"
+                        src="/intake-hero.jpg"
+                        alt=""
+                        className="absolute inset-0 size-full object-cover object-[72%_center]"
                     />
-                    <div className="absolute inset-0 bg-[linear-gradient(160deg,rgba(10,28,84,0.88)_0%,rgba(10,28,84,0.55)_55%,rgba(10,28,84,0.75)_100%)]" />
-                    <div className="relative flex h-full flex-col justify-between p-8 text-white">
-                        <div>
-                            <p className="text-[10px] font-semibold tracking-[0.2em] text-white/70 uppercase">
-                                NPPC Diagnostics & Testing
-                            </p>
-                            <span className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2.5 py-1 text-[10px] font-semibold text-emerald-100">
-                                <span className="size-1.5 rounded-full bg-emerald-400" />
-                                Receiving counter open
-                            </span>
-                            <h1 className="mt-6 font-heading text-3xl font-semibold tracking-tight xl:text-4xl">
-                            Advancing science,
-                            <span className="mt-1 block font-normal text-white/85">
-                                supporting industries.
-                            </span>
-                            </h1>
-                        <p className="mt-4 max-w-md text-sm leading-relaxed text-white/75">
-                            Trusted laboratory testing for agriculture,
-                                aquaculture, and industrial partners across
-                                Negros.
-                            </p>
-                        </div>
-                        <div className="space-y-1 text-xs text-white/70">
-                            <p>Tel 034-4332131 · 034-4352613</p>
-                            <p>nppclab@gmail.com</p>
-                            <p className="pt-2 text-[10px] tracking-wide text-white/50 uppercase">
-                                Methods: SMEWW · AOAC · USEPA
-                            </p>
-                        </div>
-                    </div>
-                </aside>
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#f7f9fc] via-[#f7f9fc]/80 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#f7f9fc] via-transparent to-[#f7f9fc]/35" />
+                </div>
+                <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 opacity-[0.28]"
+                    style={{
+                        backgroundImage:
+                            "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg stroke='%23cbd5e1' stroke-width='0.6'%3E%3Cpath d='M0 30c10-8 20-8 30 0s20 8 30 0'/%3E%3Cpath d='M0 45c10-8 20-8 30 0s20 8 30 0'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")",
+                    }}
+                />
 
-                <div className="flex flex-col justify-center rounded-xl border border-slate-200/80 bg-white p-5 shadow-xs sm:p-7">
-                    <p className="text-[10px] font-semibold tracking-[0.18em] text-nppc-700 uppercase">
-                        NPPC Intake Portal
-                    </p>
-                    <h2 className="mt-1 font-heading text-2xl font-semibold text-nppc-900 sm:text-3xl">
-                        Start your Request for Analysis
-                    </h2>
-                    <p className="mt-2 max-w-xl text-sm text-slate-600">
-                        Submit online, then bring your samples to Receiving.
-                        Typical turnaround is 5–7 working days.
-                    </p>
+                <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col justify-center px-5 py-4 sm:px-8 sm:py-6 lg:px-10">
+                    <div className="max-w-2xl">
+                        <div className="flex items-center gap-3">
+                            <span className="h-px w-8 bg-nppc-900/70" />
+                            <p className="text-[11px] font-semibold tracking-[0.22em] text-slate-500 uppercase">
+                                Customer Intake
+                            </p>
+                        </div>
+                        <h1 className="mt-3 font-heading text-3xl font-bold tracking-tight text-nppc-900 sm:text-4xl lg:text-[2.75rem] lg:leading-[1.12]">
+                            Start Your Request for Analysis
+                        </h1>
+                        <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-600 sm:text-base">
+                            Submit your request online, then bring labeled
+                            samples to Receiving. Typical turnaround is 5–7
+                            working days.
+                        </p>
+                    </div>
 
                     {mode === 'choose' ? (
-                        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                            <div className="flex flex-col rounded-xl border border-nppc-200 bg-gradient-to-b from-nppc-50/80 to-white p-5">
-                                <span className="inline-flex w-fit items-center rounded-md bg-nppc-900 px-2 py-0.5 text-[10px] font-semibold text-white">
-                                    Guided · ~3–5 mins
-                                </span>
-                                <div className="mt-4 flex size-10 items-center justify-center rounded-full bg-nppc-900 text-white">
-                                    <UserPlus className="size-5" />
-                            </div>
-                                <h3 className="mt-3 font-heading text-lg font-semibold text-nppc-900">
-                                    New customer
-                                </h3>
+                        <div className="mt-6 grid gap-4 sm:mt-7 sm:grid-cols-2 sm:gap-5">
+                            <article className="flex flex-col rounded-2xl border border-slate-200/90 bg-white/95 p-5 shadow-sm backdrop-blur-sm sm:p-6">
+                                <div className="flex size-11 items-center justify-center rounded-xl bg-nppc-50 text-nppc-900">
+                                    <FilePlus2 className="size-5" />
+                                </div>
+                                <h2 className="mt-4 font-heading text-lg font-bold text-nppc-900 sm:text-xl">
+                                    New Customer
+                                </h2>
                                 <p className="mt-1.5 flex-1 text-sm leading-relaxed text-slate-600">
-                                    First visit? Start a guided request with
-                                    your details, samples, and tests.
+                                    First visit? Enter your details, samples,
+                                    and tests.
                                 </p>
-                                <ul className="mt-3 space-y-1 text-[11px] text-slate-500">
-                                    <li className="flex items-center gap-1.5">
-                                        <Check className="size-3 text-nppc-700" />
-                                        Auto job order reference
-                                    </li>
-                                    <li className="flex items-center gap-1.5">
-                                        <Check className="size-3 text-nppc-700" />
-                                        Packages & individual tests
-                                    </li>
-                                </ul>
                                 <Button
                                     asChild
-                                    className="mt-5 h-10 gap-2 bg-nppc-900 hover:bg-nppc-700"
+                                    className="mt-5 h-11 gap-2 bg-nppc-900 px-5 text-sm hover:bg-nppc-700 sm:text-base"
                                 >
                                     <Link href="/intake/create">
-                                        Start Intake Request
+                                        Start Request
                                         <ArrowRight className="size-4" />
                                     </Link>
                                 </Button>
-                        </div>
+                            </article>
 
-                            <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-5">
-                                <span className="inline-flex w-fit items-center rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
-                                    1-Click Recall
-                                </span>
-                                <div className="mt-4 flex size-10 items-center justify-center rounded-full bg-nppc-700 text-white">
-                                    <RotateCcw className="size-5" />
-                    </div>
-                                <h3 className="mt-3 font-heading text-lg font-semibold text-nppc-900">
-                                    Returning customer
-                                </h3>
-                                <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
-                                    Look up email, contact, or name from a past
-                                    visit to reuse customer details.
+                            <article className="flex flex-col rounded-2xl border border-slate-200/90 bg-white/95 p-5 shadow-sm backdrop-blur-sm sm:p-6">
+                                <div className="flex size-11 items-center justify-center rounded-xl bg-slate-50 text-nppc-900">
+                                    <History className="size-5" />
+                                </div>
+                                <h2 className="mt-4 font-heading text-lg font-bold text-nppc-900 sm:text-xl">
+                                    Returning Customer
+                                </h2>
+                                <p className="mt-1.5 flex-1 text-sm leading-relaxed text-slate-600">
+                                    Look up a past visit to reuse your customer
+                                    details.
                                 </p>
                                 <Button
                                     type="button"
                                     variant="outline"
-                                    className="mt-auto h-10 gap-2 border-nppc-900/25 text-nppc-900 hover:bg-nppc-50"
+                                    className="mt-5 h-11 gap-2 border-nppc-900/30 bg-white px-5 text-sm text-nppc-900 hover:bg-slate-50 sm:text-base"
                                     onClick={() => setMode('returning')}
                                 >
-                                        Find my details
+                                    Find My Details
                                     <ArrowRight className="size-4" />
                                 </Button>
-                            </div>
-                            </div>
-                        ) : (
-                        <div className="mt-6 max-w-md rounded-xl border border-slate-200 bg-slate-50/50 p-5">
-                                <button
-                                    type="button"
-                                    onClick={() => setMode('choose')}
-                                    className="text-sm font-medium text-nppc-700 hover:text-nppc-900"
-                                >
-                                    ← Back to options
-                                </button>
-                            <h3 className="mt-3 font-heading text-xl font-semibold text-nppc-900">
-                                    Returning customer
-                            </h3>
-                            <p className="mt-1 text-sm text-slate-600">
-                                    Enter any detail from a previous visit.
-                                </p>
-                                <Form
-                                    action="/intake/lookup"
-                                    method="post"
-                                className="mt-4 space-y-4"
-                                >
-                                    {({ processing }) => (
-                                        <>
-                                            <div className="space-y-2">
-                                                <Label htmlFor="query">
-                                                    Email, contact, or name
-                                                </Label>
+                            </article>
+                        </div>
+                    ) : (
+                        <div className="mt-6 max-w-xl rounded-2xl border border-slate-200/90 bg-white/95 p-5 shadow-sm backdrop-blur-sm sm:mt-7 sm:p-6">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setMode('choose');
+                                    setQuery('');
+                                    setSelectedId(null);
+                                    setSuggestions([]);
+                                    setSuggestOpen(false);
+                                }}
+                                className="text-sm font-medium text-nppc-700 hover:text-nppc-900"
+                            >
+                                ← Back
+                            </button>
+                            <h2 className="mt-3 font-heading text-xl font-bold text-nppc-900">
+                                Returning Customer
+                            </h2>
+                            <p className="mt-1.5 text-sm text-slate-600">
+                                Enter any detail from a previous visit. Pick a
+                                suggestion when several people match.
+                            </p>
+                            <Form
+                                action="/intake/lookup"
+                                method="post"
+                                className="mt-5 space-y-3"
+                            >
+                                {({ processing }) => (
+                                    <>
+                                        {selectedId ? (
+                                            <input
+                                                type="hidden"
+                                                name="customer_id"
+                                                value={selectedId}
+                                            />
+                                        ) : null}
+                                        <div className="relative space-y-2">
+                                            <Label htmlFor="query">
+                                                Email, contact, or name
+                                            </Label>
+                                            <div className="relative">
                                                 <Input
                                                     id="query"
                                                     name="query"
                                                     required
                                                     autoFocus
-                                                className="h-11 text-base"
+                                                    autoComplete="off"
+                                                    role="combobox"
+                                                    aria-expanded={suggestOpen}
+                                                    aria-controls={
+                                                        suggestListId
+                                                    }
+                                                    aria-autocomplete="list"
+                                                    value={query}
+                                                    onChange={(event) => {
+                                                        setQuery(
+                                                            event.target.value,
+                                                        );
+                                                        setSelectedId(null);
+                                                    }}
+                                                    onFocus={() => {
+                                                        if (
+                                                            suggestions.length >
+                                                                0 ||
+                                                            query.trim()
+                                                                .length >= 2
+                                                        ) {
+                                                            setSuggestOpen(
+                                                                true,
+                                                            );
+                                                        }
+                                                    }}
+                                                    onKeyDown={onQueryKeyDown}
+                                                    onBlur={() => {
+                                                        window.setTimeout(
+                                                            () =>
+                                                                setSuggestOpen(
+                                                                    false,
+                                                                ),
+                                                            150,
+                                                        );
+                                                    }}
+                                                    className="h-11 pr-9 text-base"
                                                     placeholder="e.g. 0917… or name@email.com"
                                                 />
-                                                <InputError
-                                                    message={errors?.query}
-                                                />
+                                                {suggestLoading ? (
+                                                    <LoaderCircle className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 animate-spin text-slate-400" />
+                                                ) : null}
                                             </div>
-                                            <Button
-                                                type="submit"
-                                                disabled={processing}
-                                            className="h-11 w-full gap-2 bg-nppc-900 text-base hover:bg-nppc-700"
-                                            >
-                                                Continue with my details
-                                            <ArrowRight className="size-4" />
-                                            </Button>
-                                        </>
-                                    )}
-                                </Form>
-                            </div>
-                        )}
-                    </div>
-            </section>
+                                            {suggestOpen ? (
+                                                <div
+                                                    id={suggestListId}
+                                                    role="listbox"
+                                                    className="absolute z-30 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-md"
+                                                >
+                                                    {suggestions.length ===
+                                                    0 ? (
+                                                        <p className="px-3 py-2 text-xs text-slate-500">
+                                                            {suggestLoading
+                                                                ? 'Searching…'
+                                                                : 'No matching customers yet.'}
+                                                        </p>
+                                                    ) : (
+                                                        suggestions.map(
+                                                            (
+                                                                customer,
+                                                                index,
+                                                            ) => {
+                                                                const meta = [
+                                                                    customer.customer_contact,
+                                                                    customer.customer_email,
+                                                                    customer.company_name,
+                                                                ]
+                                                                    .filter(
+                                                                        Boolean,
+                                                                    )
+                                                                    .join(
+                                                                        ' · ',
+                                                                    );
 
-            {/* Drop-off procedure */}
-            <section
-                id="drop-off"
-                className="border-y border-slate-200/80 bg-white"
-            >
-                <div className="mx-auto w-full max-w-[1680px] px-4 py-10 sm:px-5 lg:px-6 xl:px-8">
-                    <div className="flex flex-wrap items-end justify-between gap-3">
-                        <div>
-                            <p className="text-[10px] font-semibold tracking-[0.18em] text-nppc-700 uppercase">
-                                How it works
-                            </p>
-                            <h2 className="mt-1 font-heading text-xl font-semibold text-nppc-900 sm:text-2xl">
-                                Physical Drop-off & Sample Intake Procedure
-                            </h2>
-                        </div>
-                        <span className="inline-flex items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-800">
-                            Cold chain ready · follow preservation guidance
-                        </span>
-                    </div>
-
-                    <div className="mt-6 grid gap-4 md:grid-cols-3">
-                        {PROCEDURE.map((phase) => (
-                            <article
-                                key={phase.step}
-                                className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-5 shadow-xs"
-                            >
-                                <span className="pointer-events-none absolute top-3 right-4 font-heading text-4xl font-bold text-slate-100">
-                                    {phase.step}
-                                </span>
-                                <div className="relative flex size-9 items-center justify-center rounded-lg bg-nppc-50 text-nppc-900">
-                                    {phase.step === '01' ? (
-                                        <Package className="size-4" />
-                                    ) : phase.step === '02' ? (
-                                        <FlaskConical className="size-4" />
-                                    ) : (
-                                        <FileCheck2 className="size-4" />
-                                    )}
-                                </div>
-                                <h3 className="relative mt-4 font-heading text-base font-semibold text-nppc-900">
-                                    {phase.title}
-                                </h3>
-                                <p className="relative mt-2 text-sm leading-relaxed text-slate-600">
-                                    {phase.body}
-                                </p>
-                                <div className="relative mt-4 flex flex-wrap gap-x-3 gap-y-1 border-t border-slate-100 pt-3 text-[11px]">
-                                    <span className="text-slate-500">
-                                        {phase.meta}
-                                    </span>
-                                    <span className="font-medium text-emerald-700">
-                                        {phase.accent}
-                                    </span>
-                                </div>
-                            </article>
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            {/* Package catalog — browse only */}
-            <section className="mx-auto w-full max-w-[1680px] px-4 py-10 sm:px-5 lg:px-6 xl:px-8">
-                <div className="flex flex-wrap items-end justify-between gap-3">
-                    <div>
-                        <p className="text-[10px] font-semibold tracking-[0.18em] text-nppc-700 uppercase">
-                            Service catalog
-                        </p>
-                        <h2 className="mt-1 font-heading text-xl font-semibold text-nppc-900 sm:text-2xl">
-                            Standard Analytical Suites
-                        </h2>
-                        <p className="mt-1 text-sm text-slate-600">
-                            Browse packages below. Selecting starts a new
-                            intake — you choose tests again in the wizard.
-                        </p>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                        <button
-                            type="button"
-                            onClick={() => setFilter('all')}
-                            className={cn(
-                                'rounded-full px-3 py-1.5 text-xs font-semibold transition',
-                                filter === 'all'
-                                    ? 'bg-nppc-900 text-white'
-                                    : 'border border-slate-200 bg-white text-slate-600 hover:border-nppc-300',
-                            )}
-                        >
-                            All Packages
-                        </button>
-                        {categoryFilters.map((cat) => (
-                            <button
-                                key={cat.slug}
-                                type="button"
-                                onClick={() => setFilter(cat.slug)}
-                                className={cn(
-                                    'rounded-full px-3 py-1.5 text-xs font-semibold transition',
-                                    filter === cat.slug
-                                        ? 'bg-nppc-900 text-white'
-                                        : 'border border-slate-200 bg-white text-slate-600 hover:border-nppc-300',
-                                )}
-                            >
-                                {cat.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {filteredPackages.length === 0 ? (
-                    <p className="mt-8 text-sm text-slate-500">
-                        No packages available in this category yet. Start a
-                        request to browse individual tests.
-                    </p>
-                ) : (
-                    <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                        {filteredPackages.map((pkg) => {
-                            const preview = pkg.tests.slice(0, 4);
-                            return (
-                                <article
-                                    key={pkg.id}
-                                    className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-xs"
-                                >
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {pkg.form_code || pkg.code ? (
-                                            <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-600">
-                                                {pkg.form_code || pkg.code}
-                                            </span>
-                                        ) : null}
-                                        {pkg.category_label ? (
-                                            <span className="rounded bg-nppc-50 px-1.5 py-0.5 text-[10px] font-medium text-nppc-800">
-                                                {pkg.category_label}
-                                            </span>
-                                        ) : null}
-                                    </div>
-                                    <h3 className="mt-3 font-heading text-base font-semibold text-nppc-900">
-                                        {pkg.name}
-                                    </h3>
-                                    {pkg.description ? (
-                                        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-600">
-                                            {pkg.description}
-                                        </p>
-                                    ) : null}
-                                    <ul className="mt-3 flex-1 space-y-1">
-                                        {preview.map((test) => (
-                                            <li
-                                                key={test.id}
-                                                className="flex items-start gap-1.5 text-xs text-slate-700"
-                                            >
-                                                <Check className="mt-0.5 size-3 shrink-0 text-nppc-700" />
-                                                <span className="min-w-0">
-                                                    {test.name}
-                                                </span>
-                                            </li>
-                                        ))}
-                                        {pkg.tests.length > 4 ? (
-                                            <li className="pl-4 text-[11px] text-slate-500">
-                                                +{pkg.tests.length - 4} more
-                                            </li>
-                                        ) : null}
-                                    </ul>
-                                    <div className="mt-4 flex items-end justify-between gap-2 border-t border-slate-100 pt-3">
-                                        <div>
-                                            <p className="text-[9px] font-semibold tracking-wider text-slate-500 uppercase">
-                                                Fee per sample
-                                            </p>
-                                            <p className="font-heading text-lg font-extrabold tabular-nums text-nppc-900">
-                                                ₱
-                                                {Number(
-                                                    pkg.default_price,
-                                                ).toFixed(2)}
-                                            </p>
+                                                                return (
+                                                                    <button
+                                                                        key={
+                                                                            customer.id
+                                                                        }
+                                                                        type="button"
+                                                                        role="option"
+                                                                        aria-selected={
+                                                                            index ===
+                                                                            activeIndex
+                                                                        }
+                                                                        className={cn(
+                                                                            'flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition',
+                                                                            index ===
+                                                                                activeIndex
+                                                                                ? 'bg-nppc-50'
+                                                                                : 'hover:bg-slate-50',
+                                                                        )}
+                                                                        onMouseDown={(
+                                                                            event,
+                                                                        ) =>
+                                                                            event.preventDefault()
+                                                                        }
+                                                                        onMouseEnter={() =>
+                                                                            setActiveIndex(
+                                                                                index,
+                                                                            )
+                                                                        }
+                                                                        onClick={() =>
+                                                                            prefillFromCustomer(
+                                                                                customer,
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        <span className="text-sm font-semibold text-nppc-900">
+                                                                            {
+                                                                                customer.customer_name
+                                                                            }
+                                                                        </span>
+                                                                        {meta ? (
+                                                                            <span className="text-[11px] text-slate-500">
+                                                                                {
+                                                                                    meta
+                                                                                }
+                                                                            </span>
+                                                                        ) : null}
+                                                                    </button>
+                                                                );
+                                                            },
+                                                        )
+                                                    )}
+                                                </div>
+                                            ) : null}
+                                            <InputError
+                                                message={errors?.query}
+                                            />
                                         </div>
                                         <Button
-                                            asChild
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-8 border-nppc-900/30 bg-nppc-50/50 text-nppc-900 hover:bg-nppc-50"
+                                            type="submit"
+                                            disabled={processing}
+                                            className="h-11 w-full gap-2 bg-nppc-900 text-base hover:bg-nppc-700"
                                         >
-                                            <Link href="/intake/create">
-                                                Select
-                                            </Link>
+                                            Continue with my details
+                                            <ArrowRight className="size-4" />
                                         </Button>
-                                    </div>
-                                </article>
-                            );
-                        })}
-                    </div>
-                )}
-
-                <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-nppc-200 bg-nppc-50/60 px-4 py-3">
-                    <p className="text-sm text-nppc-900">
-                        Need a custom or bulk quotation? Start intake and note
-                        requirements under Other tests, or call Receiving.
-                    </p>
-                    <Button
-                        asChild
-                        className="h-8 gap-1.5 bg-nppc-900 hover:bg-nppc-700"
-                    >
-                        <Link href="/intake/create">
-                            Start request
-                            <ArrowRight className="size-3.5" />
-                        </Link>
-                    </Button>
-                </div>
-            </section>
-
-            {/* Accreditations */}
-            <section className="border-t border-slate-200/80 bg-white">
-                <div className="mx-auto grid w-full max-w-[1680px] gap-4 px-4 py-8 sm:grid-cols-3 sm:px-5 lg:px-6 xl:px-8">
-                    {[
-                        {
-                            icon: ShieldCheck,
-                            title: 'ISO/IEC 17025:2017',
-                            body: 'Accredited laboratory quality management for competent testing.',
-                        },
-                        {
-                            icon: FileCheck2,
-                            title: 'DENR & DOH Recognized',
-                            body: 'Methods aligned with applicable Philippine regulatory frameworks.',
-                        },
-                        {
-                            icon: Lock,
-                            title: 'RA 10173 Data Privacy',
-                            body: 'Customer and sample data handled under Philippine privacy law.',
-                        },
-                    ].map((item) => (
-                        <div
-                            key={item.title}
-                            className="rounded-xl border border-slate-200 bg-slate-50/50 p-4"
-                        >
-                            <item.icon className="size-5 text-nppc-900" />
-                            <h3 className="mt-2 font-heading text-sm font-semibold text-nppc-900">
-                                {item.title}
-                            </h3>
-                            <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                                {item.body}
-                            </p>
+                                    </>
+                                )}
+                            </Form>
                         </div>
-                    ))}
-                </div>
-                <div className="border-t border-slate-100">
-                    <div className="mx-auto flex w-full max-w-[1680px] flex-wrap items-center justify-between gap-2 px-4 py-3 text-[11px] text-slate-500 sm:px-5 lg:px-6 xl:px-8">
-                        <p>
-                            ISO/IEC 17025 Accredited Laboratory · NPPC
-                            Analytical & Diagnostic Testing
-                        </p>
-                        <p className="inline-flex items-center gap-1.5">
-                            <span className="size-1.5 rounded-full bg-emerald-500" />
-                            Secure SSL Encrypted
-                        </p>
+                    )}
+
+                    <div className="mt-6 flex flex-col items-stretch gap-3 border-t border-slate-200/80 pt-5 sm:mt-7 sm:flex-row sm:items-center sm:justify-center sm:gap-0 sm:divide-x sm:divide-slate-200 sm:border-0 sm:pt-6">
+                        {[
+                            {
+                                icon: Award,
+                                label: 'ISO/IEC 17025 Accredited',
+                            },
+                            {
+                                icon: Clock,
+                                label: 'Turnaround Time 5–7 Business Days',
+                            },
+                            {
+                                icon: FlaskConical,
+                                label: 'Reliable & Defensible Analytical Results',
+                            },
+                        ].map((item) => (
+                            <div
+                                key={item.label}
+                                className="flex items-center gap-2 px-0 text-xs text-slate-600 sm:px-5 sm:text-sm lg:px-7"
+                            >
+                                <item.icon
+                                    className="text-nppc-800 size-4 shrink-0 sm:size-5"
+                                    aria-hidden
+                                />
+                                <span className="font-medium">
+                                    {item.label}
+                                </span>
+                            </div>
+                        ))}
                     </div>
-            </div>
-            </section>
+                </div>
+            </main>
+
+            <footer className="relative z-10 shrink-0 border-t border-slate-200 bg-white">
+                <div className="mx-auto flex w-full max-w-6xl flex-col gap-1.5 px-5 py-2.5 text-[10px] text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:text-[11px] lg:px-10">
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                        <span className="font-medium text-slate-700">
+                            NPPC Laboratory
+                        </span>
+                        <span className="hidden text-slate-300 sm:inline">
+                            |
+                        </span>
+                        <span>
+                            ISO/IEC 17025 · DENR &amp; DOH Recognized · RA 10173
+                            Data Privacy
+                        </span>
+                    </div>
+                    <p className="sm:text-right">
+                        Powered by FNDS · All rights reserved 2026
+                    </p>
+                </div>
+            </footer>
         </div>
     );
 }

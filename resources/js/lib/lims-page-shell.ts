@@ -25,7 +25,7 @@ export const limsPageShellWide =
  * (does not change admin dashboard `limsPageShellWide`).
  */
 export const limsIntakeShell =
-    'mx-auto flex w-full max-w-[1920px] flex-col gap-3 px-3 sm:px-4 lg:px-5 xl:px-6';
+    'mx-auto flex w-full max-w-[1600px] flex-col gap-2 px-4 sm:px-5 lg:px-6';
 
 /** Full-bleed fluid column inside the app sidebar scroll area. */
 export const limsPageShellFluid = 'flex w-full flex-col gap-5 p-4 sm:p-6';
@@ -45,8 +45,7 @@ export const limsQueueShell =
     'overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs';
 
 /** Primary page H1 — matches WorkspaceHeader. */
-export const limsTitle =
-    'font-heading text-xl font-semibold text-nppc-900';
+export const limsTitle = 'font-heading text-xl font-semibold text-nppc-900';
 
 /** Inline text links / secondary actions. */
 export const limsLink = 'font-medium text-nppc-900 hover:text-nppc-700';

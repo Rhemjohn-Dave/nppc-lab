@@ -134,13 +134,6 @@ class DatabaseSeeder extends Seeder
     private function seedPackages(): void
     {
         $micro = AnalysisCategory::query()->where('slug', 'microbiological')->first();
-        $prawn = AnalysisCategory::query()->where('slug', 'adult_fry_prawn_aquaculture')->first();
-        $aquaWater = AnalysisCategory::query()->where('slug', 'water_analysis_aquaculture')->first();
-        $aquaSoil = AnalysisCategory::query()->where('slug', 'soil_analysis_aquaculture')->first();
-        $proximate = AnalysisCategory::query()->where('slug', 'proximate_analysis')->first();
-        $phyto = AnalysisCategory::query()->where('slug', 'phytochemical')->first();
-        $food = AnalysisCategory::query()->where('slug', 'other_food_analysis')->first();
-        $foodMicro = AnalysisCategory::query()->where('slug', 'food_products_microbiological')->first();
         $drinking = AnalysisCategory::query()->where('slug', 'drinking_water')->first();
 
         $total = AnalysisType::query()->where('code', 'MB-02A')->first();
@@ -182,6 +175,8 @@ class DatabaseSeeder extends Seeder
                 ->all();
         };
 
+        $retained = ['PKG-MIC-NDW', 'PKG-DW-PHYSICO', 'PKG-DW-BACT'];
+
         $this->ensurePackage(
             'PKG-MIC-NDW',
             [
@@ -198,24 +193,6 @@ class DatabaseSeeder extends Seeder
             [$total->id, $thermo->id],
         );
 
-        if ($hpc) {
-            $this->ensurePackage(
-                'PKG-MIC-DW',
-                [
-                    'name' => 'Microbiological Examination — Drinking Water (legacy)',
-                    'description' => 'Legacy FO5 panel. Drinking-water bacteriology is sold as PKG-DW-BACT (₱300). Kept inactive for historical jobs.',
-                    'category_id' => $micro->id,
-                    'default_price' => 900,
-                    'classifications' => ['Potability'],
-                    'form_code' => null,
-                    'signatory_user_id' => $analystId,
-                    'is_active' => false,
-                    'sort_order' => 2,
-                ],
-                [$total->id, $thermo->id, $hpc->id],
-            );
-        }
-
         if ($drinking) {
             $this->ensurePackage(
                 'PKG-DW-PHYSICO',
@@ -229,7 +206,7 @@ class DatabaseSeeder extends Seeder
                     'report_layout' => AnalysisPackageReportLayout::DynamicMatrix->value,
                     'signatory_user_id' => $analystId,
                     'is_active' => true,
-                    'sort_order' => 3,
+                    'sort_order' => 2,
                 ],
                 // Issue 7 print order (9 matrix rows): Color, TDS, Turbidity, pH, Residual Chlorine, Nitrate, As, Pb, Cd.
                 $ids(['DW-01', 'DW-03', 'DW-04', 'DW-02', 'DW-05', 'DW-06', 'DW-07', 'DW-08', 'DW-09']),
@@ -246,226 +223,30 @@ class DatabaseSeeder extends Seeder
                     'form_code' => null,
                     'signatory_user_id' => $analystId,
                     'is_active' => true,
-                    'sort_order' => 4,
+                    'sort_order' => 3,
                 ],
                 $ids(['DW-BACT-HPC', 'DW-BACT-TC', 'DW-BACT-FC']),
             );
         }
 
-        if ($aquaWater) {
-            $this->ensurePackage(
-                'PKG-AQUA-WATER',
-                [
-                    'name' => 'Water Analysis — Aquaculture',
-                    'description' => 'Aqua water panel from the NPPC price list. Individual pay — not offered as a package at intake.',
-                    'category_id' => $aquaWater->id,
-                    'default_price' => 5550,
-                    'classifications' => ['Aqua'],
-                    'form_code' => null,
-                    'signatory_user_id' => $analystId,
-                    'is_active' => false,
-                    'sort_order' => 10,
-                ],
-                $ids([
-                    'AQ-W-01', 'AQ-W-02', 'AQ-W-03', 'AQ-W-04', 'AQ-W-05', 'AQ-W-06',
-                    'AQ-W-07', 'AQ-W-08', 'AQ-W-09', 'AQ-W-10', 'AQ-W-11', 'AQ-W-12',
-                    'AQ-W-13', 'AQ-W-14', 'AQ-W-15',
-                ]),
-            );
-        }
+        // Drop legacy/shell packages from older seeds (keep only the three paid offerings).
+        AnalysisPackage::query()
+            ->whereNotIn('code', $retained)
+            ->get()
+            ->each(function (AnalysisPackage $package): void {
+                ControlledForm::query()
+                    ->where('analysis_package_id', $package->id)
+                    ->update(['analysis_package_id' => null]);
+                $package->analysisTypes()->detach();
 
-        if ($aquaSoil) {
-            $this->ensurePackage(
-                'PKG-AQUA-SOIL',
-                [
-                    'name' => 'Soil Analysis — Aquaculture',
-                    'description' => 'Aqua soil panel from the NPPC price list. Individual pay — not offered as a package at intake.',
-                    'category_id' => $aquaSoil->id,
-                    'default_price' => 3900,
-                    'classifications' => ['Aqua'],
-                    'form_code' => null,
-                    'signatory_user_id' => $analystId,
-                    'is_active' => false,
-                    'sort_order' => 11,
-                ],
-                $ids([
-                    'AQ-S-01', 'AQ-S-02', 'AQ-S-03', 'AQ-S-04', 'AQ-S-05',
-                    'AQ-S-06', 'AQ-S-07', 'AQ-S-08',
-                ]),
-            );
-        }
+                if ($package->jobOrders()->exists()) {
+                    $package->update(['is_active' => false]);
 
-        if ($prawn) {
-            $this->ensurePackage(
-                'PKG-AQUA-MIC',
-                [
-                    'name' => 'Adult/Fry Prawn — Microbiological',
-                    'description' => 'Microscopic, bacterial/luminous, Vibrio, V. parahaemolyticus. Individual pay.',
-                    'category_id' => $prawn->id,
-                    'default_price' => 1500,
-                    'classifications' => ['Aqua'],
-                    'form_code' => null,
-                    'signatory_user_id' => $analystId,
-                    'is_active' => false,
-                    'sort_order' => 12,
-                ],
-                $ids(['AQ-P-01', 'AQ-P-02', 'AQ-P-03', 'AQ-P-04']),
-            );
+                    return;
+                }
 
-            $this->ensurePackage(
-                'PKG-AQUA-PCR',
-                [
-                    'name' => 'Adult/Fry Prawn — PCR',
-                    'description' => 'WSSV, APHND/EMS, EHP. Individual pay.',
-                    'category_id' => $prawn->id,
-                    'default_price' => 3450,
-                    'classifications' => ['Aqua'],
-                    'form_code' => null,
-                    'signatory_user_id' => $analystId,
-                    'is_active' => false,
-                    'sort_order' => 13,
-                ],
-                $ids(['PCR-01', 'PCR-02', 'PCR-03']),
-            );
-        }
-
-        if ($proximate) {
-            $this->ensurePackage(
-                'PKG-PROXIMATE',
-                [
-                    'name' => 'Proximate Analysis',
-                    'description' => 'Legacy package shell. Proximate tests are sold individually; result form LSP-7.8-F016-PROX is types-only.',
-                    'category_id' => $proximate->id,
-                    'default_price' => 10550,
-                    'classifications' => ['Agriculture', 'Academic/Research', 'Others'],
-                    'form_code' => null,
-                    'report_layout' => AnalysisPackageReportLayout::DynamicMatrix->value,
-                    'signatory_user_id' => $analystId,
-                    'is_active' => false,
-                    'sort_order' => 20,
-                ],
-                $ids(['PX-01', 'PX-02', 'PX-03', 'PX-04', 'PX-05', 'PX-06', 'PX-07', 'PX-08', 'PX-09', 'PX-10', 'PX-11']),
-            );
-        }
-
-        if ($foodMicro) {
-            $this->ensurePackage(
-                'PKG-MIC-FOOD',
-                [
-                    'name' => 'Microbiological Examination — Food',
-                    'description' => 'Legacy package shell. Food micro tests are sold individually; result form LSP-7.8-FO26 is types-only.',
-                    'category_id' => $foodMicro->id,
-                    'default_price' => 10350,
-                    'classifications' => ['Agriculture', 'Others'],
-                    'form_code' => null,
-                    'signatory_user_id' => $analystId,
-                    'is_active' => false,
-                    'sort_order' => 21,
-                ],
-                $ids(OfficialAnalysisCatalog::foodMicroFo26TypeCodes()),
-            );
-        }
-
-        // Sugar micro form — distinct SM-* members (types-only FO27).
-        $this->ensurePackage(
-            'PKG-MIC-SUGAR',
-            [
-                'name' => 'Microbiological Examination — Sugar',
-                'description' => 'Legacy package shell. Sugar micro tests are sold individually; result form LSP-7.8-FO27 is types-only.',
-                'category_id' => $foodMicro?->id ?? $micro->id,
-                'default_price' => 4200,
-                'classifications' => ['Agriculture', 'Others'],
-                'form_code' => null,
-                'signatory_user_id' => $analystId,
-                'is_active' => false,
-                'sort_order' => 22,
-            ],
-            $ids(OfficialAnalysisCatalog::foodMicroSugarTypeCodes()),
-        );
-
-        if ($food) {
-            $this->ensurePackage(
-                'PKG-MILK',
-                [
-                    'name' => 'Milk Sample Analysis',
-                    'description' => 'Legacy package shell. Milk tests are sold individually.',
-                    'category_id' => $food->id,
-                    'default_price' => 1600,
-                    'classifications' => ['Agriculture', 'Others'],
-                    'form_code' => null,
-                    'signatory_user_id' => $analystId,
-                    'is_active' => false,
-                    'sort_order' => 23,
-                ],
-                $ids(['MK-01', 'MK-02', 'MK-03', 'MK-04', 'MK-05']),
-            );
-
-            $this->ensurePackage(
-                'PKG-WATER-ACTIVITY',
-                [
-                    'name' => 'Water Activity',
-                    'description' => 'Legacy package shell. Water Activity is sold individually.',
-                    'category_id' => $food->id,
-                    'default_price' => 850,
-                    'classifications' => ['Agriculture', 'Others'],
-                    'form_code' => null,
-                    'signatory_user_id' => $analystId,
-                    'is_active' => false,
-                    'sort_order' => 24,
-                ],
-                $ids(['WA-01']),
-            );
-
-            $this->ensurePackage(
-                'PKG-FOOD-NITRITE',
-                [
-                    'name' => 'Food Nitrite Content',
-                    'description' => 'Legacy package shell. Nitrite is sold individually.',
-                    'category_id' => $food->id,
-                    'default_price' => 500,
-                    'classifications' => ['Agriculture', 'Others'],
-                    'form_code' => null,
-                    'signatory_user_id' => $analystId,
-                    'is_active' => false,
-                    'sort_order' => 25,
-                ],
-                $ids(['FD-NO2']),
-            );
-
-            $this->ensurePackage(
-                'PKG-CAP',
-                [
-                    'name' => 'Chloramphenicol Residue',
-                    'description' => 'Legacy package shell. CAP is sold individually.',
-                    'category_id' => $food->id,
-                    'default_price' => 5000,
-                    'classifications' => ['Aqua', 'Agriculture', 'Others'],
-                    'form_code' => null,
-                    'signatory_user_id' => $analystId,
-                    'is_active' => false,
-                    'sort_order' => 26,
-                ],
-                $ids(['FD-CAP']),
-            );
-        }
-
-        if ($phyto) {
-            $this->ensurePackage(
-                'PKG-PHYTO',
-                [
-                    'name' => 'Phytochemical Screening',
-                    'description' => 'Legacy package shell. Phytochemical tests are sold individually.',
-                    'category_id' => $phyto->id,
-                    'default_price' => 2700,
-                    'classifications' => ['Academic/Research', 'Others'],
-                    'form_code' => null,
-                    'signatory_user_id' => $analystId,
-                    'is_active' => false,
-                    'sort_order' => 27,
-                ],
-                $ids(['PHY-01', 'PHY-02', 'PHY-03', 'PHY-04', 'PHY-05', 'PHY-06', 'PHY-07', 'PHY-08', 'PHY-09']),
-            );
-        }
+                $package->delete();
+            });
     }
 
     private function seedJobOrderForms(): void

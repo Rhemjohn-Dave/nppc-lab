@@ -25,6 +25,7 @@ Route::redirect('/', '/login')->name('home');
 
 Route::middleware('throttle:20,1')->prefix('intake')->name('intake.')->group(function () {
     Route::get('/', [IntakeController::class, 'index'])->name('index');
+    Route::get('/customers/suggest', [IntakeController::class, 'suggestCustomers'])->name('customers.suggest');
     Route::post('/lookup', [IntakeController::class, 'lookup'])->name('lookup');
     Route::get('/create', [IntakeController::class, 'create'])->name('create');
     Route::post('/job-orders', [IntakeController::class, 'store'])->name('store');

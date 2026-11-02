@@ -123,7 +123,7 @@ The intake area captures:
 - sample information (**Sample type** = water/soil/food/prawn; not the PDF dynamic test matrix)
 - requested analyses from the **NPPC price-list catalog**, including **analysis packages** — chosen **per sample** (not once for the whole JO)
 - optional **standalone tests** that are not part of a package
-- for **Wastewater**, a required **Sample description** kind (**Wastewater** / **River water** / **Abstracted water**) that is stored on each sample and printed on the result sheet **Sample Description**. Selecting the **Physico-chem panel** (intake preset still `LSP-7.8-FO2`) defaults to the **full** panel for Wastewater and River water, or **pH / DO / BOD / TSS** only for Abstracted water (members remain editable individual-pay lines, not a package). Kind also selects which result form prints: **FO2** (WW/River, 4 signatories + 6 notes) vs **FO2A** (Abstracted, 3 signatories + 4 notes). Analysts can edit lab conditions / references / notes on the workstation before print (`job_orders.result_footer`)
+- for **Wastewater**, a required **Sample description** kind (**Wastewater** / **River water** / **Abstracted water**) that is stored on each sample and printed on the result sheet **Sample Description**. Selecting the **Physico-chem panel** (intake preset still `LSP-7.8-FO2`) defaults to the **full** panel for Wastewater and River water, or **pH / DO / BOD / TSS** only for Abstracted water (members remain editable individual-pay lines, not a package). Kind also selects which result form prints: **FO2** (WW/River, 4 signatories + 6 notes) vs **FO2A** (Abstracted, 3 signatories + 4 notes). For **FO2 / FO2A / FO3 / FO37**, analysts must enter laboratory **temperature** and **humidity** before encoding results (`job_orders.result_footer`); FO2/FO2A may also edit references/notes
 
 **Multi-sample (same classification):** one JO keeps reference `YY-NNNN`; printed control numbers are `YY-NNNNA`, `YY-NNNNB`, … when there are 2+ samples. Each sample picks its own packages/tests; billing is the **sum of each sample’s lines** (four samples with the same package = 4×). Different classifications (e.g. food + water) stay **separate JOs** for now.
 
@@ -139,10 +139,10 @@ After submission, the job enters the internal workflow and the customer is remem
 The dashboard gives a high-level summary of system activity: counts by status, recent job orders, and role-based next actions.
 
 ### 3. Receiving Module
-Used to process new jobs: price → await Head JO approval → print JO ×3 → send to analysts; later reprint after result release.
+Used to process new jobs: price → await Head JO approval → print JO ×3 → **Send to analysts** from the queue (without opening the JO) or from the Job Order screen; later reprint after result release.
 
 It handles:
-- queue: needs pricing / awaiting Head JO / ready for analysts / results released
+- queue: needs pricing / awaiting Head JO / ready for analysts / results released; optional **day** filter on intake date (`created_at`, lab timezone) — when a day is selected, sent jobs (`in_analysis` / `pending_review`) for that day stay visible for Open / reprint
 - pricing (status `pending_jo_approval`)
 - print JO/RFA after `jo_approved` (default 3 copies: customer, accounting, Head file; max 20)
 - send to analysts only when status is `jo_approved`
@@ -232,7 +232,7 @@ Head reviews costing and clicks **Approve JO**. That:
 Payment (cashier / billing) stays **outside** LMIS after print.
 
 ### Step 4. Receiving prints JO copies and sends to analysts
-Receiving prints 3 JO copies (customer, accounting, Head file), then clicks **Send to analysts**. Samples were already captured at intake; this step:
+Receiving prints 3 JO copies (customer, accounting, Head file), then clicks **Send to analysts** from the **Receiving queue** (or from the open Job Order). Samples were already captured at intake; this step:
 - records lab-acceptance time (`received_at` / Receipt time on result sheets, Asia/Manila)
 - moves the job to In analysis
 - **suggests each test line** to a qualified analyst (soft `assigned_to`)
@@ -248,6 +248,7 @@ Encode fields:
 - **Result value** is always required.
 - **Pass / Fail** is required for FO5 (and other non-FO4 result sheets); FO4 (`LSP-7.8-FO4`) hides it and prints the measured MPN only.
 - **Method** prefills from Procedures (`analysis_types.method`) and stays editable but optional. FO4 coliforms seed as `Multiple Tube Fermentation Technique* 9221, SMEWW`.
+- For physico result sheets **FO2 / FO2A / FO3 / FO37**, **Lab conditions** (temperature °C and humidity %) are required **before** encoding dates/results (not at Send to Head); values print on the sheet. Remarks may be set to **Passed** / **Failed** for the Remarks column. **Send to Head** only collects analyst signatories.
 
 ### Step 6. Designated analyst sends to Head
 When every line is complete:

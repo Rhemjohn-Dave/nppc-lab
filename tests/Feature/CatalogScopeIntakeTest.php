@@ -33,22 +33,22 @@ class CatalogScopeIntakeTest extends TestCase
         ]);
     }
 
-    public function test_aqua_packages_are_hidden_from_non_aqua_and_vice_versa(): void
+    public function test_package_visibility_follows_classifications(): void
     {
         $this->seed();
 
-        $aquaWater = AnalysisPackage::query()->where('code', 'PKG-AQUA-WATER')->firstOrFail();
+        $ndw = AnalysisPackage::query()->where('code', 'PKG-MIC-NDW')->firstOrFail();
         $dw = AnalysisPackage::query()->where('code', 'PKG-DW-PHYSICO')->firstOrFail();
-        $cap = AnalysisPackage::query()->where('code', 'PKG-CAP')->firstOrFail();
+        $bact = AnalysisPackage::query()->where('code', 'PKG-DW-BACT')->firstOrFail();
 
-        $this->assertTrue($aquaWater->visibleForAqua(true));
-        $this->assertFalse($aquaWater->visibleForAqua(false));
+        $this->assertFalse($ndw->visibleForAqua(true));
+        $this->assertTrue($ndw->visibleForAqua(false));
 
         $this->assertFalse($dw->visibleForAqua(true));
         $this->assertTrue($dw->visibleForAqua(false));
 
-        $this->assertTrue($cap->visibleForAqua(true));
-        $this->assertTrue($cap->visibleForAqua(false));
+        $this->assertFalse($bact->visibleForAqua(true));
+        $this->assertTrue($bact->visibleForAqua(false));
     }
 
     public function test_chemicals_are_not_in_catalog_definitions(): void

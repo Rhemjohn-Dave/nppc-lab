@@ -235,6 +235,8 @@ return [
                     ['key' => 'fo2_notes', 'label' => 'FO2 NOTES block', 'type' => 'text', 'hint' => 'Kind-selected notes text (full 6-note vs abstracted 4-note). Editable by analyst later.'],
                     ['key' => 'fo2_lab_conditions', 'label' => 'FO2 lab conditions', 'type' => 'text'],
                     ['key' => 'fo2_references', 'label' => 'FO2 references', 'type' => 'text'],
+                    ['key' => 'fo3_lab_conditions', 'label' => 'FO3 lab conditions', 'type' => 'text', 'hint' => 'Temp/Humidity entered by analyst before encode.'],
+                    ['key' => 'fo37_lab_conditions', 'label' => 'FO37 lab conditions', 'type' => 'text', 'hint' => 'Temp/Humidity + MDL line; atmosphere entered by analyst before encode.'],
                     ['key' => 'results.analyst_prc', 'label' => 'Analyst PRC (slot 1)', 'type' => 'text', 'hint' => 'PRC ID only (not appended to the name field).'],
                     ['key' => 'results.analyst_prc_2', 'label' => 'Analyst PRC (slot 2)', 'type' => 'text'],
                     ['key' => 'results.analyst_prc_3', 'label' => 'Analyst PRC (slot 3)', 'type' => 'text'],

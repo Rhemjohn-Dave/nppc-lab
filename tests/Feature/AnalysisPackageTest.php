@@ -118,12 +118,11 @@ class AnalysisPackageTest extends TestCase
         $this->assertEquals(300, (float) $job->total_cost);
     }
 
-    public function test_legacy_mic_dw_package_is_inactive(): void
+    public function test_legacy_mic_dw_package_is_not_seeded(): void
     {
         $this->seed();
 
-        $package = AnalysisPackage::query()->where('code', 'PKG-MIC-DW')->firstOrFail();
-        $this->assertFalse($package->is_active);
+        $this->assertDatabaseMissing('analysis_packages', ['code' => 'PKG-MIC-DW']);
 
         $fo5 = ControlledForm::query()->where('form_code', 'LSP-7.8-FO5')->firstOrFail();
         $this->assertNull($fo5->analysis_package_id);
@@ -436,8 +435,7 @@ class AnalysisPackageTest extends TestCase
         $this->seed();
 
         $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
-        $package = AnalysisPackage::query()->where('code', 'PKG-MIC-DW')->firstOrFail();
-        $package->update(['is_active' => true]);
+        $package = AnalysisPackage::query()->where('code', 'PKG-DW-BACT')->firstOrFail();
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
 
@@ -514,8 +512,7 @@ class AnalysisPackageTest extends TestCase
         $this->seed();
 
         $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
-        $package = AnalysisPackage::query()->where('code', 'PKG-MIC-DW')->firstOrFail();
-        $package->update(['is_active' => true]);
+        $package = AnalysisPackage::query()->where('code', 'PKG-DW-BACT')->firstOrFail();
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
 
@@ -635,7 +632,23 @@ class AnalysisPackageTest extends TestCase
         $this->seed();
 
         $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
-        $package = AnalysisPackage::query()->where('code', 'PKG-PROXIMATE')->firstOrFail();
+        $category = \App\Models\AnalysisCategory::query()->where('slug', 'other')->firstOrFail();
+        $type = AnalysisType::query()->where('code', 'MB-01')->firstOrFail();
+
+        $this->actingAs($admin)
+            ->post('/admin/packages', [
+                'code' => 'PKG-TEMP-DELETE',
+                'name' => 'Temporary delete target',
+                'category_id' => $category->id,
+                'default_price' => 100,
+                'classifications' => ['Others'],
+                'report_layout' => 'controlled_form',
+                'is_active' => false,
+                'analysis_type_ids' => [$type->id],
+            ])
+            ->assertRedirect('/admin/packages');
+
+        $package = AnalysisPackage::query()->where('code', 'PKG-TEMP-DELETE')->firstOrFail();
 
         $this->actingAs($admin)
             ->delete("/admin/packages/{$package->id}")

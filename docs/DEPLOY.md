@@ -236,11 +236,15 @@ Then commit the updated `config/*_form_fields.php` files and any new official PD
 
 Git fetch / pull / push basics: [`GIT_UPDATE.md`](GIT_UPDATE.md).
 
+To force the server’s tests and controlled-form plots/PDFs to match this repo (migrate + `ControlledFormDefaultsSeeder`), use [DEPLOY_SERVER_FORMS.md](DEPLOY_SERVER_FORMS.md).
+
 ```bash
 cd /var/www/nppc-lab
 git pull
 composer install --no-dev --optimize-autoloader
 php artisan migrate --force
+php artisan optimize:clear
+php artisan wayfinder:generate --with-form
 npm ci
 npm run build
 sudo php artisan config:cache
@@ -249,7 +253,7 @@ sudo php artisan view:cache
 sudo php artisan queue:restart
 ```
 
-Do not pass `--seed`. Do not run `migrate:fresh` or `db:wipe` on production.
+Do not pass `--seed`. Do not run `migrate:fresh` or `db:wipe` on production. If `npm run build` fails on Wayfinder, run `php artisan wayfinder:generate --with-form -vvv` as the deploy user and fix that error first (often write permission on `resources/js/routes`).
 
 ## `.env` production values
 
@@ -435,4 +439,8 @@ Daily:
 
 - MySQL dump of the application database
 - `storage/app/private` (controlled-form originals and canonical PDFs)
-- `.env` (store separately from 
+- `.env` (store separately from the code backup)
+
+## CI
+
+GitHub Actions workflow `.github/workflows/tests.yml` runs `composer setup` then `composer ci:check` (lint + types + PHPUnit).

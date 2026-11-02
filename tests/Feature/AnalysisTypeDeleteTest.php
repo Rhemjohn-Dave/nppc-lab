@@ -41,7 +41,7 @@ class AnalysisTypeDeleteTest extends TestCase
         $this->seed();
 
         $admin = User::where('email', 'admin@nppc.local')->firstOrFail();
-        $package = AnalysisPackage::query()->where('code', 'PKG-PROXIMATE')->firstOrFail();
+        $package = AnalysisPackage::query()->where('code', 'PKG-MIC-NDW')->firstOrFail();
         $typeId = $package->orderedTypeIds()[0] ?? null;
         $this->assertNotNull($typeId);
 
