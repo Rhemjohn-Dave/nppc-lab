@@ -101,4 +101,46 @@ class ResultSignatoriesTest extends TestCase
         $this->assertSame('Stored', $bag['name']);
         $this->assertSame('9', $bag['prc']);
     }
+
+    public function test_by_form_buckets_keep_fo2_and_fo2a_roles_separate(): void
+    {
+        $fo2 = new ControlledForm([
+            'form_code' => 'LSP-7.8-FO2',
+            'analyst_signatory_slots' => 4,
+        ]);
+        $fo2a = new ControlledForm([
+            'form_code' => 'LSP-7.8-FO2A',
+            'analyst_signatory_slots' => 3,
+        ]);
+
+        $stored = ResultSignatories::mergeIntoStorage(null, $fo2, [
+            ['name' => 'FO2 Reviewed', 'prc_id' => null],
+            ['name' => 'FO2 Noted', 'prc_id' => null],
+            ['name' => 'FO2 Cert1', 'prc_id' => null],
+            ['name' => 'FO2 Cert2', 'prc_id' => null],
+        ]);
+        $stored = ResultSignatories::mergeIntoStorage($stored, $fo2a, [
+            ['name' => 'FO2A Reviewed', 'prc_id' => null],
+            ['name' => 'FO2A Certified', 'prc_id' => null],
+            ['name' => 'FO2A Noted', 'prc_id' => null],
+        ]);
+
+        $job = new JobOrder;
+        $job->result_signatories = $stored;
+
+        $fo2Bag = ResultSignatories::bagValues($job, $fo2);
+        $this->assertSame('FO2 Reviewed', $fo2Bag['name']);
+        $this->assertSame('FO2 Noted', $fo2Bag['name_2']);
+        $this->assertSame('FO2 Cert1', $fo2Bag['name_3']);
+
+        $fo2aBag = ResultSignatories::bagValues($job, $fo2a);
+        $this->assertSame('FO2A Reviewed', $fo2aBag['name']);
+        $this->assertSame('FO2A Certified', $fo2aBag['name_2']);
+        $this->assertSame('FO2A Noted', $fo2aBag['name_3']);
+        $this->assertNull($fo2aBag['name_4']);
+
+        $this->assertTrue(ResultSignatories::isConfirmedForForm($stored, $fo2));
+        $this->assertTrue(ResultSignatories::isConfirmedForForm($stored, $fo2a));
+        $this->assertSame([], ResultSignatories::missingFormCodes($stored, [$fo2, $fo2a]));
+    }
 }

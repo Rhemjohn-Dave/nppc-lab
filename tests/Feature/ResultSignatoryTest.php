@@ -50,8 +50,9 @@ class ResultSignatoryTest extends TestCase
 
         $job->refresh();
         $this->assertSame('pending_review', $job->status->value);
-        $this->assertSame('Headbound Analyst', $job->result_signatories[0]['name']);
-        $this->assertSame('445566', $job->result_signatories[0]['prc_id']);
+        $rows = ResultSignatories::rowsForForm($job->result_signatories, $form->fresh());
+        $this->assertSame('Headbound Analyst', $rows[0]['name']);
+        $this->assertSame('445566', $rows[0]['prc_id']);
     }
 
     public function test_send_to_head_allows_empty_prc_when_not_required(): void
@@ -59,7 +60,7 @@ class ResultSignatoryTest extends TestCase
         Storage::fake('local');
         $this->seed();
 
-        [, $job, $analyst] = $this->prepareCompletedCombinedJob(release: false);
+        [$form, $job, $analyst] = $this->prepareCompletedCombinedJob(release: false);
 
         $this->actingAs($analyst)
             ->post("/analyst/job-orders/{$job->id}/submit-for-review", [
@@ -71,8 +72,9 @@ class ResultSignatoryTest extends TestCase
 
         $job->refresh();
         $this->assertSame('pending_review', $job->status->value);
-        $this->assertSame('No PRC Analyst', $job->result_signatories[0]['name']);
-        $this->assertNull($job->result_signatories[0]['prc_id']);
+        $rows = ResultSignatories::rowsForForm($job->result_signatories, $form->fresh());
+        $this->assertSame('No PRC Analyst', $rows[0]['name']);
+        $this->assertNull($rows[0]['prc_id']);
     }
 
     public function test_auto_analyst_name_used_when_signatories_unset(): void
@@ -115,7 +117,11 @@ class ResultSignatoryTest extends TestCase
             ->assertOk()
             ->assertJsonPath('signatory.confirmed', true);
 
-        $this->assertSame('Preview Analyst', $job->fresh()->result_signatories[0]['name']);
+        $rows = ResultSignatories::rowsForForm(
+            $job->fresh()->result_signatories,
+            $form->fresh(),
+        );
+        $this->assertSame('Preview Analyst', $rows[0]['name']);
     }
 
     public function test_in_analysis_consolidation_exposes_editable_signatories(): void
@@ -198,10 +204,11 @@ class ResultSignatoryTest extends TestCase
             ->assertJsonCount(2, 'signatories');
 
         $job->refresh();
-        $this->assertCount(2, $job->result_signatories);
-        $this->assertSame('First Analyst', $job->result_signatories[0]['name']);
-        $this->assertSame('Second Analyst', $job->result_signatories[1]['name']);
-        $this->assertNull($job->result_signatories[1]['prc_id']);
+        $rows = ResultSignatories::rowsForForm($job->result_signatories, $form->fresh());
+        $this->assertCount(2, $rows);
+        $this->assertSame('First Analyst', $rows[0]['name']);
+        $this->assertSame('Second Analyst', $rows[1]['name']);
+        $this->assertNull($rows[1]['prc_id']);
 
         $form->update(['analyst_signatory_slots' => 1]);
         $normalized = ResultSignatories::normalizeForStorage([
@@ -262,7 +269,7 @@ class ResultSignatoryTest extends TestCase
         Storage::fake('local');
         $this->seed();
 
-        [, $job] = $this->prepareCompletedCombinedJob(release: false);
+        [$form, $job] = $this->prepareCompletedCombinedJob(release: false);
         $head = User::where('email', 'head@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
 
@@ -288,7 +295,8 @@ class ResultSignatoryTest extends TestCase
             ->assertJsonPath('signatory.can_edit', false)
             ->assertJsonPath('signatory.save_url', null);
 
-        $this->assertSame('Sent Analyst', $job->fresh()->result_signatories[0]['name']);
+        $rows = ResultSignatories::rowsForForm($job->fresh()->result_signatories, $form->fresh());
+        $this->assertSame('Sent Analyst', $rows[0]['name']);
     }
 
     public function test_admin_can_update_form_signatory_settings(): void

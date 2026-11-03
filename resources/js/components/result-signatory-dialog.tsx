@@ -16,6 +16,8 @@ export type ResultSignatoryConfig = {
     can_edit?: boolean;
     signatories: ResultSignatoryRow[];
     save_url?: string | null;
+    form_code?: string | null;
+    form_id?: number | null;
 };
 
 type Props = {

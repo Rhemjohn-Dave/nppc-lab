@@ -961,17 +961,40 @@ class JobOrderService
         $updates = ['status' => JobOrderStatus::PendingReview];
 
         if ($resultForm !== null) {
-            if ($signatories === null || $signatories === []) {
-                throw ValidationException::withMessages([
-                    'signatories' => 'Enter the analyst name and PRC before sending to Head.',
-                ]);
+            $stored = is_array($jobOrder->result_signatories) ? $jobOrder->result_signatories : null;
+
+            if ($signatories !== null && $signatories !== []) {
+                $normalized = ResultSignatories::normalizeForStorage(
+                    $signatories,
+                    $resultForm,
+                    $jobOrder,
+                );
+                $stored = ResultSignatories::mergeIntoStorage(
+                    $stored,
+                    $resultForm,
+                    $normalized,
+                );
+                $updates['result_signatories'] = $stored;
             }
 
-            $updates['result_signatories'] = ResultSignatories::normalizeForStorage(
-                $signatories,
-                $resultForm,
-                $jobOrder,
+            $requiredForms = $this->reports
+                ->reportsForJobOrder($jobOrder, $analyst, withValues: false)
+                ->map(fn ($report) => $report->controlledForm)
+                ->filter()
+                ->unique(fn ($form) => $form->form_code)
+                ->values();
+
+            $missing = ResultSignatories::missingFormCodes(
+                $updates['result_signatories'] ?? $stored,
+                $requiredForms,
             );
+
+            if ($missing !== []) {
+                throw ValidationException::withMessages([
+                    'signatories' => 'Confirm analyst signatories for every result sheet before sending to Head'
+                        .(count($missing) > 1 ? ' ('.implode(', ', $missing).').' : '.'),
+                ]);
+            }
         }
 
         $jobOrder->update($updates);

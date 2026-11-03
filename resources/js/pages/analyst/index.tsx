@@ -1304,7 +1304,10 @@ export default function AnalystIndex({
                     'Content-Type': 'application/json',
                     ...(token ? { 'X-XSRF-TOKEN': token } : {}),
                 },
-                body: JSON.stringify({ signatories }),
+                body: JSON.stringify({
+                    signatories,
+                    ...(config.form_id != null ? { form_id: config.form_id } : {}),
+                }),
             });
 
             const payload = (await response.json().catch(() => null)) as {

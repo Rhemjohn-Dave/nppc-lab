@@ -34,6 +34,10 @@ type Props = {
     onChange: (key: keyof IntakeSampleDraft, value: string) => void;
     onDuplicate: () => void;
     onRemove: () => void;
+    /** Wastewater Sample description kinds (FO2 vs FO2A); replaces free-text Description. */
+    wastewaterKinds?: string[];
+    showWastewaterKind?: boolean;
+    wastewaterKindError?: boolean;
 };
 
 const softInput =
@@ -64,10 +68,14 @@ export default function IntakeSampleRow({
     onChange,
     onDuplicate,
     onRemove,
+    wastewaterKinds = [],
+    showWastewaterKind = false,
+    wastewaterKindError = false,
 }: Props) {
     const fieldsId = `sample-fields-${index}`;
     const code = sample.sample_code.trim();
     const tabLabel = `Sample ${index + 1}`;
+    const kindSet = new Set(wastewaterKinds);
 
     return (
         <div
@@ -162,20 +170,78 @@ export default function IntakeSampleRow({
                             }
                         />
                     </IntakeField>
-                    <IntakeField
-                        label="Description"
-                        hint="(optional)"
-                        icon={FileText}
-                    >
-                        <Input
-                            className={softInput}
-                            placeholder="e.g. Drinking water from main kitchen faucet"
-                            value={sample.description}
-                            onChange={(e) =>
-                                onChange('description', e.target.value)
-                            }
-                        />
-                    </IntakeField>
+                    {showWastewaterKind ? (
+                        <IntakeField
+                            label="Sample description"
+                            required
+                            icon={FileText}
+                            className="sm:col-span-2"
+                        >
+                            <p className="mb-1.5 text-[11px] leading-snug text-slate-500">
+                                Printed on the result sheet. Wastewater and
+                                River water default to the full physico panel;
+                                Abstracted water defaults to pH, DO, BOD, and
+                                TSS. Each sample can differ (FO2 vs FO2A).
+                            </p>
+                            <div
+                                className="flex flex-wrap gap-1.5"
+                                role="group"
+                                aria-label={`Sample ${index + 1} description`}
+                            >
+                                {wastewaterKinds.map((kind) => {
+                                    const active = sample.description === kind;
+
+                                    return (
+                                        <button
+                                            key={kind}
+                                            type="button"
+                                            aria-pressed={active}
+                                            onClick={() =>
+                                                onChange(
+                                                    'description',
+                                                    active ? '' : kind,
+                                                )
+                                            }
+                                            className={cn(
+                                                'rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition',
+                                                active
+                                                    ? 'border-nppc-900 bg-nppc-900 text-white'
+                                                    : 'border-slate-200 bg-white text-slate-700 hover:border-nppc-500/60',
+                                            )}
+                                        >
+                                            {kind}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {wastewaterKindError &&
+                            !kindSet.has(sample.description.trim()) ? (
+                                <p
+                                    className="mt-1.5 border-l-2 border-rose-300 py-1 pl-2 text-xs font-medium text-rose-700"
+                                    role="alert"
+                                    data-intake-error=""
+                                >
+                                    Choose Wastewater, River water, or
+                                    Abstracted water for this sample.
+                                </p>
+                            ) : null}
+                        </IntakeField>
+                    ) : (
+                        <IntakeField
+                            label="Description"
+                            hint="(optional)"
+                            icon={FileText}
+                        >
+                            <Input
+                                className={softInput}
+                                placeholder="e.g. Drinking water from main kitchen faucet"
+                                value={sample.description}
+                                onChange={(e) =>
+                                    onChange('description', e.target.value)
+                                }
+                            />
+                        </IntakeField>
+                    )}
                     <IntakeField
                         label="Sample Type"
                         required

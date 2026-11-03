@@ -435,6 +435,18 @@ class IntakeController extends Controller
             }
         }
 
+        if (($data['classification'] ?? null) === 'Wastewater') {
+            $kinds = OfficialAnalysisCatalog::wastewaterKinds();
+            foreach ($data['samples'] as $index => $sample) {
+                $description = trim((string) ($sample['description'] ?? ''));
+                if (! in_array($description, $kinds, true)) {
+                    return back()->withErrors([
+                        "samples.{$index}.description" => 'Choose Wastewater, River water, or Abstracted water for sample '.($index + 1).'.',
+                    ])->withInput();
+                }
+            }
+        }
+
         $jobOrder = $this->jobOrders->createFromIntake($data);
 
         return redirect()->route('intake.success', $jobOrder);

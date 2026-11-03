@@ -617,7 +617,24 @@ class AnalystController extends Controller
         $user = $request->user();
         abort_unless($user !== null, 403);
 
-        $resolved = $this->reports->forJobOrder($jobOrder, $user);
+        $jobOrder->loadMissing(['analyses', 'samples', 'packages']);
+
+        $data = $request->validate([
+            'signatories' => ['required', 'array', 'min:1', 'max:4'],
+            'signatories.*.name' => ['nullable', 'string', 'max:180'],
+            'signatories.*.prc_id' => ['nullable', 'string', 'max:60'],
+            'sample_id' => ['nullable', 'integer'],
+            'form_id' => ['nullable', 'integer'],
+        ]);
+
+        $sampleId = isset($data['sample_id']) ? (int) $data['sample_id'] : null;
+        $formId = isset($data['form_id']) ? (int) $data['form_id'] : null;
+
+        $allReports = $this->reports->reportsForJobOrder($jobOrder, $user, withValues: false);
+        $resolved = $formId || $sampleId
+            ? $this->reports->pickReport($allReports, $sampleId, $formId)
+            : $this->reports->forJobOrder($jobOrder, $user);
+
         abort_unless(
             $this->reports->userCanAccessCombined($resolved->analyses, $user, $jobOrder)
             || $user->hasRole('admin'),
@@ -627,19 +644,19 @@ class AnalystController extends Controller
         abort_unless($resolved->canPreview() || $user->hasRole('admin'), 403);
         abort_unless($resolved->controlledForm !== null, 422, 'No combined result form is bound to this job.');
 
-        $data = $request->validate([
-            'signatories' => ['required', 'array', 'min:1', 'max:4'],
-            'signatories.*.name' => ['nullable', 'string', 'max:180'],
-            'signatories.*.prc_id' => ['nullable', 'string', 'max:60'],
-        ]);
-
         $normalized = ResultSignatories::normalizeForStorage(
             $data['signatories'],
             $resolved->controlledForm,
             $jobOrder,
         );
 
-        $jobOrder->update(['result_signatories' => $normalized]);
+        $merged = ResultSignatories::mergeIntoStorage(
+            is_array($jobOrder->result_signatories) ? $jobOrder->result_signatories : null,
+            $resolved->controlledForm,
+            $normalized,
+        );
+
+        $jobOrder->update(['result_signatories' => $merged]);
         $jobOrder->refresh();
 
         return response()->json([

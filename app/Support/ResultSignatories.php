@@ -50,6 +50,129 @@ class ResultSignatories
         return $normalized;
     }
 
+    /**
+     * Merge a normalized slot list into JO storage keyed by form_code.
+     * Legacy flat lists are preserved under other form codes when migrating.
+     *
+     * @param  array<mixed>|null  $existing
+     * @param  list<array{name: string, prc_id: string|null}>  $normalized
+     * @return array{by_form: array<string, list<array{name: string, prc_id: string|null}>>}
+     */
+    public static function mergeIntoStorage(?array $existing, ControlledForm $form, array $normalized): array
+    {
+        $code = (string) ($form->form_code ?? '');
+        $byForm = self::byFormMap($existing);
+
+        if ($code !== '') {
+            $byForm[$code] = array_values($normalized);
+        }
+
+        return ['by_form' => $byForm];
+    }
+
+    /**
+     * @param  array<mixed>|null  $stored
+     * @return array<string, list<array{name: string, prc_id: string|null}>>
+     */
+    public static function byFormMap(?array $stored): array
+    {
+        if (! is_array($stored) || $stored === []) {
+            return [];
+        }
+
+        if (isset($stored['by_form']) && is_array($stored['by_form'])) {
+            $map = [];
+            foreach ($stored['by_form'] as $code => $rows) {
+                if (! is_string($code) || $code === '' || ! is_array($rows)) {
+                    continue;
+                }
+                $map[$code] = array_values(array_filter(
+                    $rows,
+                    fn ($row): bool => is_array($row),
+                ));
+            }
+
+            return $map;
+        }
+
+        // Legacy flat list — no form key yet; caller resolves via rowsForForm.
+        return [];
+    }
+
+    /**
+     * Slot rows for a form: by_form[code], else legacy flat list, else empty.
+     *
+     * @param  array<mixed>|null  $stored
+     * @return list<array{name?: mixed, prc_id?: mixed}>
+     */
+    public static function rowsForForm(?array $stored, ?ControlledForm $form): array
+    {
+        if (! is_array($stored) || $stored === []) {
+            return [];
+        }
+
+        $code = (string) ($form?->form_code ?? '');
+        $byForm = self::byFormMap($stored);
+
+        if ($code !== '' && isset($byForm[$code]) && $byForm[$code] !== []) {
+            return $byForm[$code];
+        }
+
+        // Legacy flat list (numeric keys, first row has name).
+        if (self::isLegacyFlatList($stored)) {
+            return array_values($stored);
+        }
+
+        // Single bucket in by_form when form_code missing / unknown.
+        if ($code === '' && count($byForm) === 1) {
+            return array_values($byForm)[0];
+        }
+
+        return [];
+    }
+
+    /**
+     * @param  array<mixed>  $stored
+     */
+    public static function isLegacyFlatList(array $stored): bool
+    {
+        if (isset($stored['by_form'])) {
+            return false;
+        }
+
+        $first = $stored[0] ?? null;
+
+        return is_array($first) && array_key_exists('name', $first);
+    }
+
+    public static function isConfirmedForForm(?array $stored, ?ControlledForm $form): bool
+    {
+        return self::rowsForForm($stored, $form) !== [];
+    }
+
+    /**
+     * @param  Collection<int, ControlledForm|null>|iterable<int, ControlledForm|null>  $forms
+     */
+    public static function missingFormCodes(?array $stored, iterable $forms): array
+    {
+        $missing = [];
+
+        foreach ($forms as $form) {
+            if (! $form instanceof ControlledForm) {
+                continue;
+            }
+            $code = (string) ($form->form_code ?? '');
+            if ($code === '') {
+                continue;
+            }
+            if (! self::isConfirmedForForm($stored, $form)) {
+                $missing[] = $code;
+            }
+        }
+
+        return array_values(array_unique($missing));
+    }
+
     public static function slotsFor(?ControlledForm $form, ?JobOrder $jobOrder = null): int
     {
         if ($form?->form_code === 'LSP-7.8-FO2A') {
@@ -191,9 +314,10 @@ class ResultSignatories
     public static function bagValues(JobOrder $jobOrder, ?ControlledForm $form = null, ?Collection $orderedAnalyses = null): array
     {
         $stored = $jobOrder->result_signatories;
-        $rows = is_array($stored) && $stored !== []
-            ? $stored
-            : self::defaults($jobOrder, $form, $orderedAnalyses);
+        $rows = self::rowsForForm(is_array($stored) ? $stored : null, $form);
+        if ($rows === []) {
+            $rows = self::defaults($jobOrder, $form, $orderedAnalyses);
+        }
 
         $slot = static function (int $index) use ($rows): ?array {
             return is_array($rows[$index] ?? null) ? $rows[$index] : null;
@@ -231,8 +355,12 @@ class ResultSignatories
         ?string $saveUrl = null,
         ?Collection $orderedAnalyses = null,
     ): array {
-        $confirmed = is_array($jobOrder->result_signatories) && $jobOrder->result_signatories !== [];
+        $stored = is_array($jobOrder->result_signatories) ? $jobOrder->result_signatories : null;
+        $confirmed = self::isConfirmedForForm($stored, $form);
         $canEdit = filled($saveUrl);
+        $rows = $confirmed
+            ? self::rowsForForm($stored, $form)
+            : self::defaults($jobOrder, $form, $orderedAnalyses);
 
         return [
             'slots' => self::slotsFor($form, $jobOrder),
@@ -240,9 +368,9 @@ class ResultSignatories
             'require_prc' => self::requirePrcFor($form),
             'confirmed' => $confirmed,
             'can_edit' => $canEdit,
-            'signatories' => $confirmed
-                ? array_values($jobOrder->result_signatories)
-                : self::defaults($jobOrder, $form, $orderedAnalyses),
+            'signatories' => array_values($rows),
+            'form_code' => $form?->form_code,
+            'form_id' => $form?->id,
             'save_url' => $canEdit ? $saveUrl : null,
         ];
     }

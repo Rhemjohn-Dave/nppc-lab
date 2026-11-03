@@ -9,6 +9,7 @@ use App\Models\JobOrder;
 use App\Models\User;
 use App\Services\AnalysisResultReportResolver;
 use App\Support\OfficialAnalysisCatalog;
+use App\Support\ResultSignatories;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -534,6 +535,121 @@ class IntakeTypePresetTest extends TestCase
         $this->assertSame('River water', $riverBag['results.sample_description']);
         $this->assertStringContainsString('***Not PAB and EMB', (string) $riverBag['fo2_notes']);
         $this->assertSame('Cert2', $riverBag['results.analyst_name_4']);
+    }
+
+    public function test_mixed_abstracted_and_river_samples_emit_fo2a_and_fo2(): void
+    {
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $fo2 = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2')->firstOrFail();
+        $fo2a = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2A')->firstOrFail();
+
+        $absCodes = OfficialAnalysisCatalog::wastewaterPhysicoAbstractedTypeCodes();
+        $absIds = AnalysisType::query()
+            ->whereIn('code', $absCodes)
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        $fullCodes = OfficialAnalysisCatalog::wastewaterPhysicoIssue18TypeCodes();
+        $fullIds = AnalysisType::query()
+            ->whereIn('code', $fullCodes)
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        $this->actingAs($receiving)
+            ->post('/intake/job-orders', [
+                'customer_name' => 'Mixed WW Customer',
+                'customer_email' => 'mixed-ww@example.com',
+                'classification' => 'Wastewater',
+                'samples' => [
+                    [
+                        'sample_code' => 'ABS-1',
+                        'description' => 'Abstracted water',
+                        'matrix' => 'Liquid',
+                        'analysis_type_ids' => $absIds,
+                        'package_ids' => [],
+                    ],
+                    [
+                        'sample_code' => 'RIV-1',
+                        'description' => 'River water',
+                        'matrix' => 'Liquid',
+                        'analysis_type_ids' => $fullIds,
+                        'package_ids' => [],
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $job->load(['samples', 'analyses.analysisType']);
+        $this->assertCount(2, $job->samples);
+
+        $absSample = $job->samples->firstWhere('description', 'Abstracted water');
+        $riverSample = $job->samples->firstWhere('description', 'River water');
+        $this->assertNotNull($absSample);
+        $this->assertNotNull($riverSample);
+
+        $reports = app(AnalysisResultReportResolver::class)
+            ->reportsForJobOrder($job, $receiving, withValues: false);
+
+        $codes = $reports
+            ->map(fn ($report) => $report->controlledForm?->form_code)
+            ->filter()
+            ->values()
+            ->all();
+
+        $this->assertContains('LSP-7.8-FO2A', $codes);
+        $this->assertContains('LSP-7.8-FO2', $codes);
+
+        $absReport = $reports->first(
+            fn ($report) => (int) $report->sampleId === (int) $absSample->id,
+        );
+        $riverReport = $reports->first(
+            fn ($report) => (int) $report->sampleId === (int) $riverSample->id,
+        );
+        $this->assertSame('LSP-7.8-FO2A', $absReport?->controlledForm?->form_code);
+        $this->assertSame('LSP-7.8-FO2', $riverReport?->controlledForm?->form_code);
+
+        $stored = ResultSignatories::mergeIntoStorage(null, $fo2a, [
+            ['name' => 'Abs Reviewed', 'prc_id' => null],
+            ['name' => 'Abs Certified', 'prc_id' => null],
+            ['name' => 'Abs Noted', 'prc_id' => null],
+        ]);
+        $stored = ResultSignatories::mergeIntoStorage($stored, $fo2, [
+            ['name' => 'Riv Reviewed', 'prc_id' => null],
+            ['name' => 'Riv Noted', 'prc_id' => null],
+            ['name' => 'Riv Cert1', 'prc_id' => null],
+            ['name' => 'Riv Cert2', 'prc_id' => null],
+        ]);
+        $job->result_signatories = $stored;
+        $job->save();
+
+        $absBag = app(\App\Services\FieldValueResolver::class)->forResult(
+            $fo2a->activeRevision()->load('fields'),
+            $job->fresh(['samples', 'analyses.analysisType']),
+            null,
+            $fo2a->fresh(['analysisPackage', 'analysisTypes']),
+            $absSample,
+        );
+        $riverBag = app(\App\Services\FieldValueResolver::class)->forResult(
+            $fo2->activeRevision()->load('fields'),
+            $job->fresh(['samples', 'analyses.analysisType']),
+            null,
+            $fo2->fresh(['analysisPackage', 'analysisTypes']),
+            $riverSample,
+        );
+
+        $this->assertSame('Abstracted water', $absBag['results.sample_description']);
+        $this->assertSame('Abs Certified', $absBag['results.analyst_name_2']);
+        $this->assertSame('Abs Noted', $absBag['results.analyst_name_3']);
+
+        $this->assertSame('River water', $riverBag['results.sample_description']);
+        $this->assertSame('Riv Noted', $riverBag['results.analyst_name_2']);
+        $this->assertSame('Riv Cert1', $riverBag['results.analyst_name_3']);
+        $this->assertSame('Riv Cert2', $riverBag['results.analyst_name_4']);
     }
 
     public function test_fo2_river_water_intake_selects_full_panel_and_prints_description(): void
