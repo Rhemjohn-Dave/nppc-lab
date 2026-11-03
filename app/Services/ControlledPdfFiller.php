@@ -68,14 +68,24 @@ class ControlledPdfFiller
                 $absoluteFieldY[$field->name] = (float) $field->y;
             }
 
-            // Pin Test Report form-meta above the centered page stamp; signatories pin to this Y.
+            // Test Report form-meta: follow matrix when tall, else park above page stamp.
+            // Signatories clamp to this resolved Y via anchor.above.
+            $formMetaStampY = null;
             foreach ($pageFields as $field) {
                 if (! $this->isFixedFormMetaField($field->name)) {
                     continue;
                 }
-                $absoluteFieldY[$field->name] = $this->formMetaYAbovePageStamp(
-                    (float) $field->height,
-                    (float) ($field->font_size ?? 7.0),
+                $overlayMeta = $field->toOverlayArray();
+                $metaY = $this->resolveFormMetaY(
+                    $overlayMeta,
+                    $matrixBottomY,
+                    $pageHeight,
+                );
+                $absoluteFieldY[$field->name] = $metaY;
+                $formMetaStampY = $this->pageStampYBelowFormMeta(
+                    $metaY,
+                    (float) ($overlayMeta['h'] ?? $field->height),
+                    (float) ($overlayMeta['font_size'] ?? $field->font_size ?? 7.0),
                     $pageHeight,
                 );
             }
@@ -113,7 +123,7 @@ class ControlledPdfFiller
                 $this->writeField($pdf, $overlay, $value, $values);
             }
 
-            $this->writeCenteredPageStamp($pdf, $revision, $pageNo, $pageCount);
+            $this->writeCenteredPageStamp($pdf, $revision, $pageNo, $pageCount, $formMetaStampY);
         }
 
         return $pdf->Output('', 'S');
@@ -195,14 +205,24 @@ class ControlledPdfFiller
         return $pdf->Output('', 'S');
     }
 
-    /** Distance from page bottom to the centered `- page n/total -` baseline. */
-    private const PAGE_STAMP_BOTTOM_MM = 16.0;
+    /** Distance from page bottom to the centered `- page n/total -` baseline (short sheets). */
+    private const PAGE_STAMP_BOTTOM_MM = 26.0;
 
     /** Gap between form-meta block bottom and the page stamp. */
     private const FORM_META_ABOVE_STAMP_MM = 3.5;
 
+    /**
+     * Final visual raise for `- page n/total -`.
+     * Applied after pin/follow-meta math — PAGE_STAMP_BOTTOM_MM alone is ignored when
+     * the stamp tracks under Test Report (pageStampYBelowFormMeta).
+     */
+    private const PAGE_STAMP_NUDGE_UP_MM = 5.0;
+
     /** Small extra drop under notes when space remains above the Test Report footer. */
     private const SIGNATORY_NUDGE_MM = 10.0;
+
+    /** Minimum spare room (clamp − flow) before the short-sheet nudge applies. */
+    private const SIGNATORY_NUDGE_MIN_SPARE_MM = 24.0;
 
     private function pageStampY(float $pageHeight): float
     {
@@ -210,7 +230,7 @@ class ControlledPdfFiller
     }
 
     /**
-     * Place Test Report form-meta so its content sits fully above the page stamp.
+     * Minimum Y so Test Report content sits fully above the page stamp.
      */
     private function formMetaYAbovePageStamp(
         float $fieldHeight,
@@ -220,8 +240,53 @@ class ControlledPdfFiller
         $lineHeight = max(3.0, $fontSize * 0.42);
         $contentHeight = min(max($fieldHeight, $lineHeight), $lineHeight * 5.0);
 
-        // Always park Test Report on the footer band above the page stamp.
         return $this->pageStampY($pageHeight) - self::FORM_META_ABOVE_STAMP_MM - $contentHeight;
+    }
+
+    /**
+     * Dynamic Test Report Y: max(matrixBottom + offset, pinnedAboveStamp).
+     * Short sheets keep the footer band; tall sheets drop meta below the chrome stack.
+     *
+     * @param  array<string, mixed>  $field
+     * @param  array<string, float>  $matrixBottomY
+     */
+    private function resolveFormMetaY(array $field, array $matrixBottomY, float $pageHeight): float
+    {
+        $pinned = $this->formMetaYAbovePageStamp(
+            (float) ($field['h'] ?? 18.0),
+            (float) ($field['font_size'] ?? 7.0),
+            $pageHeight,
+        );
+
+        $options = is_array($field['options'] ?? null) ? $field['options'] : [];
+        $anchor = is_array($options['anchor'] ?? null) ? $options['anchor'] : null;
+        $below = is_array($anchor) ? trim((string) ($anchor['below'] ?? '')) : '';
+        $offset = is_array($anchor) && is_numeric($anchor['offset_mm'] ?? null)
+            ? (float) $anchor['offset_mm']
+            : 0.0;
+
+        if ($below !== '' && array_key_exists($below, $matrixBottomY)) {
+            return max($matrixBottomY[$below] + $offset, $pinned);
+        }
+
+        return $pinned;
+    }
+
+    /**
+     * Page stamp sits just under Test Report; follows meta down on tall sheets.
+     */
+    private function pageStampYBelowFormMeta(
+        float $metaY,
+        float $fieldHeight,
+        float $fontSize,
+        float $pageHeight,
+    ): float {
+        $lineHeight = max(3.0, $fontSize * 0.42);
+        $contentHeight = min(max($fieldHeight, $lineHeight), $lineHeight * 5.0);
+        $belowMeta = $metaY + $contentHeight + self::FORM_META_ABOVE_STAMP_MM;
+        $pinned = $this->pageStampY($pageHeight);
+
+        return min(max($pinned, $belowMeta), max(4.0, $pageHeight - 4.0));
     }
 
     private function writeCenteredPageStamp(
@@ -229,6 +294,7 @@ class ControlledPdfFiller
         ControlledFormRevision $revision,
         int $pageNo,
         int $pageCount,
+        ?float $yOverride = null,
     ): void {
         $revision->loadMissing('form');
         if (! ResultFooter::formUsesPageStamp($revision->form)) {
@@ -239,7 +305,8 @@ class ControlledPdfFiller
         $pageHeight = (float) $pdf->getPageHeight();
         $pageWidth = (float) $pdf->getPageWidth();
         $fontSize = 7.5;
-        $y = $this->pageStampY($pageHeight);
+        // Nudge applies on both pinned and follow-meta paths (BOTTOM_MM alone often no-ops).
+        $y = max(4.0, ($yOverride ?? $this->pageStampY($pageHeight)) - self::PAGE_STAMP_NUDGE_UP_MM);
 
         $pdf->SetTextColor(0, 0, 0);
         $pdf->SetFont('times', '', $fontSize);
@@ -1029,9 +1096,10 @@ class ControlledPdfFiller
 
     /**
      * Rewrite field y from options.anchor.below (matrix) and/or options.anchor.above (fixed field).
-     * When both are set: y = min(matrixBottom + offset_mm + smallNudge, aboveY - above_offset_mm)
-     * (follow notes with a small drop into spare space; clamp above form-meta when tall).
-     * Form-meta fields are never repositioned here (fixed page footer).
+     * When both are set: y = min(matrixBottom + offset_mm + optionalNudge, aboveY - above_offset_mm).
+     * Nudge applies only when spare room above the Test Report clamp is large (short sheets);
+     * long matrices use normal flow/clamp with no nudge.
+     * Form-meta fields are never repositioned here (resolved separately).
      *
      * @param  array<string, mixed>  $field
      * @param  array<string, float>  $matrixBottomY
@@ -1077,8 +1145,12 @@ class ControlledPdfFiller
         }
 
         if ($fromBelow !== null && $fromAbove !== null) {
-            // Small nudge down into leftover space under notes, still clamped above Test Report.
-            $field['y'] = min($fromBelow + self::SIGNATORY_NUDGE_MM, $fromAbove);
+            // Nudge only on short sheets with clear spare room; long matrices stay normal.
+            $spare = $fromAbove - $fromBelow;
+            $nudge = $spare >= self::SIGNATORY_NUDGE_MIN_SPARE_MM
+                ? self::SIGNATORY_NUDGE_MM
+                : 0.0;
+            $field['y'] = min($fromBelow + $nudge, $fromAbove);
         } elseif ($fromBelow !== null) {
             $field['y'] = $fromBelow;
         } else {
