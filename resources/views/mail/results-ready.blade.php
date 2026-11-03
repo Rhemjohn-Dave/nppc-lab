@@ -14,7 +14,8 @@ NPPC Analytical & Diagnostic Laboratory, Inc.
 Block 2, Lot 29, Sta. Clara Subdivision, Circumferential Road  
 Brgy. Banago, Bacolod City 6100 Philippines  
 
-Tel: 034-4332131 / 034-4352613  
+Tel: 0948 104 8084
+/ laboratory@nppc.com.ph  
 Email: nppclab@gmail.com  
 
 Typical laboratory hours follow NPPC-ADL reception schedule. If you have questions about pickup, please call the numbers above.
