@@ -42,6 +42,8 @@ class RfaSignatureFieldsTest extends TestCase
         $this->assertSame('Conforme Company LLC', $bag['job_orders.client_display_name']);
         $this->assertSame('Conforme Company LLC', $bag['results.customer']);
         $this->assertSame('09/06/2026', $bag['conforme_date']);
+        $this->assertSame('09/06/2026 10:15 AM', $bag['time_date_submitted']);
+        $this->assertSame('09/06/2026 10:15 AM', $bag['job_orders.created_at']);
         $this->assertNull($bag['received_date']);
         $this->assertNull($bag['reviewed_date']);
         $this->assertNull($bag['job_orders.jo_approved_at']);

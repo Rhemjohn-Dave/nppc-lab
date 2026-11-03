@@ -707,17 +707,17 @@ class FieldValueResolver
             'job_orders.total_cost' => $jobOrder->total_cost !== null
                 ? number_format((float) $jobOrder->total_cost, 2)
                 : null,
-            'job_orders.created_at' => $jobOrder->created_at?->format('m/d/Y h:i A'),
-            'job_orders.received_at' => $jobOrder->received_at?->format('m/d/Y'),
-            'job_orders.reviewed_at' => $jobOrder->reviewed_at?->format('m/d/Y'),
-            'job_orders.jo_approved_at' => $jobOrder->jo_approved_at?->format('m/d/Y'),
+            'job_orders.created_at' => $this->labFormat($jobOrder->created_at, 'm/d/Y h:i A'),
+            'job_orders.received_at' => $this->labFormat($jobOrder->received_at, 'm/d/Y'),
+            'job_orders.reviewed_at' => $this->labFormat($jobOrder->reviewed_at, 'm/d/Y'),
+            'job_orders.jo_approved_at' => $this->labFormat($jobOrder->jo_approved_at, 'm/d/Y'),
             'job_orders.received_by_name' => $jobOrder->receiver?->name,
             'job_orders.reviewed_by_name' => $jobOrder->reviewer?->name,
             'reference_no' => $jobOrder->reference_no,
             'customer_name' => $jobOrder->customer_name,
             'address' => $jobOrder->customer_address,
             'contact_no' => $jobOrder->customer_contact,
-            'time_date_submitted' => $jobOrder->created_at?->format('m/d/Y h:i A'),
+            'time_date_submitted' => $this->labFormat($jobOrder->created_at, 'm/d/Y h:i A'),
             'sampling_date' => $jobOrder->sampling_date?->format('m/d/Y'),
             'sampling_time' => $jobOrder->sampling_time,
             'sample_collected_by' => $jobOrder->sample_collected_by,
@@ -726,9 +726,9 @@ class FieldValueResolver
             'specimen' => $jobOrder->specimen,
             'other_tests' => $jobOrder->other_tests,
             'conforme_name' => $jobOrder->customer_name,
-            'conforme_date' => $jobOrder->created_at?->format('m/d/Y'),
-            'received_date' => $jobOrder->received_at?->format('m/d/Y'),
-            'reviewed_date' => $jobOrder->jo_approved_at?->format('m/d/Y'),
+            'conforme_date' => $this->labFormat($jobOrder->created_at, 'm/d/Y'),
+            'received_date' => $this->labFormat($jobOrder->received_at, 'm/d/Y'),
+            'reviewed_date' => $this->labFormat($jobOrder->jo_approved_at, 'm/d/Y'),
         ];
 
         // billing_total / billing_total_right filled after analysis lines below.
@@ -1077,24 +1077,26 @@ class FieldValueResolver
 
     private function officialDateTime(?DateTimeInterface $dateTime): ?string
     {
+        return $this->labFormat($dateTime, 'F j, Y (g:iA)');
+    }
+
+    private function officialDate(?DateTimeInterface $date): ?string
+    {
+        return $this->labFormat($date, 'F j, Y');
+    }
+
+    /**
+     * Format a stored UTC/app timestamp in the laboratory timezone (Asia/Manila).
+     */
+    private function labFormat(?DateTimeInterface $dateTime, string $format): ?string
+    {
         if (! $dateTime) {
             return null;
         }
 
         return Carbon::instance($dateTime)
             ->timezone($this->labTimezone())
-            ->format('F j, Y (g:iA)');
-    }
-
-    private function officialDate(?DateTimeInterface $date): ?string
-    {
-        if (! $date) {
-            return null;
-        }
-
-        return Carbon::instance($date)
-            ->timezone($this->labTimezone())
-            ->format('F j, Y');
+            ->format($format);
     }
 
     private function listedOrSpecified(?string $value): ?string
