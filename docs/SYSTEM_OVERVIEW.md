@@ -142,10 +142,11 @@ The dashboard gives a high-level summary of system activity: counts by status, r
 Used to process new jobs: price → await Head JO approval → print JO ×3 → **Send to analysts** from the queue (without opening the JO) or from the Job Order screen; later reprint after result release.
 
 It handles:
-- queue: needs pricing / awaiting Head JO / ready for analysts / results released; optional **day** filter on intake date (`created_at`, lab timezone) — when a day is selected, sent jobs (`in_analysis` / `pending_review`) for that day stay visible for Open / reprint
+- queue: needs pricing / awaiting Head JO / ready for analysts / **Sent to analysts** (`in_analysis` + `pending_review`) / results released; intake-day picker (Today / Yesterday / date) on `created_at` (lab timezone) — with a day selected, sent jobs for that day also appear under All for Open / reprint
 - pricing (status `pending_jo_approval`)
 - print JO/RFA after `jo_approved` (default 3 copies: customer, accounting, Head file; max 20)
 - send to analysts only when status is `jo_approved`
+- **Sent to analysts** list: history of jobs already handed to the lab (Open / reprint JO)
 - **Results released** list: reprint JO copies after Head result release
 
 JO/RFA print unlocks after Head JO approval (`jo_approved_at` / status). Payment stays outside LMIS.

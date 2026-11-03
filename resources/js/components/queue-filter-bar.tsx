@@ -29,6 +29,8 @@ type Props = {
     dayValue?: string;
     onDayChange?: (value: string) => void;
     dayLabel?: string;
+    today?: string;
+    yesterday?: string;
 };
 
 export default function QueueFilterBar({
@@ -43,6 +45,11 @@ export default function QueueFilterBar({
     sortValue,
     onSortChange,
     sortOptions,
+    dayValue = '',
+    onDayChange,
+    dayLabel = 'Intake:',
+    today,
+    yesterday,
 }: Props) {
     function submit(event: FormEvent) {
         event.preventDefault();
@@ -54,10 +61,17 @@ export default function QueueFilterBar({
         typeof sortValue === 'string' &&
         typeof onSortChange === 'function';
 
+    const showDay = typeof onDayChange === 'function';
+    const dayPresets = [
+        ...(today ? [{ id: today, label: 'Today' }] : []),
+        ...(yesterday ? [{ id: yesterday, label: 'Yesterday' }] : []),
+        { id: '', label: 'All days' },
+    ];
+
     return (
-        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-xs md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-xs xl:flex-row xl:items-center xl:justify-between">
             <div
-                className="flex items-center gap-1 overflow-x-auto pb-1 text-xs md:pb-0"
+                className="flex flex-wrap items-center gap-1 text-xs"
                 role="tablist"
             >
                 {chips.map((chip) => {
@@ -93,10 +107,10 @@ export default function QueueFilterBar({
                 })}
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
                 <form
                     onSubmit={submit}
-                    className="relative min-w-[200px] flex-1 md:w-72 md:flex-none"
+                    className="relative min-w-[200px] flex-1 xl:w-64 xl:flex-none"
                 >
                     <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-slate-400" />
                     <input
@@ -120,7 +134,7 @@ export default function QueueFilterBar({
                 </form>
 
                 {showSort ? (
-                    <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 shadow-xs">
+                    <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 shadow-xs">
                         <span className="text-slate-400">Sort:</span>
                         <select
                             className="cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-slate-800 focus:ring-0"
@@ -135,6 +149,37 @@ export default function QueueFilterBar({
                                 </option>
                             ))}
                         </select>
+                    </div>
+                ) : null}
+
+                {showDay ? (
+                    <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 shadow-xs">
+                        <span className="pl-0.5 text-slate-400">{dayLabel}</span>
+                        {dayPresets.map((preset) => (
+                            <button
+                                key={preset.label}
+                                type="button"
+                                onClick={() => onDayChange?.(preset.id)}
+                                className={cn(
+                                    'rounded-md px-2 py-0.5 transition',
+                                    dayValue === preset.id
+                                        ? 'bg-nppc-50 font-semibold text-nppc-900'
+                                        : 'text-slate-600 hover:bg-slate-100',
+                                )}
+                            >
+                                {preset.label}
+                            </button>
+                        ))}
+                        <input
+                            type="date"
+                            aria-label="Filter by intake day"
+                            value={dayValue}
+                            max={today}
+                            onChange={(event) =>
+                                onDayChange?.(event.target.value)
+                            }
+                            className="rounded-md border-0 bg-transparent px-1 py-0.5 text-xs font-medium text-slate-800 focus:ring-0"
+                        />
                     </div>
                 ) : null}
             </div>

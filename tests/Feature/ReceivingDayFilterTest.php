@@ -94,6 +94,57 @@ class ReceivingDayFilterTest extends TestCase
                 ->where('counts.all', 1));
     }
 
+    public function test_sent_to_analysts_status_filter_lists_history_without_day(): void
+    {
+        $this->seed();
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+
+        Carbon::setTestNow(Carbon::parse('2026-10-11 09:00', 'Asia/Manila'));
+        $sent = $this->jobOrder('26-9105', JobOrderStatus::InAnalysis);
+        $pendingReview = $this->jobOrder('26-9106', JobOrderStatus::PendingReview);
+        $this->jobOrder('26-9107', JobOrderStatus::JoApproved);
+
+        $this->actingAs($receiving)
+            ->get('/receiving')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('counts.all', 1)
+                ->where('counts.in_analysis', 2)
+                ->has('orders.data', 1));
+
+        $this->actingAs($receiving)
+            ->get('/receiving?status=in_analysis')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filters.status', 'in_analysis')
+                ->where('counts.in_analysis', 2)
+                ->has('orders.data', 2)
+                ->where('orders.data.0.id', $sent->id)
+                ->where('orders.data.1.id', $pendingReview->id));
+    }
+
+    public function test_sent_to_analysts_status_filter_respects_day(): void
+    {
+        $this->seed();
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+
+        Carbon::setTestNow(Carbon::parse('2026-10-11 09:00', 'Asia/Manila'));
+        $onDay = $this->jobOrder('26-9108', JobOrderStatus::InAnalysis);
+
+        Carbon::setTestNow(Carbon::parse('2026-10-12 09:00', 'Asia/Manila'));
+        $this->jobOrder('26-9109', JobOrderStatus::PendingReview);
+
+        $this->actingAs($receiving)
+            ->get('/receiving?status=in_analysis&day=2026-10-11')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filters.status', 'in_analysis')
+                ->where('filters.day', '2026-10-11')
+                ->where('counts.in_analysis', 1)
+                ->has('orders.data', 1)
+                ->where('orders.data.0.id', $onDay->id));
+    }
+
     private function jobOrder(string $reference, JobOrderStatus $status): JobOrder
     {
         return JobOrder::query()->create([

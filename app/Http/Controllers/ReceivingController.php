@@ -50,17 +50,25 @@ class ReceivingController extends Controller
         }
 
         $intakeQuery = JobOrder::query()->whereIn('status', $intakeStatuses);
+        $sentQuery = JobOrder::query()->whereIn('status', [
+            JobOrderStatus::InAnalysis,
+            JobOrderStatus::PendingReview,
+        ]);
         $reviewedQuery = JobOrder::query()
             ->whereNotNull('reviewed_at')
             ->where('status', JobOrderStatus::ReadyForPickup);
 
         if ($dayRange !== null) {
             $intakeQuery->whereBetween('created_at', $dayRange);
+            $sentQuery->whereBetween('created_at', $dayRange);
             $reviewedQuery->whereBetween('created_at', $dayRange);
         }
 
         $showingReviewed = $statusFilter === 'reviewed';
-        $baseQuery = $showingReviewed ? $reviewedQuery : $intakeQuery;
+        $showingSent = $statusFilter === JobOrderStatus::InAnalysis->value;
+        $baseQuery = $showingReviewed
+            ? $reviewedQuery
+            : ($showingSent ? $sentQuery : $intakeQuery);
 
         $counts = [
             'all' => (clone $intakeQuery)->count(),
@@ -76,13 +84,14 @@ class ReceivingController extends Controller
             'jo_approved' => (clone $intakeQuery)
                 ->where('status', JobOrderStatus::JoApproved)
                 ->count(),
+            'in_analysis' => (clone $sentQuery)->count(),
             'reviewed' => (clone $reviewedQuery)->count(),
         ];
 
         $orders = (clone $baseQuery)
             ->withCount(['analyses', 'samples'])
             ->when(
-                ! $showingReviewed && in_array($statusFilter, [
+                ! $showingReviewed && ! $showingSent && in_array($statusFilter, [
                     JobOrderStatus::DraftSubmitted->value,
                     JobOrderStatus::PendingJoApproval->value,
                     JobOrderStatus::JoApproved->value,

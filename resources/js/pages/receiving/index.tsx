@@ -54,6 +54,7 @@ type Props = {
         draft_submitted: number;
         pending_jo_approval: number;
         jo_approved: number;
+        in_analysis: number;
         reviewed: number;
     };
     filters: {
@@ -63,6 +64,19 @@ type Props = {
         day?: string;
     };
 };
+
+const LAB_TIMEZONE = 'Asia/Manila';
+
+function labDate(offsetDays = 0): string {
+    const date = new Date(Date.now() + offsetDays * 86_400_000);
+
+    return new Intl.DateTimeFormat('en-CA', {
+        timeZone: LAB_TIMEZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).format(date);
+}
 
 function money(value: string | number) {
     return `₱${Number(value || 0).toFixed(2)}`;
@@ -183,19 +197,23 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
         }, 350);
 
         return () => window.clearTimeout(id);
-    }, [query, filters.q, filters.status, filters.sort]);
+    }, [query, filters.q, filters.status, filters.sort, filters.day]);
 
     function applyFilters(next: {
         q?: string;
         status?: string;
         sort?: string;
+        day?: string;
     }) {
+        const day = next.day ?? filters.day ?? '';
+
         router.get(
             '/receiving',
             {
                 q: next.q ?? query,
                 status: next.status ?? filters.status,
                 sort: next.sort ?? sort,
+                ...(day ? { day } : {}),
             },
             {
                 preserveState: true,
@@ -239,6 +257,11 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
             id: 'jo_approved',
             label: 'Ready for analysts',
             count: counts.jo_approved,
+        },
+        {
+            id: 'in_analysis',
+            label: 'Sent to analysts',
+            count: counts.in_analysis,
         },
         { id: 'reviewed', label: 'Results released', count: counts.reviewed },
     ] as const;
@@ -307,16 +330,22 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
         },
     ];
 
+    const dayNote = filters.day
+        ? ` Intake day ${filters.day}.`
+        : '';
+
     const rangeSuffix =
-        filters.status === 'draft_submitted'
+        (filters.status === 'draft_submitted'
             ? 'job orders that still need pricing.'
             : filters.status === 'pending_jo_approval'
               ? 'job orders waiting for Head JO approval.'
               : filters.status === 'jo_approved'
                 ? 'approved Job Orders ready to print and send to analysts.'
-                : filters.status === 'reviewed'
-                  ? 'jobs with released results. Reprint JO copies for the customer packet.'
-                  : 'job orders across the full receiving queue.';
+                : filters.status === 'in_analysis'
+                  ? 'jobs already sent to analysts. Open or reprint the JO for history.'
+                  : filters.status === 'reviewed'
+                    ? 'jobs with released results. Reprint JO copies for the customer packet.'
+                    : 'job orders across the full receiving queue.') + dayNote;
 
     return (
         <>
@@ -396,6 +425,13 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                                 { value: 'oldest', label: 'Oldest First' },
                                 { value: 'newest', label: 'Newest First' },
                             ]}
+                            dayValue={filters.day ?? ''}
+                            dayLabel="Intake:"
+                            today={labDate()}
+                            yesterday={labDate(-1)}
+                            onDayChange={(next) =>
+                                applyFilters({ day: next, q: query.trim() })
+                            }
                         />
                         <QueueRangeNote
                             from={orders.from}
