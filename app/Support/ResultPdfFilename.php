@@ -40,7 +40,7 @@ class ResultPdfFilename
             self::typeCode(self::categorySlugs($analyses), $formCode),
             (string) $jobOrder->reference_no,
             self::controlPart($controlNumber ?? (string) $jobOrder->reference_no),
-            self::customerPart($jobOrder->customer_name),
+            self::customerPart($jobOrder->clientDisplayName()),
             $jobOrder->created_at?->format('m-d-y') ?? now()->format('m-d-y'),
         ];
 

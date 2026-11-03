@@ -45,7 +45,7 @@ return array (
       'font_family' => 'calibri',
       'font_color' => '#000000',
       'align' => 'L',
-      'data_source_key' => 'job_orders.customer_name',
+      'data_source_key' => 'job_orders.client_display_name',
     ),
     2 => 
     array (

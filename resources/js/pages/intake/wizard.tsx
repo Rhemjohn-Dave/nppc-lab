@@ -1398,10 +1398,7 @@ export default function IntakeWizard({
 
     function canContinue() {
         if (step === 0) {
-            return (
-                customer.customer_name.trim().length > 0 &&
-                customer.customer_email.trim().length > 0
-            );
+            return customer.customer_name.trim().length > 0;
         }
 
         if (step === 1) {
@@ -1459,7 +1456,7 @@ export default function IntakeWizard({
         }
 
         if (step === 0 && !canContinue()) {
-            return 'Add your full name and email to continue.';
+            return 'Add your full name to continue.';
         }
 
         if (step === 1 && !canContinue()) {
@@ -1701,32 +1698,17 @@ export default function IntakeWizard({
                                             <IntakeField
                                                 label="Email Address"
                                                 htmlFor="customer_email"
-                                                required
+                                                hint="(optional)"
                                                 description="Used for result notifications"
                                                 icon={Mail}
-                                                error={
-                                                    !customer.customer_email.trim() &&
-                                                    attemptedContinue
-                                                        ? 'Email is required.'
-                                                        : null
-                                                }
                                             >
                                                 <Input
                                                     id="customer_email"
                                                     type="email"
                                                     autoComplete="email"
-                                                    className={cn(
-                                                        'h-10 w-full border-slate-200 bg-white text-sm',
-                                                        !!stepError(0) &&
-                                                            !customer.customer_email.trim() &&
-                                                            'border-rose-300 focus-visible:border-rose-300 focus-visible:ring-rose-200',
-                                                    )}
+                                                    className="h-10 w-full border-slate-200 bg-white text-sm"
                                                     value={
                                                         customer.customer_email
-                                                    }
-                                                    aria-invalid={
-                                                        !!stepError(0) &&
-                                                        !customer.customer_email.trim()
                                                     }
                                                     onChange={(e) =>
                                                         setCustomer((c) => ({

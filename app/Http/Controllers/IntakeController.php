@@ -366,7 +366,7 @@ class IntakeController extends Controller
     {
         $data = $request->validate([
             'customer_name' => ['required', 'string', 'max:255'],
-            'customer_email' => ['required', 'email', 'max:255'],
+            'customer_email' => ['nullable', 'email', 'max:255'],
             'customer_contact' => ['nullable', 'string', 'max:255'],
             'customer_address' => ['nullable', 'string', 'max:500'],
             'company_name' => ['nullable', 'string', 'max:255'],

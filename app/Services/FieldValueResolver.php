@@ -384,7 +384,8 @@ class FieldValueResolver
     {
         $bag = [
             'job_orders.reference_no' => 'JO-2026-00125',
-            'job_orders.customer_name' => 'ABC Corporation',
+            'job_orders.customer_name' => 'Juan Dela Cruz',
+            'job_orders.client_display_name' => 'ABC Corporation',
             'job_orders.customer_address' => 'Bacolod City',
             'job_orders.customer_contact' => '09171234567',
             'job_orders.company_name' => 'ABC Corporation',
@@ -411,7 +412,7 @@ class FieldValueResolver
             'job_orders.reviewed_at' => now()->format('m/d/Y'),
             'job_orders.received_by_name' => 'Maria Santos',
             'job_orders.reviewed_by_name' => 'John Cruz',
-            'conforme_name' => 'ABC Corporation',
+            'conforme_name' => 'Juan Dela Cruz',
             'conforme_date' => now()->format('m/d/Y'),
             'received_date' => now()->format('m/d/Y'),
             'reviewed_date' => now()->format('m/d/Y'),
@@ -679,9 +680,12 @@ class FieldValueResolver
     {
         $jobOrder->loadMissing(['samples', 'analyses.analysisType', 'analyses.assignee', 'receiver', 'reviewer', 'packages.signatory']);
 
+        $clientDisplayName = $jobOrder->clientDisplayName();
+
         $bag = [
             'job_orders.reference_no' => $jobOrder->reference_no,
             'job_orders.customer_name' => $jobOrder->customer_name,
+            'job_orders.client_display_name' => $clientDisplayName,
             'job_orders.customer_address' => $jobOrder->customer_address,
             'job_orders.customer_contact' => $jobOrder->customer_contact,
             'job_orders.customer_email' => $jobOrder->customer_email,
@@ -824,7 +828,7 @@ class FieldValueResolver
         $bag['samples.sample_code'] = $firstSample?->sample_code;
         $bag['samples.description'] = $firstSample?->description;
 
-        $bag['results.customer'] = $jobOrder->customer_name;
+        $bag['results.customer'] = $clientDisplayName;
         $bag['results.address'] = $jobOrder->customer_address;
         $bag['results.ref_no'] = $jobOrder->reference_no;
         $bag['results.control_no'] = $jobOrder->reference_no;

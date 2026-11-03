@@ -324,6 +324,8 @@ class ResultSheetHeaderFieldsTest extends TestCase
         $bag = app(FieldValueResolver::class)->jobOrderBag($job, true);
 
         $this->assertSame('Coastal Farms', $bag['results.customer']);
+        $this->assertSame('Coastal Farms', $bag['job_orders.client_display_name']);
+        $this->assertSame('Coastal Farms', $bag['job_orders.customer_name']);
         $this->assertSame('Bacolod City', $bag['results.address']);
         $this->assertSame('July 29, 2026 (3:00PM)', $bag['results.sample_received_at']);
         $this->assertSame('Wastewater', $bag['results.sample_code']);
@@ -340,6 +342,34 @@ class ResultSheetHeaderFieldsTest extends TestCase
         $this->assertNull($bag['results.analysis_datetime']);
         $this->assertNull($bag['results.release_date']);
         $this->assertNull($bag['results.report_date']);
+    }
+
+    public function test_result_customer_prefers_company_name_over_requestor(): void
+    {
+        $this->seed();
+
+        $package = AnalysisPackage::query()->where('code', 'PKG-MIC-NDW')->firstOrFail();
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'Juan Deliverer',
+            'company_name' => 'Coastal Farms Inc',
+            'customer_email' => 'coastal-co@example.com',
+            'customer_address' => 'Bacolod City',
+            'classification' => 'Wastewater',
+            'samples' => [
+                ['description' => 'Wastewater', 'matrix' => 'Liquid'],
+            ],
+            'package_ids' => [$package->id],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $bag = app(FieldValueResolver::class)->jobOrderBag($job, true);
+
+        $this->assertSame('Coastal Farms Inc', $bag['results.customer']);
+        $this->assertSame('Coastal Farms Inc', $bag['job_orders.client_display_name']);
+        $this->assertSame('Juan Deliverer', $bag['job_orders.customer_name']);
+        $this->assertSame('Juan Deliverer', $bag['conforme_name']);
+        $this->assertSame('Coastal Farms Inc', $bag['job_orders.company_name']);
     }
 
     public function test_others_specified_source_and_classification_print_on_result_header(): void

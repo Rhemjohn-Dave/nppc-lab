@@ -190,4 +190,15 @@ class JobOrder extends Model
             'total_cost' => max(0, $subtotal - $discount),
         ]);
     }
+
+    /**
+     * Company / organization when present; otherwise the requestor (Full Name).
+     * Used on JO header Customer Name and Result Customer — not Conforme.
+     */
+    public function clientDisplayName(): string
+    {
+        $company = trim((string) ($this->company_name ?? ''));
+
+        return $company !== '' ? $company : (string) $this->customer_name;
+    }
 }

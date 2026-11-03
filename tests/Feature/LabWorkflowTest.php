@@ -229,7 +229,26 @@ class LabWorkflowTest extends TestCase
                 ->has('jobs.links'));
     }
 
-    public function test_intake_requires_customer_email(): void
+    public function test_intake_allows_missing_customer_email(): void
+    {
+        $this->seed();
+
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'No Email Customer',
+            'customer_contact' => '09171234567',
+            'samples' => [
+                ['description' => 'Sample A', 'matrix' => 'Solid'],
+            ],
+            'analysis_type_ids' => [$type->id],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->where('customer_name', 'No Email Customer')->firstOrFail();
+        $this->assertNull($job->customer_email);
+    }
+
+    public function test_intake_rejects_invalid_customer_email(): void
     {
         $this->seed();
 
@@ -237,7 +256,8 @@ class LabWorkflowTest extends TestCase
 
         $this->from('/intake/create')
             ->post('/intake/job-orders', [
-                'customer_name' => 'No Email Customer',
+                'customer_name' => 'Bad Email Customer',
+                'customer_email' => 'not-an-email',
                 'customer_contact' => '09171234567',
                 'samples' => [
                     ['description' => 'Sample A', 'matrix' => 'Solid'],

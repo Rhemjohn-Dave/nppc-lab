@@ -128,6 +128,12 @@ return [
             'sources' => [
                 ['key' => 'job_orders.reference_no', 'label' => 'Reference Number', 'type' => 'text'],
                 ['key' => 'job_orders.customer_name', 'label' => 'Customer Name', 'type' => 'text'],
+                [
+                    'key' => 'job_orders.client_display_name',
+                    'label' => 'Client name (company, else requestor)',
+                    'type' => 'text',
+                    'hint' => 'Company / Organization when filled; otherwise Full Name. Use for JO header and Result Customer — not Conforme.',
+                ],
                 ['key' => 'job_orders.customer_address', 'label' => 'Customer Address', 'type' => 'text'],
                 ['key' => 'job_orders.customer_contact', 'label' => 'Contact Number', 'type' => 'text'],
                 ['key' => 'job_orders.customer_email', 'label' => 'Customer Email', 'type' => 'text'],

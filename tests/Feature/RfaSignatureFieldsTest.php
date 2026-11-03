@@ -25,6 +25,7 @@ class RfaSignatureFieldsTest extends TestCase
 
         $this->post('/intake/job-orders', [
             'customer_name' => 'Conforme Customer',
+            'company_name' => 'Conforme Company LLC',
             'customer_email' => 'conforme@example.com',
             'customer_contact' => '09170000000',
             'samples' => [
@@ -37,6 +38,9 @@ class RfaSignatureFieldsTest extends TestCase
         $bag = app(FieldValueResolver::class)->jobOrderBag($job);
 
         $this->assertSame('Conforme Customer', $bag['conforme_name']);
+        $this->assertSame('Conforme Customer', $bag['job_orders.customer_name']);
+        $this->assertSame('Conforme Company LLC', $bag['job_orders.client_display_name']);
+        $this->assertSame('Conforme Company LLC', $bag['results.customer']);
         $this->assertSame('09/06/2026', $bag['conforme_date']);
         $this->assertNull($bag['received_date']);
         $this->assertNull($bag['reviewed_date']);
