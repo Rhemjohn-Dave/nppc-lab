@@ -249,7 +249,7 @@ Encode fields:
 - **Result value** is always required.
 - **Pass / Fail** is required for FO5 (and other non-FO4 result sheets); FO4 (`LSP-7.8-FO4`) hides it and prints the measured MPN only.
 - **Method** prefills from Procedures (`analysis_types.method`) and stays editable but optional. FO4 coliforms seed as `Multiple Tube Fermentation Technique* 9221, SMEWW`.
-- For physico result sheets **FO2 / FO2A / FO3 / FO37**, **Lab conditions** (temperature °C and humidity %) are required **before** encoding dates/results (not at Send to Head); values print on the sheet. Remarks may be set to **Passed** / **Failed** for the Remarks column. **Send to Head** only collects analyst signatories.
+- For physico result sheets **FO2 / FO2A / FO3 / FO37**, **Lab conditions** (temperature °C and humidity %) are required **before** encoding dates/results (not at Send to Head); values print on the sheet. Optional Remarks **Passed** / **Failed** shortcuts apply to **FO3 / FO37** only; **FO2 / FO2A** show Pass/Fail only when the analysis type has **Requires pass/fail** enabled in Procedures. **Send to Head** only collects analyst signatories.
 
 ### Step 6. Designated analyst sends to Head
 When every line is complete:
