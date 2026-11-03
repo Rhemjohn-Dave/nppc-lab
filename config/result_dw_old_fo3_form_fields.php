@@ -1,11 +1,5 @@
 <?php
 
-/**
- * Field blueprint for LSP-7.8-FO3.
- * Captured from Form Designer ACTIVE revision 1
- * via `php artisan controlled-forms:export-blueprints`.
- */
-
 return array (
   'page' => 
   array (
@@ -672,6 +666,8 @@ return array (
         array (
           'below' => 'dw_old_fo3_matrix',
           'offset_mm' => 36,
+          'above' => 'fo3_form_meta',
+          'above_offset_mm' => 37.0,
         ),
         'static_text' => 'Analyzed by:',
       ),
@@ -697,6 +693,8 @@ return array (
         array (
           'below' => 'dw_old_fo3_matrix',
           'offset_mm' => 36,
+          'above' => 'fo3_form_meta',
+          'above_offset_mm' => 37.0,
         ),
         'static_text' => 'Certified Correct:',
       ),
@@ -722,6 +720,8 @@ return array (
         array (
           'below' => 'dw_old_fo3_matrix',
           'offset_mm' => 43,
+          'above' => 'fo3_form_meta',
+          'above_offset_mm' => 30.0,
         ),
       ),
     ),
@@ -746,6 +746,8 @@ return array (
         array (
           'below' => 'dw_old_fo3_matrix',
           'offset_mm' => 43,
+          'above' => 'fo3_form_meta',
+          'above_offset_mm' => 30.0,
         ),
       ),
     ),
@@ -770,6 +772,8 @@ return array (
         array (
           'below' => 'dw_old_fo3_matrix',
           'offset_mm' => 50,
+          'above' => 'fo3_form_meta',
+          'above_offset_mm' => 23.0,
         ),
         'static_text' => 'Laboratory Analyst',
       ),
@@ -795,6 +799,8 @@ return array (
         array (
           'below' => 'dw_old_fo3_matrix',
           'offset_mm' => 50,
+          'above' => 'fo3_form_meta',
+          'above_offset_mm' => 23.0,
         ),
         'static_text' => 'Laboratory Analyst',
       ),
@@ -820,6 +826,8 @@ return array (
         array (
           'below' => 'dw_old_fo3_matrix',
           'offset_mm' => 47,
+          'above' => 'fo3_form_meta',
+          'above_offset_mm' => 26.0,
         ),
         'static_text' => 'Registered Chemical Technician, License #',
       ),
@@ -845,6 +853,8 @@ return array (
         array (
           'below' => 'dw_old_fo3_matrix',
           'offset_mm' => 47,
+          'above' => 'fo3_form_meta',
+          'above_offset_mm' => 26.0,
         ),
       ),
     ),
@@ -869,6 +879,8 @@ return array (
         array (
           'below' => 'dw_old_fo3_matrix',
           'offset_mm' => 47,
+          'above' => 'fo3_form_meta',
+          'above_offset_mm' => 26.0,
         ),
         'static_text' => 'Registered Chemist, License #',
       ),
@@ -894,6 +906,8 @@ return array (
         array (
           'below' => 'dw_old_fo3_matrix',
           'offset_mm' => 47,
+          'above' => 'fo3_form_meta',
+          'above_offset_mm' => 26.0,
         ),
       ),
     ),
@@ -918,6 +932,8 @@ return array (
         array (
           'below' => 'dw_old_fo3_matrix',
           'offset_mm' => 58,
+          'above' => 'fo3_form_meta',
+          'above_offset_mm' => 15.0,
         ),
         'static_text' => 'Noted by:',
       ),
@@ -943,6 +959,8 @@ return array (
         array (
           'below' => 'dw_old_fo3_matrix',
           'offset_mm' => 63,
+          'above' => 'fo3_form_meta',
+          'above_offset_mm' => 10.0,
         ),
         'static_text' => 'WENDY A. TAYSON, RCh, MEnE',
       ),
@@ -968,6 +986,8 @@ return array (
         array (
           'below' => 'dw_old_fo3_matrix',
           'offset_mm' => 67,
+          'above' => 'fo3_form_meta',
+          'above_offset_mm' => 6.0,
         ),
         'static_text' => 'Laboratory Head',
       ),
@@ -993,6 +1013,8 @@ return array (
         array (
           'below' => 'dw_old_fo3_matrix',
           'offset_mm' => 70,
+          'above' => 'fo3_form_meta',
+          'above_offset_mm' => 3.0,
         ),
         'static_text' => 'Registered Chemist, License #15131',
       ),
@@ -1004,7 +1026,7 @@ return array (
       'type' => 'multiline',
       'page' => 1,
       'x' => 11.95,
-      'y' => 264.0,
+      'y' => 250.0,
       'w' => 192.0,
       'h' => 17.672,
       'font_size' => 7.0,
@@ -1014,16 +1036,11 @@ return array (
       'data_source_key' => 'fo3_form_meta',
       'options' => 
       array (
-        'anchor' => 
-        array (
-          'below' => 'dw_old_fo3_matrix',
-          'offset_mm' => 75,
-        ),
         'static_text' => 'Test Report #: CHE DW –
 Laboratory DOH Accreditation # # DOH052581
 NPPC-ADL
 LSP 7.8 FO3
-Rev. 10 / Issue 11 Effectivity Date:  09/01/2026                                                    Page 1-1',
+Rev. 10 / Issue 11 Effectivity Date:  09/01/2026',
       ),
     ),
   ),

@@ -340,6 +340,7 @@ export default function ResultReportPreview({
     async function saveFooter(values: {
         temperature_c: string;
         humidity_pct: string;
+        test_report_no: string;
         lab_conditions: string;
         references: string;
         notes: string;

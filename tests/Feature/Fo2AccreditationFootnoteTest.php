@@ -150,6 +150,7 @@ class Fo2AccreditationFootnoteTest extends TestCase
             ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
                 'temperature_c' => '24',
                 'humidity_pct' => '60',
+                'test_report_no' => 'TR-001',
                 'notes' => 'Edited before complete',
             ])
             ->assertOk()

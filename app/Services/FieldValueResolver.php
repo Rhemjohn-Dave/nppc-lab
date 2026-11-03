@@ -248,6 +248,10 @@ class FieldValueResolver
             ? new \App\Models\ControlledForm(['form_code' => $formCode])
             : null;
         $bag['fo2_lab_conditions'] = ResultFooter::composeLabConditionsText($form, $footer, $variant);
+        $bag['fo2_form_meta'] = ResultFooter::composeFo2FormMeta(
+            $footer['test_report_no'] ?? null,
+            $variant === 'abstracted',
+        );
 
         foreach (['references', 'notes'] as $key) {
             $override = trim((string) ($footer[$key] ?? ''));
@@ -280,11 +284,14 @@ class FieldValueResolver
             ? new \App\Models\ControlledForm(['form_code' => $formCode])
             : null;
         $text = ResultFooter::composeLabConditionsText($form, $footer);
+        $testReportNo = $footer['test_report_no'] ?? null;
 
         if ($formCode === 'LSP-7.8-FO37') {
             $bag['fo37_lab_conditions'] = $text;
+            $bag['fo37_form_meta'] = ResultFooter::composeFo37FormMeta($testReportNo);
         } elseif ($formCode === 'LSP-7.8-FO3') {
             $bag['fo3_lab_conditions'] = $text;
+            $bag['fo3_form_meta'] = ResultFooter::composeFo3FormMeta($testReportNo);
         }
     }
 

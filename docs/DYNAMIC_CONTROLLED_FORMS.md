@@ -131,9 +131,9 @@ Stored Y remains the **fallback** when the matrix has no rows. Designer preview 
 | Lab conditions / references / NOTE (2-col) | `fo3_lab_conditions`, `fo3_references`, `fo3_note_left`, `fo3_note_right` |
 | Analyzed by / Certified Correct | labels + roles + license prefixes (static) + `results.analyst_name` / `_2` + PRC |
 | Noted by | `fo3_label_noted_by`, `fo3_noted_by_name` (static Wendy), role/license static |
-| Form meta | `fo3_form_meta` |
+| Form meta | `fo3_form_meta` (fixed page Y footer; not matrix-anchored) |
 
-Signatory stack print order is **name → license → role** (Laboratory Analyst below the license line). Signatory / Noted by / form-meta fields use **no** `options.cover` (transparent overlays so white boxes cannot hide another line). Keep `cover` only on large under-table note blocks when blanking PDF ink. **Laboratory Head (Noted by)** is always static: `WENDY A. TAYSON, RCh, MEnE` / Laboratory Head / License #15131 — not `job_orders.reviewed_by_name`.
+Signatory fields use `anchor.below` + `anchor.above` (`fo3_form_meta`) with `y = min(matrix+offset, metaY−gap)` — they follow notes when space allows and clamp above form-meta when the table is tall. Lab conditions / references / NOTE stay matrix-anchored only. Signatory stack print order is **name → license → role** (Laboratory Analyst below the license line). Signatory / Noted by / form-meta fields use **no** `options.cover` (transparent overlays so white boxes cannot hide another line). Keep `cover` only on large under-table note blocks when blanking PDF ink. **Laboratory Head (Noted by)** is always static: `WENDY A. TAYSON, RCh, MEnE` / Laboratory Head / License #15131 — not `job_orders.reviewed_by_name`.
 
 Edit layout by moving boxes and changing **Footer / printed text** (Static text) / offsets — double-click a field on the canvas to jump to that editor. **Import blueprint** (or run migrations: heal re-imports FO3 when chrome fields are missing) after uploading a blank footer PDF.
 
@@ -149,14 +149,14 @@ Edit layout by moving boxes and changing **Footer / printed text** (Static text)
 
 Under-table note fields (`fo37_lab_conditions` / references / NOTE) may set `options.cover` to white-out printed Issue 7 PDF ink. **Signatory chrome has no cover**; print order is name → license → role. Default preview names/licenses (LANACA / BARNUEVO / Wendy + PRC) live in Static text; live jobs still fill `results.analyst_*` from signatories. Sole-rev deploy: `2026_10_27_130000_deploy_all_plotted_controlled_forms_sole_rev` (all plotted forms including FO3/FO37 → revision `1`).
 
-**FO2 / FO2A footers (Issue 18 wastewater physico):** two controlled forms, one layout each (same blank PDF family). Both use the FO3-style anchor-below-matrix pattern on `ww_fo2_matrix` (`stretch_body: false`). Notes / references / lab conditions / signatory chrome are designer overlays.
+**FO2 / FO2A footers (Issue 18 wastewater physico):** two controlled forms, one layout each (same blank PDF family). Both use the FO3-style anchor-below-matrix pattern on `ww_fo2_matrix` (`stretch_body: false`). **Lab conditions / references / notes** stay anchored under the matrix. **Signatory chrome** uses `anchor.below` + `anchor.above` (`fo2_form_meta`) so `y = min(matrix+offset, metaY−gap)` — short tables keep signatures under notes; tall tables clamp above the footer. **`fo2_form_meta` (Test Report #)** is a fixed page-bottom footer (no matrix anchor).
 
 | Form | Kind | Notes | Signatory slots |
 |------|------|-------|-----------------|
 | `LSP-7.8-FO2` | Wastewater / River water | 6 notes (PAB/EMB footnotes) | Reviewed / Noted / Certified ×2 |
 | `LSP-7.8-FO2A` | Abstracted water | 4 notes (`*Not EMB- DENR Accredited`) | Reviewed / Certified / Noted |
 
-`AnalysisResultReportResolver` picks FO2 vs FO2A from `sample.description` when the selected types ⊆ the shared WW physico panel. Bag keys `fo2_notes`, `fo2_lab_conditions`, `fo2_references` default from `OfficialAnalysisCatalog`; analysts enter **temperature (°C)** and **humidity (%)** (required before Save & Complete) plus optional references/notes via `job_orders.result_footer` (`PUT /analyst/job-orders/{id}/result-footer`). The same atmosphere gate applies to **FO3** and **FO37** (`fo3_lab_conditions` / `fo37_lab_conditions`). Both FO2 forms print document meta via `fo2_form_meta` (`Test Report#: CHE WW –` / `NPPC-ADL` / `LSP 7.8_FO2` / `Rev. 17/Issue 18` / `Effectivity Date: 09/16/2026`). FO2A signatories are **Reviewed | Certified** on one row and **Noted By** under Reviewed (three layers: name / role / license). Sole-rev deploy: `2026_10_27_130000_deploy_all_plotted_controlled_forms_sole_rev`. Schema: `2026_10_20_131000_add_result_footer_to_job_orders` for analyst footer overrides.
+`AnalysisResultReportResolver` picks FO2 vs FO2A from `sample.description` when the selected types ⊆ the shared WW physico panel. Bag keys `fo2_notes`, `fo2_lab_conditions`, `fo2_references` default from `OfficialAnalysisCatalog`; analysts enter **temperature (°C)**, **humidity (%)**, and **Test Report #** suffix (required before encode) plus optional references/notes via `job_orders.result_footer` (`PUT /analyst/job-orders/{id}/result-footer`). The same atmosphere gate applies to **FO3** and **FO37** (`fo3_lab_conditions` / `fo37_lab_conditions`). Live jobs compose `fo2_form_meta` / `fo3_form_meta` / `fo37_form_meta` with the saved suffix after `CHE WW –` or `CHE DW –`. On **FO2 / FO2A / FO3 / FO37**, form-meta stays fixed at the page bottom; notes follow the table; signatories dynamically follow notes and clamp above form-meta when needed. Those four sheets also get a centered bottom page stamp (`- page n/total -`) from `ControlledPdfFiller` (not inline in form-meta). Heal: `2026_11_03_120000_heal_fo_footer_pin_layout`. FO2A signatories are **Reviewed | Certified** on one row and **Noted By** under Reviewed (three layers: name / role / license). Sole-rev deploy: `2026_10_27_130000_deploy_all_plotted_controlled_forms_sole_rev`. Schema: `2026_10_20_131000_add_result_footer_to_job_orders` for analyst footer overrides.
 
 **Blank PDF ops (required for the gap to disappear):**
 
@@ -305,7 +305,7 @@ Eligibility: all **selected** analysis lines must be completed before combined/m
 | Job | `waived_type_ids` | Ignored by matrix renderer |
 | Job | `result_signatories` | Analyst name(s) + optional PRC entered at Send to Head |
 | Form | `analyst_signatory_slots` / `analyst_require_prc` | 1–4 analysts; PRC required or not. FO2 = 4 slots (Reviewed / Noted / Certified ×2); FO2A = 3 slots (Reviewed / Certified / Noted). |
-| Job | `result_footer` | Optional FO2/FO2A override for lab conditions / references / notes (else catalog defaults). |
+| Job | `result_footer` | FO2/FO2A/FO3/FO37: temperature, humidity, test_report_no (required before encode); FO2/FO2A may also override references/notes. |
 
 ---
 

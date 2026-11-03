@@ -14,12 +14,24 @@ class ResultFooter
         'LSP-7.8-FO37',
     ];
 
+    public const PAGE_STAMP_FORM_CODES = [
+        'LSP-7.8-FO2',
+        'LSP-7.8-FO2A',
+        'LSP-7.8-FO3',
+        'LSP-7.8-FO37',
+    ];
+
+    public const TEST_REPORT_PREFIX_WW = 'CHE WW –';
+
+    public const TEST_REPORT_PREFIX_DW = 'CHE DW –';
+
     public const FO37_MDL_LINE = 'Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L';
 
     /**
      * @return array{
      *     temperature_c: string,
      *     humidity_pct: string,
+     *     test_report_no: string,
      *     lab_conditions: string,
      *     references: string,
      *     notes: string
@@ -33,16 +45,16 @@ class ResultFooter
             ? 'abstracted'
             : 'full';
 
-        $temperature = '';
-        $humidity = '';
         $stored = is_array($jobOrder?->result_footer) ? $jobOrder->result_footer : [];
         $temperature = trim((string) ($stored['temperature_c'] ?? ''));
         $humidity = trim((string) ($stored['humidity_pct'] ?? ''));
+        $testReportNo = trim((string) ($stored['test_report_no'] ?? ''));
 
         if (in_array($code, ['LSP-7.8-FO3', 'LSP-7.8-FO37'], true)) {
             return [
                 'temperature_c' => $temperature,
                 'humidity_pct' => $humidity,
+                'test_report_no' => $testReportNo,
                 'lab_conditions' => self::composeLabConditionsText($form, [
                     'temperature_c' => $temperature !== '' ? $temperature : null,
                     'humidity_pct' => $humidity !== '' ? $humidity : null,
@@ -55,6 +67,7 @@ class ResultFooter
         return [
             'temperature_c' => $temperature,
             'humidity_pct' => $humidity,
+            'test_report_no' => $testReportNo,
             'lab_conditions' => self::composeLabConditionsText($form, [
                 'temperature_c' => $temperature !== '' ? $temperature : null,
                 'humidity_pct' => $humidity !== '' ? $humidity : null,
@@ -70,6 +83,8 @@ class ResultFooter
      * @return array{
      *     temperature_c: string,
      *     humidity_pct: string,
+     *     test_report_no: string,
+     *     test_report_prefix: string,
      *     lab_conditions: string,
      *     references: string,
      *     notes: string,
@@ -91,6 +106,7 @@ class ResultFooter
 
         $temperature = trim((string) ($stored['temperature_c'] ?? ''));
         $humidity = trim((string) ($stored['humidity_pct'] ?? ''));
+        $testReportNo = trim((string) ($stored['test_report_no'] ?? ''));
 
         $value = static function (string $key) use ($stored, $defaults): string {
             $override = trim((string) ($stored[$key] ?? ''));
@@ -111,6 +127,8 @@ class ResultFooter
         return [
             'temperature_c' => $temperature,
             'humidity_pct' => $humidity,
+            'test_report_no' => $testReportNo,
+            'test_report_prefix' => self::testReportPrefixFor($form),
             'lab_conditions' => $composed !== '' ? $composed : $value('lab_conditions'),
             'references' => $showNotes ? $value('references') : '',
             'notes' => $showNotes ? $value('notes') : '',
@@ -126,6 +144,7 @@ class ResultFooter
      * @param  array{
      *     temperature_c?: mixed,
      *     humidity_pct?: mixed,
+     *     test_report_no?: mixed,
      *     lab_conditions?: mixed,
      *     references?: mixed,
      *     notes?: mixed
@@ -133,6 +152,7 @@ class ResultFooter
      * @return array{
      *     temperature_c: string|null,
      *     humidity_pct: string|null,
+     *     test_report_no: string|null,
      *     lab_conditions: string|null,
      *     references: string|null,
      *     notes: string|null
@@ -148,6 +168,7 @@ class ResultFooter
 
         $temperature = $normalize($payload['temperature_c'] ?? null);
         $humidity = $normalize($payload['humidity_pct'] ?? null);
+        $testReportNo = $normalize($payload['test_report_no'] ?? null);
 
         $composed = self::composeLabConditionsText($form, [
             'temperature_c' => $temperature,
@@ -160,6 +181,7 @@ class ResultFooter
         return [
             'temperature_c' => $temperature,
             'humidity_pct' => $humidity,
+            'test_report_no' => $testReportNo,
             'lab_conditions' => $composed !== '' ? $composed : $normalize($payload['lab_conditions'] ?? null),
             'references' => $showNotes ? $normalize($payload['references'] ?? null) : null,
             'notes' => $showNotes ? $normalize($payload['notes'] ?? null) : null,
@@ -176,6 +198,22 @@ class ResultFooter
         return in_array($form?->form_code, self::ATMOSPHERE_FORM_CODES, true);
     }
 
+    public static function formUsesPageStamp(?ControlledForm $form): bool
+    {
+        return in_array($form?->form_code, self::PAGE_STAMP_FORM_CODES, true);
+    }
+
+    public static function testReportPrefixFor(?ControlledForm $form): string
+    {
+        $code = $form?->form_code;
+
+        if (in_array($code, ['LSP-7.8-FO3', 'LSP-7.8-FO37'], true)) {
+            return self::TEST_REPORT_PREFIX_DW;
+        }
+
+        return self::TEST_REPORT_PREFIX_WW;
+    }
+
     public static function isAtmosphereComplete(JobOrder $jobOrder, ?ControlledForm $form = null): bool
     {
         if ($form !== null && ! self::formRequiresLabAtmosphere($form)) {
@@ -185,8 +223,9 @@ class ResultFooter
         $stored = is_array($jobOrder->result_footer) ? $jobOrder->result_footer : [];
         $temperature = trim((string) ($stored['temperature_c'] ?? ''));
         $humidity = trim((string) ($stored['humidity_pct'] ?? ''));
+        $testReportNo = trim((string) ($stored['test_report_no'] ?? ''));
 
-        return $temperature !== '' && $humidity !== '';
+        return $temperature !== '' && $humidity !== '' && $testReportNo !== '';
     }
 
     /**
@@ -220,5 +259,45 @@ class ResultFooter
         $legacy = trim((string) ($footer['lab_conditions'] ?? ''));
 
         return $legacy;
+    }
+
+    public static function composeFo2FormMeta(?string $testReportNo, bool $abstracted = false): string
+    {
+        $suffix = trim((string) $testReportNo);
+        $codeLine = $abstracted ? 'LSP 7.8_FO2' : 'LSP 7.8  FO2';
+
+        return "Test Report#: ".self::TEST_REPORT_PREFIX_WW.($suffix !== '' ? ' '.$suffix : '')."\n"
+            ."NPPC-ADL\n"
+            ."{$codeLine}\n"
+            ."Rev. 17/Issue 18\n"
+            .'Effectivity Date: 09/16/2026';
+    }
+
+    public static function composeFo3FormMeta(?string $testReportNo): string
+    {
+        $suffix = trim((string) $testReportNo);
+
+        return "Test Report #: ".self::TEST_REPORT_PREFIX_DW.($suffix !== '' ? ' '.$suffix : '')."\n"
+            ."Laboratory DOH Accreditation # # DOH052581\n"
+            ."NPPC-ADL\n"
+            ."LSP 7.8 FO3\n"
+            .'Rev. 10 / Issue 11 Effectivity Date:  09/01/2026';
+    }
+
+    public static function composeFo37FormMeta(?string $testReportNo): string
+    {
+        $suffix = trim((string) $testReportNo);
+
+        return "Test Report #: ".self::TEST_REPORT_PREFIX_DW.($suffix !== '' ? ' '.$suffix : '')."\n"
+            ."Laboratory DOH Accreditation # DOH052581\n"
+            ."NPPC-ADL\n"
+            ."LSP 7.8 FO37\n"
+            ."Rev. 06 / Issue 07\n"
+            .'Effectivity Date:  09/01/2026';
+    }
+
+    public static function pageStampText(int $pageNo, int $pageCount): string
+    {
+        return '- page '.$pageNo.'/'.$pageCount.' -';
     }
 }

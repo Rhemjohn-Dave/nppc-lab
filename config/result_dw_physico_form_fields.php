@@ -1,11 +1,5 @@
 <?php
 
-/**
- * Field blueprint for LSP-7.8-FO37.
- * Captured from Form Designer ACTIVE revision 1
- * via `php artisan controlled-forms:export-blueprints`.
- */
-
 return array (
   'page' => 
   array (
@@ -480,6 +474,8 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
         array (
           'below' => 'dw_physico_matrix',
           'offset_mm' => 40,
+          'above' => 'fo37_form_meta',
+          'above_offset_mm' => 37.0,
         ),
         'static_text' => 'Analyzed by:',
       ),
@@ -505,6 +501,8 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
         array (
           'below' => 'dw_physico_matrix',
           'offset_mm' => 40,
+          'above' => 'fo37_form_meta',
+          'above_offset_mm' => 37.0,
         ),
         'static_text' => 'Certified Correct:',
       ),
@@ -530,6 +528,8 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
         array (
           'below' => 'dw_physico_matrix',
           'offset_mm' => 47,
+          'above' => 'fo37_form_meta',
+          'above_offset_mm' => 30.0,
         ),
         'static_text' => 'MA. ANTONIELA C. LANACA',
       ),
@@ -555,6 +555,8 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
         array (
           'below' => 'dw_physico_matrix',
           'offset_mm' => 47,
+          'above' => 'fo37_form_meta',
+          'above_offset_mm' => 30.0,
         ),
         'static_text' => 'JAYRAYNE ERIC G. BARNUEVO, RCh',
       ),
@@ -580,6 +582,8 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
         array (
           'below' => 'dw_physico_matrix',
           'offset_mm' => 54,
+          'above' => 'fo37_form_meta',
+          'above_offset_mm' => 23.0,
         ),
         'static_text' => 'Laboratory Analyst',
       ),
@@ -605,6 +609,8 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
         array (
           'below' => 'dw_physico_matrix',
           'offset_mm' => 54,
+          'above' => 'fo37_form_meta',
+          'above_offset_mm' => 23.0,
         ),
         'static_text' => 'Laboratory Analyst',
       ),
@@ -630,6 +636,8 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
         array (
           'below' => 'dw_physico_matrix',
           'offset_mm' => 51,
+          'above' => 'fo37_form_meta',
+          'above_offset_mm' => 26.0,
         ),
         'static_text' => 'Registered Chemical Technician, License #',
       ),
@@ -655,6 +663,8 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
         array (
           'below' => 'dw_physico_matrix',
           'offset_mm' => 51,
+          'above' => 'fo37_form_meta',
+          'above_offset_mm' => 26.0,
         ),
         'static_text' => '00761',
       ),
@@ -680,6 +690,8 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
         array (
           'below' => 'dw_physico_matrix',
           'offset_mm' => 51,
+          'above' => 'fo37_form_meta',
+          'above_offset_mm' => 26.0,
         ),
         'static_text' => 'Registered Chemist, License #',
       ),
@@ -705,6 +717,8 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
         array (
           'below' => 'dw_physico_matrix',
           'offset_mm' => 51,
+          'above' => 'fo37_form_meta',
+          'above_offset_mm' => 26.0,
         ),
         'static_text' => '16126',
       ),
@@ -730,6 +744,8 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
         array (
           'below' => 'dw_physico_matrix',
           'offset_mm' => 62,
+          'above' => 'fo37_form_meta',
+          'above_offset_mm' => 15.0,
         ),
         'static_text' => 'Noted by:',
       ),
@@ -755,6 +771,8 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
         array (
           'below' => 'dw_physico_matrix',
           'offset_mm' => 67,
+          'above' => 'fo37_form_meta',
+          'above_offset_mm' => 10.0,
         ),
         'static_text' => 'WENDY A. TAYSON, RCh, MEnE',
       ),
@@ -780,6 +798,8 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
         array (
           'below' => 'dw_physico_matrix',
           'offset_mm' => 71,
+          'above' => 'fo37_form_meta',
+          'above_offset_mm' => 6.0,
         ),
         'static_text' => 'Laboratory Head',
       ),
@@ -805,6 +825,8 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
         array (
           'below' => 'dw_physico_matrix',
           'offset_mm' => 74,
+          'above' => 'fo37_form_meta',
+          'above_offset_mm' => 3.0,
         ),
         'static_text' => 'Registered Chemist, License #15131',
       ),
@@ -816,7 +838,7 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
       'type' => 'multiline',
       'page' => 1,
       'x' => 11.95,
-      'y' => 268.0,
+      'y' => 250.0,
       'w' => 192.0,
       'h' => 17.672,
       'font_size' => 7.0,
@@ -826,11 +848,6 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
       'data_source_key' => 'fo37_form_meta',
       'options' => 
       array (
-        'anchor' => 
-        array (
-          'below' => 'dw_physico_matrix',
-          'offset_mm' => 79,
-        ),
         'static_text' => 'Test Report #: CHE DW – 
 Laboratory DOH Accreditation # DOH052581
 NPPC-ADL

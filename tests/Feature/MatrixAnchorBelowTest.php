@@ -69,6 +69,116 @@ class MatrixAnchorBelowTest extends TestCase
         $this->assertEqualsWithDelta(180.0, $resolved['y'], 0.01);
     }
 
+    public function test_apply_anchor_follows_notes_and_clamps_above_form_meta(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'applyAnchorBelow');
+        $method->setAccessible(true);
+
+        $field = [
+            'name' => 'fo2_label_reviewed',
+            'y' => 100.0,
+            'options' => [
+                'anchor' => [
+                    'below' => 'ww_fo2_matrix',
+                    'offset_mm' => 45.0,
+                    'above' => 'fo2_form_meta',
+                    'above_offset_mm' => 45.0,
+                ],
+            ],
+        ];
+
+        // Short table: follow notes with a small nudge, do not jump to footer.
+        $short = $method->invoke(
+            $filler,
+            $field,
+            ['ww_fo2_matrix' => 100.0],
+            ['fo2_form_meta' => 258.0],
+        );
+        $this->assertEqualsWithDelta(155.0, $short['y'], 0.01);
+
+        // Tall table: clamp just above form-meta.
+        $tall = $method->invoke(
+            $filler,
+            $field,
+            ['ww_fo2_matrix' => 180.0],
+            ['fo2_form_meta' => 258.0],
+        );
+        $this->assertEqualsWithDelta(213.0, $tall['y'], 0.01);
+    }
+
+    public function test_form_meta_ignores_stale_matrix_anchor(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'applyAnchorBelow');
+        $method->setAccessible(true);
+
+        $field = [
+            'name' => 'fo2_form_meta',
+            'y' => 262.0,
+            'options' => [
+                'anchor' => [
+                    'below' => 'ww_fo2a_matrix',
+                    'offset_mm' => 79.0,
+                ],
+            ],
+        ];
+
+        $resolved = $method->invoke(
+            $filler,
+            $field,
+            ['ww_fo2a_matrix' => 120.0],
+            [],
+        );
+
+        $this->assertEqualsWithDelta(262.0, $resolved['y'], 0.01);
+    }
+
+    public function test_fo2_blueprint_pins_meta_footer_and_signatories(): void
+    {
+        $this->seed();
+
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2')->firstOrFail();
+        $revision = $form->activeRevision();
+        $this->assertNotNull($revision);
+
+        $meta = $revision->fields->firstWhere('name', 'fo2_form_meta');
+        $this->assertNotNull($meta);
+        $metaOptions = is_array($meta->options) ? $meta->options : [];
+        $this->assertArrayNotHasKey('anchor', $metaOptions);
+        $this->assertEqualsWithDelta(250.0, (float) $meta->y, 0.01);
+
+        $notes = $revision->fields->firstWhere('name', 'fo2_notes');
+        $this->assertNotNull($notes);
+        $notesAnchor = is_array($notes->options['anchor'] ?? null) ? $notes->options['anchor'] : [];
+        $this->assertSame('ww_fo2_matrix', $notesAnchor['below'] ?? null);
+        $this->assertArrayNotHasKey('above', $notesAnchor);
+
+        $reviewed = $revision->fields->firstWhere('name', 'fo2_label_reviewed');
+        $this->assertNotNull($reviewed);
+        $reviewedAnchor = is_array($reviewed->options['anchor'] ?? null) ? $reviewed->options['anchor'] : [];
+        $this->assertSame('ww_fo2_matrix', $reviewedAnchor['below'] ?? null);
+        $this->assertSame('fo2_form_meta', $reviewedAnchor['above'] ?? null);
+        $this->assertGreaterThan(0, (float) ($reviewedAnchor['above_offset_mm'] ?? 0));
+    }
+
+    public function test_form_meta_is_pinned_above_page_stamp(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'formMetaYAbovePageStamp');
+        $method->setAccessible(true);
+        $stamp = new ReflectionMethod(ControlledPdfFiller::class, 'pageStampY');
+        $stamp->setAccessible(true);
+
+        $pageHeight = 279.4;
+        $metaY = $method->invoke($filler, 18.0, 7.0, $pageHeight);
+        $stampY = $stamp->invoke($filler, $pageHeight);
+        $contentBottom = $metaY + (7.0 * 0.42 * 5.0);
+
+        $this->assertLessThan($stampY, $contentBottom);
+        $this->assertGreaterThanOrEqual(2.0, $stampY - $contentBottom);
+    }
+
     public function test_short_matrix_content_bottom_is_below_designer_box_and_anchors_follow(): void
     {
         $filler = app(ControlledPdfFiller::class);
@@ -316,7 +426,7 @@ class MatrixAnchorBelowTest extends TestCase
             $revision->fields()->where('name', 'fo3_label_analyzed_by')->exists(),
         );
 
-        $migration = require database_path('migrations/2026_10_19_220000_deploy_fo3_fo37_current_layout.php');
+        $migration = require database_path('migrations/2026_11_03_120000_heal_fo_footer_pin_layout.php');
         $migration->up();
 
         $revision->refresh();
@@ -335,5 +445,14 @@ class MatrixAnchorBelowTest extends TestCase
         $this->assertFalse(
             $revision->fields()->where('name', 'job_orders.reviewed_by_name')->exists(),
         );
+
+        $meta = $revision->fields()->where('name', 'fo3_form_meta')->first();
+        $this->assertNotNull($meta);
+        $metaOptions = is_array($meta->options) ? $meta->options : [];
+        $this->assertArrayNotHasKey('anchor', $metaOptions);
+
+        $analyzed = $revision->fields()->where('name', 'fo3_label_analyzed_by')->first();
+        $this->assertNotNull($analyzed);
+        $this->assertSame('fo3_form_meta', $analyzed->options['anchor']['above'] ?? null);
     }
 }

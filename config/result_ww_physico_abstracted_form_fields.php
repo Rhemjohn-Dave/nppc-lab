@@ -1,11 +1,5 @@
 <?php
 
-/**
- * Field blueprint for LSP-7.8-FO2A.
- * Captured from Form Designer ACTIVE revision 1
- * via `php artisan controlled-forms:export-blueprints`.
- */
-
 return array (
   'page' => 
   array (
@@ -351,6 +345,8 @@ US – EPA',
         array (
           'below' => 'ww_fo2a_matrix',
           'offset_mm' => 37,
+          'above' => 'fo2_form_meta',
+          'above_offset_mm' => 37.0,
         ),
         'static_text' => 'Reviewed by:',
       ),
@@ -376,6 +372,8 @@ US – EPA',
         array (
           'below' => 'ww_fo2a_matrix',
           'offset_mm' => 44,
+          'above' => 'fo2_form_meta',
+          'above_offset_mm' => 30.0,
         ),
         'static_text' => 'MA. ANTONIELA C. LANACA',
       ),
@@ -401,6 +399,8 @@ US – EPA',
         array (
           'below' => 'ww_fo2a_matrix',
           'offset_mm' => 48,
+          'above' => 'fo2_form_meta',
+          'above_offset_mm' => 26.0,
         ),
         'static_text' => 'Laboratory Analyst',
       ),
@@ -426,6 +426,8 @@ US – EPA',
         array (
           'below' => 'ww_fo2a_matrix',
           'offset_mm' => 51,
+          'above' => 'fo2_form_meta',
+          'above_offset_mm' => 23.0,
         ),
         'static_text' => 'Registered Chemical Technician, License #00761',
       ),
@@ -451,6 +453,8 @@ US – EPA',
         array (
           'below' => 'ww_fo2a_matrix',
           'offset_mm' => 37,
+          'above' => 'fo2_form_meta',
+          'above_offset_mm' => 37.0,
         ),
         'static_text' => 'Certified Correct:',
       ),
@@ -476,6 +480,8 @@ US – EPA',
         array (
           'below' => 'ww_fo2a_matrix',
           'offset_mm' => 44,
+          'above' => 'fo2_form_meta',
+          'above_offset_mm' => 30.0,
         ),
         'static_text' => 'FERRESA MAE O. CABEROY, RCh',
       ),
@@ -501,6 +507,8 @@ US – EPA',
         array (
           'below' => 'ww_fo2a_matrix',
           'offset_mm' => 48,
+          'above' => 'fo2_form_meta',
+          'above_offset_mm' => 26.0,
         ),
         'static_text' => 'Laboratory Analyst',
       ),
@@ -526,6 +534,8 @@ US – EPA',
         array (
           'below' => 'ww_fo2a_matrix',
           'offset_mm' => 51,
+          'above' => 'fo2_form_meta',
+          'above_offset_mm' => 23.0,
         ),
         'static_text' => 'Registered Chemist, License #16125',
       ),
@@ -551,6 +561,8 @@ US – EPA',
         array (
           'below' => 'ww_fo2a_matrix',
           'offset_mm' => 58,
+          'above' => 'fo2_form_meta',
+          'above_offset_mm' => 16.0,
         ),
         'static_text' => 'Noted By:',
       ),
@@ -576,6 +588,8 @@ US – EPA',
         array (
           'below' => 'ww_fo2a_matrix',
           'offset_mm' => 64,
+          'above' => 'fo2_form_meta',
+          'above_offset_mm' => 10.0,
         ),
         'static_text' => 'WENDY A. TAYSON, RCh, MEnE',
       ),
@@ -601,6 +615,8 @@ US – EPA',
         array (
           'below' => 'ww_fo2a_matrix',
           'offset_mm' => 68,
+          'above' => 'fo2_form_meta',
+          'above_offset_mm' => 6.0,
         ),
         'static_text' => 'Laboratory Head',
       ),
@@ -626,6 +642,8 @@ US – EPA',
         array (
           'below' => 'ww_fo2a_matrix',
           'offset_mm' => 71,
+          'above' => 'fo2_form_meta',
+          'above_offset_mm' => 3.0,
         ),
         'static_text' => 'Registered Chemist, License #15131',
       ),
@@ -637,7 +655,7 @@ US – EPA',
       'type' => 'multiline',
       'page' => 1,
       'x' => 11.747,
-      'y' => 262.0,
+      'y' => 250.0,
       'w' => 192.0,
       'h' => 18.0,
       'font_size' => 7.0,
@@ -647,11 +665,6 @@ US – EPA',
       'data_source_key' => 'fo2_form_meta',
       'options' => 
       array (
-        'anchor' => 
-        array (
-          'below' => 'ww_fo2a_matrix',
-          'offset_mm' => 79,
-        ),
         'static_text' => 'Test Report#: CHE WW –
 NPPC-ADL
 LSP 7.8_FO2

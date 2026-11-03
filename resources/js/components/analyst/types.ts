@@ -84,6 +84,8 @@ export type ResultSignatoryConfig = {
 export type ResultFooterConfig = {
     temperature_c?: string;
     humidity_pct?: string;
+    test_report_no?: string;
+    test_report_prefix?: string;
     lab_conditions: string;
     references: string;
     notes: string;

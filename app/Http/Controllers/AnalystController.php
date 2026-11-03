@@ -677,6 +677,7 @@ class AnalystController extends Controller
         $data = $request->validate([
             'temperature_c' => ['nullable', 'string', 'max:40'],
             'humidity_pct' => ['nullable', 'string', 'max:40'],
+            'test_report_no' => ['nullable', 'string', 'max:80'],
             'lab_conditions' => ['nullable', 'string', 'max:2000'],
             'references' => ['nullable', 'string', 'max:4000'],
             'notes' => ['nullable', 'string', 'max:8000'],
@@ -689,12 +690,16 @@ class AnalystController extends Controller
             if (ResultFooter::formRequiresLabAtmosphere($form)) {
                 $temp = trim((string) ($data['temperature_c'] ?? ''));
                 $humidity = trim((string) ($data['humidity_pct'] ?? ''));
+                $testReportNo = trim((string) ($data['test_report_no'] ?? ''));
                 $atmosphereErrors = [];
                 if ($temp === '') {
                     $atmosphereErrors['temperature_c'] = 'Enter laboratory temperature (°C).';
                 }
                 if ($humidity === '') {
                     $atmosphereErrors['humidity_pct'] = 'Enter laboratory humidity (%).';
+                }
+                if ($testReportNo === '') {
+                    $atmosphereErrors['test_report_no'] = 'Enter the Test Report #.';
                 }
                 if ($atmosphereErrors !== []) {
                     throw ValidationException::withMessages($atmosphereErrors);

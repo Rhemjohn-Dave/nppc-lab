@@ -100,16 +100,20 @@ class ResultFooterTest extends TestCase
             ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
                 'temperature_c' => '23.5',
                 'humidity_pct' => '58',
+                'test_report_no' => 'TR-001',
                 'references' => 'Custom references',
                 'notes' => 'Custom override notes',
             ])
             ->assertOk()
             ->assertJsonPath('footer.notes', 'Custom override notes')
             ->assertJsonPath('footer.temperature_c', '23.5')
+            ->assertJsonPath('footer.test_report_no', 'TR-001')
+            ->assertJsonPath('footer.test_report_prefix', 'CHE WW –')
             ->assertJsonPath('footer.atmosphere_complete', true);
 
         $job->refresh();
         $this->assertSame('Custom override notes', $job->result_footer['notes'] ?? null);
+        $this->assertSame('TR-001', $job->result_footer['test_report_no'] ?? null);
         $this->assertStringContainsString('Temp = 23.5', (string) ($job->result_footer['lab_conditions'] ?? ''));
 
         $bag = app(FieldValueResolver::class)->forResult(
@@ -121,6 +125,7 @@ class ResultFooterTest extends TestCase
         );
 
         $this->assertStringContainsString('Temp = 23.5', (string) $bag['fo2_lab_conditions']);
+        $this->assertStringContainsString('CHE WW – TR-001', (string) ($bag['fo2_form_meta'] ?? ''));
         $this->assertSame('Custom references', $bag['fo2_references']);
         $this->assertSame('Custom override notes', $bag['fo2_notes']);
     }
@@ -165,6 +170,7 @@ class ResultFooterTest extends TestCase
             ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
                 'temperature_c' => '22',
                 'humidity_pct' => '50',
+                'test_report_no' => 'TR-001',
                 'notes' => 'Temporary notes',
             ])
             ->assertOk();
@@ -238,6 +244,15 @@ class ResultFooterTest extends TestCase
                 'temperature_c' => '25',
                 'humidity_pct' => '55',
             ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['test_report_no']);
+
+        $this->actingAs($analyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'TR-001',
+            ])
             ->assertOk();
 
         $this->actingAs($analyst)
@@ -307,10 +322,13 @@ class ResultFooterTest extends TestCase
             ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
                 'temperature_c' => '26',
                 'humidity_pct' => '62',
+                'test_report_no' => 'DW-77',
             ])
             ->assertOk()
             ->assertJsonPath('footer.requires_atmosphere', true)
-            ->assertJsonPath('footer.show_notes_fields', false);
+            ->assertJsonPath('footer.show_notes_fields', false)
+            ->assertJsonPath('footer.test_report_prefix', 'CHE DW –')
+            ->assertJsonPath('footer.test_report_no', 'DW-77');
 
         $bag = app(FieldValueResolver::class)->forResult(
             $revision->load('fields'),
@@ -323,6 +341,9 @@ class ResultFooterTest extends TestCase
         $this->assertStringContainsString('Temp: 26', (string) ($bag['fo37_lab_conditions'] ?? ''));
         $this->assertStringContainsString('Humidity: 62', (string) ($bag['fo37_lab_conditions'] ?? ''));
         $this->assertStringContainsString('Method Detection Limit', (string) ($bag['fo37_lab_conditions'] ?? ''));
+        $this->assertStringContainsString('CHE DW – DW-77', (string) ($bag['fo37_form_meta'] ?? ''));
+        $this->assertStringNotContainsString('Page 1-1', (string) ($bag['fo37_form_meta'] ?? ''));
+        $this->assertSame('- page 1/1 -', ResultFooter::pageStampText(1, 1));
     }
 
     private function advanceFo2JobToReady(JobOrder $job): void
@@ -334,6 +355,7 @@ class ResultFooterTest extends TestCase
             ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
                 'temperature_c' => '25',
                 'humidity_pct' => '55',
+                'test_report_no' => 'TR-001',
             ])
             ->assertOk();
 

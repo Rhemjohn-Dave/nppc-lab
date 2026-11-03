@@ -7,6 +7,8 @@ import { Textarea } from '@/components/ui/textarea';
 export type ResultFooterConfig = {
     temperature_c?: string;
     humidity_pct?: string;
+    test_report_no?: string;
+    test_report_prefix?: string;
     lab_conditions: string;
     references: string;
     notes: string;
@@ -20,6 +22,7 @@ export type ResultFooterConfig = {
 export type ResultFooterValues = {
     temperature_c: string;
     humidity_pct: string;
+    test_report_no: string;
     lab_conditions: string;
     references: string;
     notes: string;
@@ -36,7 +39,7 @@ type Props = {
 };
 
 /**
- * Lab conditions (required Temp/Humidity) plus FO2/FO2A references and notes.
+ * Lab conditions (required Temp/Humidity/Test Report #) plus FO2/FO2A references and notes.
  */
 export default function ResultFooterPanel({
     config,
@@ -49,9 +52,11 @@ export default function ResultFooterPanel({
 }: Props) {
     const requiresAtmosphere = config.requires_atmosphere !== false;
     const showNotes = config.show_notes_fields === true;
+    const reportPrefix = (config.test_report_prefix ?? 'CHE WW –').trim();
 
     const [temperature, setTemperature] = useState(config.temperature_c ?? '');
     const [humidity, setHumidity] = useState(config.humidity_pct ?? '');
+    const [testReportNo, setTestReportNo] = useState(config.test_report_no ?? '');
     const [labConditions, setLabConditions] = useState(config.lab_conditions);
     const [references, setReferences] = useState(config.references);
     const [notes, setNotes] = useState(config.notes);
@@ -59,12 +64,14 @@ export default function ResultFooterPanel({
     useEffect(() => {
         setTemperature(config.temperature_c ?? '');
         setHumidity(config.humidity_pct ?? '');
+        setTestReportNo(config.test_report_no ?? '');
         setLabConditions(config.lab_conditions);
         setReferences(config.references);
         setNotes(config.notes);
     }, [
         config.temperature_c,
         config.humidity_pct,
+        config.test_report_no,
         config.lab_conditions,
         config.references,
         config.notes,
@@ -75,6 +82,7 @@ export default function ResultFooterPanel({
         onConfirm({
             temperature_c: temperature.trim(),
             humidity_pct: humidity.trim(),
+            test_report_no: testReportNo.trim(),
             lab_conditions: labConditions,
             references,
             notes,
@@ -91,8 +99,8 @@ export default function ResultFooterPanel({
                     Lab conditions
                 </h2>
                 <p className="mt-1 text-xs text-slate-600">
-                    Enter temperature and humidity before encoding results. Values
-                    print on FO2 / FO2A / FO3 / FO37 result sheets.
+                    Enter temperature, humidity, and Test Report # before encoding
+                    results. Values print on FO2 / FO2A / FO3 / FO37 result sheets.
                 </p>
             </div>
 
@@ -107,38 +115,60 @@ export default function ResultFooterPanel({
                 ) : null}
 
                 {requiresAtmosphere ? (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div className="space-y-1.5">
-                            <Label htmlFor="lab_temperature_c">
-                                Temperature (°C)
-                            </Label>
-                            <Input
-                                id="lab_temperature_c"
-                                type="text"
-                                inputMode="decimal"
-                                required
-                                className="text-sm"
-                                value={temperature}
-                                onChange={(e) => setTemperature(e.target.value)}
-                                disabled={submitting}
-                                placeholder="e.g. 25"
-                            />
+                    <>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div className="space-y-1.5">
+                                <Label htmlFor="lab_temperature_c">
+                                    Temperature (°C)
+                                </Label>
+                                <Input
+                                    id="lab_temperature_c"
+                                    type="text"
+                                    inputMode="decimal"
+                                    required
+                                    className="text-sm"
+                                    value={temperature}
+                                    onChange={(e) => setTemperature(e.target.value)}
+                                    disabled={submitting}
+                                    placeholder="e.g. 25"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label htmlFor="lab_humidity_pct">Humidity (%)</Label>
+                                <Input
+                                    id="lab_humidity_pct"
+                                    type="text"
+                                    inputMode="decimal"
+                                    required
+                                    className="text-sm"
+                                    value={humidity}
+                                    onChange={(e) => setHumidity(e.target.value)}
+                                    disabled={submitting}
+                                    placeholder="e.g. 55"
+                                />
+                            </div>
                         </div>
+
                         <div className="space-y-1.5">
-                            <Label htmlFor="lab_humidity_pct">Humidity (%)</Label>
-                            <Input
-                                id="lab_humidity_pct"
-                                type="text"
-                                inputMode="decimal"
-                                required
-                                className="text-sm"
-                                value={humidity}
-                                onChange={(e) => setHumidity(e.target.value)}
-                                disabled={submitting}
-                                placeholder="e.g. 55"
-                            />
+                            <Label htmlFor="lab_test_report_no">Test Report #</Label>
+                            <div className="flex items-center gap-2">
+                                <span className="shrink-0 text-sm font-medium text-slate-700">
+                                    {reportPrefix}
+                                </span>
+                                <Input
+                                    id="lab_test_report_no"
+                                    type="text"
+                                    required
+                                    className="text-sm"
+                                    value={testReportNo}
+                                    onChange={(e) => setTestReportNo(e.target.value)}
+                                    disabled={submitting}
+                                    placeholder="suffix"
+                                    aria-label={`Test Report number after ${reportPrefix}`}
+                                />
+                            </div>
                         </div>
-                    </div>
+                    </>
                 ) : null}
 
                 {showNotes ? (

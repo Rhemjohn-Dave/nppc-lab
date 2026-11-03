@@ -102,6 +102,7 @@ class LabWorkflowTest extends TestCase
             ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
                 'temperature_c' => '25',
                 'humidity_pct' => '55',
+                'test_report_no' => 'TR-001',
             ])
             ->assertOk();
 
