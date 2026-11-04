@@ -228,10 +228,18 @@ export function summarizeRawFinishResults(
     return parts.join('; ');
 }
 
+/** Sentinel stored in result_raw when Residual Chlorine mode is Raw. */
+export const RESIDUAL_CHLORINE_RAW_SENTINEL = '-';
+
 export function summarizeResidualChlorineResults(
     finish?: string | null,
     chlorinated?: string | null,
+    raw?: string | null,
 ): string {
+    const rawText = (raw ?? '').trim();
+    if (rawText) {
+        return `Raw: ${RESIDUAL_CHLORINE_RAW_SENTINEL}`;
+    }
     const parts: string[] = [];
     const finishText = (finish ?? '').trim();
     const chlorinatedText = (chlorinated ?? '').trim();
@@ -242,6 +250,24 @@ export function summarizeResidualChlorineResults(
         parts.push(`Chlorinated: ${chlorinatedText}`);
     }
     return parts.join('; ');
+}
+
+/** Exclusive Residual Chlorine encode mode from stored fields. */
+export function residualChlorineMode(fields: {
+    result_raw?: string | null;
+    result_finish?: string | null;
+    result_chlorinated?: string | null;
+}): 'finish' | 'chlorinated' | 'raw' | null {
+    if ((fields.result_raw ?? '').trim()) {
+        return 'raw';
+    }
+    if ((fields.result_finish ?? '').trim()) {
+        return 'finish';
+    }
+    if ((fields.result_chlorinated ?? '').trim()) {
+        return 'chlorinated';
+    }
+    return null;
 }
 
 export function encodedResultLabel(task: {
@@ -264,6 +290,7 @@ export function encodedResultLabel(task: {
               ? summarizeResidualChlorineResults(
                     task.result_finish,
                     task.result_chlorinated,
+                    task.result_raw,
                 ) || (task.result_value ?? '').trim()
               : [task.result_value, task.result_unit]
                     .map((part) => (part ?? '').trim())
@@ -298,7 +325,8 @@ export function hasEncodedResult(task: AnalystTask): boolean {
     if (task.uses_residual_chlorine === true) {
         return (
             Boolean(task.result_finish?.trim()) ||
-            Boolean(task.result_chlorinated?.trim())
+            Boolean(task.result_chlorinated?.trim()) ||
+            Boolean(task.result_raw?.trim())
         );
     }
     return Boolean(task.result_value?.trim());

@@ -1,4 +1,8 @@
 import type { AnalystTask } from '@/components/analyst/types';
+import {
+    RESIDUAL_CHLORINE_RAW_SENTINEL,
+    residualChlorineMode,
+} from '@/components/analyst/types';
 import InputError from '@/components/input-error';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -37,6 +41,8 @@ type Props = {
     remarksPassFail?: boolean;
     analysisError?: string | null;
     onFieldChange: (key: keyof EncodingFormData, value: string) => void;
+    /** Batch-update form fields (used when switching Residual Chlorine mode). */
+    onFieldsPatch?: (patch: Partial<EncodingFormData>) => void;
 };
 
 const REMARKS_MAX = 1000;
@@ -49,6 +55,7 @@ export default function EncodingAssayForm({
     remarksPassFail = false,
     analysisError,
     onFieldChange,
+    onFieldsPatch,
 }: Props) {
     const isReturned = task.status === 'returned';
     const resultsLocked = !readOnly && !formData.performed_at.trim();
@@ -77,15 +84,52 @@ export default function EncodingAssayForm({
     const rawFilled = formData.result_raw.trim().length > 0;
     const finishFilled = formData.result_finish.trim().length > 0;
     const chlorinatedFilled = formData.result_chlorinated.trim().length > 0;
+    const clMode = usesResidualCl
+        ? residualChlorineMode(formData)
+        : null;
     const resultFilled = usesRawFinish
         ? rawFilled || finishFilled
         : usesResidualCl
-          ? finishFilled || chlorinatedFilled
+          ? clMode !== null
           : formData.result_value.trim().length > 0;
     const requireRaw = !readOnly && !resultsLocked && !finishFilled;
     const requireFinishRawPair = !readOnly && !resultsLocked && !rawFilled;
-    const requireFinishCl = !readOnly && !resultsLocked && !chlorinatedFilled;
-    const requireChlorinated = !readOnly && !resultsLocked && !finishFilled;
+    const setResidualClMode = (
+        mode: 'finish' | 'chlorinated' | 'raw',
+    ): void => {
+        if (readOnly || resultsLocked) {
+            return;
+        }
+        const patch: Partial<EncodingFormData> =
+            mode === 'raw'
+                ? {
+                      result_raw: RESIDUAL_CHLORINE_RAW_SENTINEL,
+                      result_finish: '',
+                      result_chlorinated: '',
+                      result_remarks_finish: '',
+                      result_remarks_chlorinated: '',
+                  }
+                : mode === 'finish'
+                  ? {
+                        result_raw: '',
+                        result_chlorinated: '',
+                        result_remarks_chlorinated: '',
+                    }
+                  : {
+                        result_raw: '',
+                        result_finish: '',
+                        result_remarks_finish: '',
+                    };
+        if (onFieldsPatch) {
+            onFieldsPatch(patch);
+            return;
+        }
+        for (const [key, value] of Object.entries(patch) as Array<
+            [keyof EncodingFormData, string]
+        >) {
+            onFieldChange(key, value);
+        }
+    };
     const remarksLen = usesRawFinish
         ? Math.max(
               formData.result_remarks_raw.length,
@@ -342,91 +386,189 @@ export default function EncodingAssayForm({
                 </div>
             ) : usesResidualCl ? (
                 <div className="grid grid-cols-1 gap-2.5 md:grid-cols-12 md:items-start">
-                    <div className="md:col-span-4">
-                        <Label
-                            htmlFor={`result_finish_${task.id}`}
-                            className="mb-1 block text-[11px] font-semibold text-slate-700"
-                        >
-                            Finish
-                            {requireFinishCl ? (
-                                <span className="text-rose-600"> *</span>
-                            ) : null}
+                    <div className="md:col-span-12">
+                        <Label className="mb-1 block text-[11px] font-semibold text-slate-700">
+                            Result type{' '}
+                            <span className="text-rose-600">*</span>
                         </Label>
-                        <Input
-                            id={`result_finish_${task.id}`}
-                            className="h-10 text-sm font-semibold"
-                            required={requireFinishCl}
-                            readOnly={readOnly}
-                            disabled={readOnly || resultsLocked}
-                            placeholder="e.g. 0.4"
-                            value={formData.result_finish}
-                            onChange={(e) =>
-                                onFieldChange('result_finish', e.target.value)
-                            }
-                            onBlur={() => {
-                                if (readOnly || resultsLocked) {
-                                    return;
-                                }
-                                const next = formatScientificResult(
-                                    formData.result_finish,
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            {(
+                                [
+                                    {
+                                        mode: 'finish' as const,
+                                        title: 'Finish',
+                                        hint: 'Limit: <1.0 mg/L RO',
+                                    },
+                                    {
+                                        mode: 'chlorinated' as const,
+                                        title: 'Chlorinated',
+                                        hint: 'Limit: 0.3–1.5 mg/L',
+                                    },
+                                    {
+                                        mode: 'raw' as const,
+                                        title: 'Raw',
+                                        hint: 'Prints as -',
+                                    },
+                                ] as const
+                            ).map((option) => {
+                                const selected = clMode === option.mode;
+                                const Icon = selected ? Check : Circle;
+
+                                return (
+                                    <button
+                                        key={option.mode}
+                                        type="button"
+                                        disabled={readOnly || resultsLocked}
+                                        aria-pressed={selected}
+                                        className={cn(
+                                            'flex items-center gap-2 rounded-lg border px-3 py-2 text-left transition focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none',
+                                            selected
+                                                ? 'border-2 border-nppc-700 bg-nppc-50 text-nppc-950 shadow-sm ring-2 ring-nppc-700/15'
+                                                : 'border border-dashed border-slate-300 bg-slate-50/50 text-slate-500 hover:border-slate-400 hover:bg-white',
+                                            (readOnly || resultsLocked) &&
+                                                'cursor-default opacity-90',
+                                        )}
+                                        onClick={() =>
+                                            setResidualClMode(option.mode)
+                                        }
+                                    >
+                                        <Icon
+                                            className={cn(
+                                                'size-4 shrink-0',
+                                                selected
+                                                    ? 'text-nppc-700'
+                                                    : 'text-slate-400',
+                                            )}
+                                            strokeWidth={selected ? 2.5 : 1.5}
+                                        />
+                                        <span>
+                                            <span
+                                                className={cn(
+                                                    'block text-xs tracking-wide uppercase',
+                                                    selected
+                                                        ? 'font-bold'
+                                                        : 'font-semibold',
+                                                )}
+                                            >
+                                                {option.title}
+                                            </span>
+                                            <span className="block text-[11px] opacity-80">
+                                                {option.hint}
+                                            </span>
+                                        </span>
+                                    </button>
                                 );
-                                if (next !== formData.result_finish) {
-                                    onFieldChange('result_finish', next);
-                                }
-                            }}
-                        />
-                        <p className="mt-0.5 text-[10px] text-slate-500">
-                            Limit: &lt;1.0 mg/L RO
+                            })}
+                        </div>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                            Choose one: Finish, Chlorinated, or Raw. Only the
+                            selected row prints a result; Raw prints as -.
                         </p>
                         <InputError
                             className="mt-0.5"
-                            message={formErrors.result_finish}
-                        />
-                    </div>
-                    <div className="md:col-span-4">
-                        <Label
-                            htmlFor={`result_chlorinated_${task.id}`}
-                            className="mb-1 block text-[11px] font-semibold text-slate-700"
-                        >
-                            Chlorinated
-                            {requireChlorinated ? (
-                                <span className="text-rose-600"> *</span>
-                            ) : null}
-                        </Label>
-                        <Input
-                            id={`result_chlorinated_${task.id}`}
-                            className="h-10 text-sm font-semibold"
-                            required={requireChlorinated}
-                            readOnly={readOnly}
-                            disabled={readOnly || resultsLocked}
-                            placeholder="e.g. 0.8"
-                            value={formData.result_chlorinated}
-                            onChange={(e) =>
-                                onFieldChange(
-                                    'result_chlorinated',
-                                    e.target.value,
-                                )
+                            message={
+                                formErrors.result_finish ||
+                                formErrors.result_chlorinated ||
+                                formErrors.result_raw
                             }
-                            onBlur={() => {
-                                if (readOnly || resultsLocked) {
-                                    return;
-                                }
-                                const next = formatScientificResult(
-                                    formData.result_chlorinated,
-                                );
-                                if (next !== formData.result_chlorinated) {
-                                    onFieldChange('result_chlorinated', next);
-                                }
-                            }}
-                        />
-                        <p className="mt-0.5 text-[10px] text-slate-500">
-                            Limit: 0.3–1.5 mg/L chlorinated
-                        </p>
-                        <InputError
-                            className="mt-0.5"
-                            message={formErrors.result_chlorinated}
                         />
                     </div>
+                    {clMode === 'finish' ? (
+                        <div className="md:col-span-8">
+                            <Label
+                                htmlFor={`result_finish_${task.id}`}
+                                className="mb-1 block text-[11px] font-semibold text-slate-700"
+                            >
+                                Finish value{' '}
+                                <span className="text-rose-600">*</span>
+                            </Label>
+                            <Input
+                                id={`result_finish_${task.id}`}
+                                className="h-10 text-sm font-semibold"
+                                required={!readOnly && !resultsLocked}
+                                readOnly={readOnly}
+                                disabled={readOnly || resultsLocked}
+                                placeholder="e.g. 0.4"
+                                value={formData.result_finish}
+                                onChange={(e) =>
+                                    onFieldChange(
+                                        'result_finish',
+                                        e.target.value,
+                                    )
+                                }
+                                onBlur={() => {
+                                    if (readOnly || resultsLocked) {
+                                        return;
+                                    }
+                                    const next = formatScientificResult(
+                                        formData.result_finish,
+                                    );
+                                    if (next !== formData.result_finish) {
+                                        onFieldChange('result_finish', next);
+                                    }
+                                }}
+                            />
+                            <InputError
+                                className="mt-0.5"
+                                message={formErrors.result_finish}
+                            />
+                        </div>
+                    ) : null}
+                    {clMode === 'chlorinated' ? (
+                        <div className="md:col-span-8">
+                            <Label
+                                htmlFor={`result_chlorinated_${task.id}`}
+                                className="mb-1 block text-[11px] font-semibold text-slate-700"
+                            >
+                                Chlorinated value{' '}
+                                <span className="text-rose-600">*</span>
+                            </Label>
+                            <Input
+                                id={`result_chlorinated_${task.id}`}
+                                className="h-10 text-sm font-semibold"
+                                required={!readOnly && !resultsLocked}
+                                readOnly={readOnly}
+                                disabled={readOnly || resultsLocked}
+                                placeholder="e.g. 0.8"
+                                value={formData.result_chlorinated}
+                                onChange={(e) =>
+                                    onFieldChange(
+                                        'result_chlorinated',
+                                        e.target.value,
+                                    )
+                                }
+                                onBlur={() => {
+                                    if (readOnly || resultsLocked) {
+                                        return;
+                                    }
+                                    const next = formatScientificResult(
+                                        formData.result_chlorinated,
+                                    );
+                                    if (
+                                        next !== formData.result_chlorinated
+                                    ) {
+                                        onFieldChange(
+                                            'result_chlorinated',
+                                            next,
+                                        );
+                                    }
+                                }}
+                            />
+                            <InputError
+                                className="mt-0.5"
+                                message={formErrors.result_chlorinated}
+                            />
+                        </div>
+                    ) : null}
+                    {clMode === 'raw' ? (
+                        <div className="md:col-span-8">
+                            <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                                Raw mode selected. The Raw row prints as{' '}
+                                <span className="font-semibold">-</span>; Finish
+                                and Chlorinated stay blank.
+                            </p>
+                        </div>
+                    ) : null}
                     <div className="md:col-span-4">
                         <Label
                             htmlFor={`result_unit_${task.id}`}
@@ -445,13 +587,7 @@ export default function EncodingAssayForm({
                                 onFieldChange('result_unit', e.target.value)
                             }
                         />
-                        <p className="mt-0.5 text-[10px] text-slate-500">
-                            Raw Results print as -
-                        </p>
                     </div>
-                    <p className="md:col-span-12 text-[10px] text-slate-500">
-                        Enter Finish or Chlorinated (at least one).
-                    </p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 gap-2.5 md:grid-cols-12 md:items-start">
@@ -696,68 +832,54 @@ export default function EncodingAssayForm({
                     </div>
                 </div>
             ) : usesResidualCl ? (
-                <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+                clMode === 'finish' || clMode === 'chlorinated' ? (
                     <div>
                         <div className="mb-1 flex items-center justify-between gap-2">
                             <Label
-                                htmlFor={`result_remarks_finish_${task.id}`}
+                                htmlFor={`result_remarks_${clMode}_${task.id}`}
                                 className="text-[11px] font-semibold text-slate-700"
                             >
-                                Remarks — Finish
+                                Remarks —{' '}
+                                {clMode === 'finish'
+                                    ? 'Finish'
+                                    : 'Chlorinated'}
                             </Label>
                             <span className="font-mono text-[10px] text-slate-400">
-                                {formData.result_remarks_finish.length} /{' '}
-                                {REMARKS_MAX}
+                                {(clMode === 'finish'
+                                    ? formData.result_remarks_finish
+                                    : formData.result_remarks_chlorinated
+                                ).length}{' '}
+                                / {REMARKS_MAX}
                             </span>
                         </div>
                         <Textarea
-                            id={`result_remarks_finish_${task.id}`}
+                            id={`result_remarks_${clMode}_${task.id}`}
                             className="min-h-0 text-xs"
                             rows={2}
                             maxLength={REMARKS_MAX}
-                            placeholder="Finish observations…"
+                            placeholder={
+                                clMode === 'finish'
+                                    ? 'Finish observations…'
+                                    : 'Chlorinated observations…'
+                            }
                             readOnly={readOnly}
                             disabled={readOnly || resultsLocked}
-                            value={formData.result_remarks_finish}
+                            value={
+                                clMode === 'finish'
+                                    ? formData.result_remarks_finish
+                                    : formData.result_remarks_chlorinated
+                            }
                             onChange={(e) =>
                                 onFieldChange(
-                                    'result_remarks_finish',
+                                    clMode === 'finish'
+                                        ? 'result_remarks_finish'
+                                        : 'result_remarks_chlorinated',
                                     e.target.value,
                                 )
                             }
                         />
                     </div>
-                    <div>
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                            <Label
-                                htmlFor={`result_remarks_chlorinated_${task.id}`}
-                                className="text-[11px] font-semibold text-slate-700"
-                            >
-                                Remarks — Chlorinated
-                            </Label>
-                            <span className="font-mono text-[10px] text-slate-400">
-                                {formData.result_remarks_chlorinated.length} /{' '}
-                                {REMARKS_MAX}
-                            </span>
-                        </div>
-                        <Textarea
-                            id={`result_remarks_chlorinated_${task.id}`}
-                            className="min-h-0 text-xs"
-                            rows={2}
-                            maxLength={REMARKS_MAX}
-                            placeholder="Chlorinated observations…"
-                            readOnly={readOnly}
-                            disabled={readOnly || resultsLocked}
-                            value={formData.result_remarks_chlorinated}
-                            onChange={(e) =>
-                                onFieldChange(
-                                    'result_remarks_chlorinated',
-                                    e.target.value,
-                                )
-                            }
-                        />
-                    </div>
-                </div>
+                ) : null
             ) : (
                 <div className="space-y-2.5">
                     {remarksPassFail && task.requires_pass_fail !== true ? (

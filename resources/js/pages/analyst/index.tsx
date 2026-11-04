@@ -676,22 +676,28 @@ export default function AnalystIndex({
                 : '';
         const usesRawFinish = active.uses_raw_finish === true;
         const usesResidualCl = active.uses_residual_chlorine === true;
+        const residualRawMode =
+            usesResidualCl && form.data.result_raw.trim() !== '';
         const formattedRaw = usesRawFinish
             ? formatScientificResult(form.data.result_raw)
-            : '';
+            : residualRawMode
+              ? form.data.result_raw.trim()
+              : '';
         const formattedFinish =
-            usesRawFinish || usesResidualCl
+            usesRawFinish || (usesResidualCl && !residualRawMode)
                 ? formatScientificResult(form.data.result_finish)
                 : '';
-        const formattedChlorinated = usesResidualCl
-            ? formatScientificResult(form.data.result_chlorinated)
-            : '';
+        const formattedChlorinated =
+            usesResidualCl && !residualRawMode
+                ? formatScientificResult(form.data.result_chlorinated)
+                : '';
         const formattedValue = usesRawFinish
             ? summarizeRawFinishResults(formattedRaw, formattedFinish)
             : usesResidualCl
               ? summarizeResidualChlorineResults(
                     formattedFinish,
                     formattedChlorinated,
+                    formattedRaw,
                 )
               : formatScientificResult(form.data.result_value);
         if (usesRawFinish) {
@@ -705,6 +711,9 @@ export default function AnalystIndex({
                 form.setData('result_value', formattedValue);
             }
         } else if (usesResidualCl) {
+            if (formattedRaw !== form.data.result_raw) {
+                form.setData('result_raw', formattedRaw);
+            }
             if (formattedFinish !== form.data.result_finish) {
                 form.setData('result_finish', formattedFinish);
             }
@@ -720,7 +729,8 @@ export default function AnalystIndex({
         const snapshot = {
             performed_at: form.data.performed_at,
             result_value: formattedValue,
-            result_raw: usesRawFinish ? formattedRaw : '',
+            result_raw:
+                usesRawFinish || usesResidualCl ? formattedRaw : '',
             result_finish:
                 usesRawFinish || usesResidualCl ? formattedFinish : '',
             result_chlorinated: usesResidualCl ? formattedChlorinated : '',
@@ -838,7 +848,8 @@ export default function AnalystIndex({
                     if (task.uses_residual_chlorine === true) {
                         return (
                             !form.data.result_finish.trim() &&
-                            !form.data.result_chlorinated.trim()
+                            !form.data.result_chlorinated.trim() &&
+                            !form.data.result_raw.trim()
                         );
                     }
                     return !form.data.result_value.trim();
@@ -856,7 +867,8 @@ export default function AnalystIndex({
                 if (task.uses_residual_chlorine === true) {
                     return (
                         !(task.result_finish ?? '').trim() &&
-                        !(task.result_chlorinated ?? '').trim()
+                        !(task.result_chlorinated ?? '').trim() &&
+                        !(task.result_raw ?? '').trim()
                     );
                 }
                 return !(task.result_value ?? '').trim();
@@ -966,22 +978,34 @@ export default function AnalystIndex({
                 : '';
         const usesRawFinish = active.uses_raw_finish === true;
         const usesResidualCl = active.uses_residual_chlorine === true;
+        const residualRawMode =
+            usesResidualCl && form.data.result_raw.trim() !== '';
         const formattedRaw = usesRawFinish
             ? formatScientificResult(form.data.result_raw)
-            : form.data.result_raw;
+            : residualRawMode
+              ? form.data.result_raw.trim()
+              : usesResidualCl
+                ? ''
+                : form.data.result_raw;
         const formattedFinish =
-            usesRawFinish || usesResidualCl
+            usesRawFinish || (usesResidualCl && !residualRawMode)
                 ? formatScientificResult(form.data.result_finish)
-                : form.data.result_finish;
-        const formattedChlorinated = usesResidualCl
-            ? formatScientificResult(form.data.result_chlorinated)
-            : form.data.result_chlorinated;
+                : usesResidualCl
+                  ? ''
+                  : form.data.result_finish;
+        const formattedChlorinated =
+            usesResidualCl && !residualRawMode
+                ? formatScientificResult(form.data.result_chlorinated)
+                : usesResidualCl
+                  ? ''
+                  : form.data.result_chlorinated;
         const formattedValue = usesRawFinish
             ? summarizeRawFinishResults(formattedRaw, formattedFinish)
             : usesResidualCl
               ? summarizeResidualChlorineResults(
                     formattedFinish,
                     formattedChlorinated,
+                    formattedRaw,
                 )
               : formatScientificResult(form.data.result_value);
 
@@ -1000,7 +1024,8 @@ export default function AnalystIndex({
         form.transform((data) => ({
             ...data,
             result_value: formattedValue,
-            result_raw: usesRawFinish ? formattedRaw : '',
+            result_raw:
+                usesRawFinish || usesResidualCl ? formattedRaw : '',
             result_finish:
                 usesRawFinish || usesResidualCl ? formattedFinish : '',
             result_chlorinated: usesResidualCl ? formattedChlorinated : '',
@@ -1026,7 +1051,10 @@ export default function AnalystIndex({
                 form.setDefaults({
                     performed_at: form.data.performed_at,
                     result_value: formattedValue,
-                    result_raw: usesRawFinish ? formattedRaw : '',
+                    result_raw:
+                        usesRawFinish || usesResidualCl
+                            ? formattedRaw
+                            : '',
                     result_finish:
                         usesRawFinish || usesResidualCl
                             ? formattedFinish
@@ -1553,6 +1581,13 @@ export default function AnalystIndex({
                                 setSavedJustNow(false);
                                 form.setData(key, value);
                             }}
+                            onFieldsPatch={(patch) => {
+                                setSavedJustNow(false);
+                                form.setData({
+                                    ...form.data,
+                                    ...patch,
+                                });
+                            }}
                             onSaveDraft={saveDraft}
                             onRequestComplete={requestComplete}
                             onPreview={(url) => {
@@ -1722,6 +1757,7 @@ export default function AnalystIndex({
                           ? summarizeResidualChlorineResults(
                                 form.data.result_finish,
                                 form.data.result_chlorinated,
+                                form.data.result_raw,
                             )
                           : form.data.result_value
                 }

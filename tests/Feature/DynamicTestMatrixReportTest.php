@@ -725,6 +725,14 @@ class DynamicTestMatrixReportTest extends TestCase
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
 
+        $job->forceFill([
+            'result_footer' => [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'TR-FO3-001',
+            ],
+        ])->save();
+
         foreach ($job->fresh()->analyses as $line) {
             $value = match ((int) $line->analysis_type_id) {
                 $color->id => '3',
@@ -745,7 +753,8 @@ class DynamicTestMatrixReportTest extends TestCase
                     'result_signatory_name_2' => 'Second Analyst',
                     'result_signatory_prc_2' => '7654321',
                 ])
-                ->assertRedirect();
+                ->assertRedirect()
+                ->assertSessionDoesntHaveErrors();
         }
 
         $job = $job->fresh(['analyses.analysisType', 'analyses.assignee', 'packages']);
@@ -797,7 +806,9 @@ class DynamicTestMatrixReportTest extends TestCase
         $this->assertSame('Residual Chlorine (mg/L)', $rows[8]['test']);
         $this->assertSame('Residual Chlorine (mg/L)', $rows[9]['test']);
         $this->assertSame('Residual Chlorine (mg/L)', $rows[10]['test']);
-        $this->assertSame('-', $rows[8]['result']);
+        // Waived DW-05: Finish/Chlorinated blank; Raw dashed only.
+        $this->assertSame('', $rows[8]['result']);
+        $this->assertSame('', $rows[9]['result']);
         $this->assertSame('-', $rows[10]['result']);
         $this->assertSame('Iron (mg/L)', $rows[14]['test']);
         $this->assertSame('0.2 (Passed)', $rows[14]['result']);

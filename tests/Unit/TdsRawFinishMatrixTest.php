@@ -158,7 +158,7 @@ class TdsRawFinishMatrixTest extends TestCase
         $this->assertSame('6.5-8.5', $sanitized['acceptable_values']);
     }
 
-    public function test_build_rows_expands_dw_05_into_finish_chlorinated_raw(): void
+    public function test_build_rows_expands_dw_05_finish_only(): void
     {
         $type = new AnalysisType([
             'code' => 'DW-05',
@@ -167,12 +167,12 @@ class TdsRawFinishMatrixTest extends TestCase
         ]);
         $line = new JobOrderAnalysis([
             'name' => 'Residual Chlorine (mg/L)',
-            'result_value' => 'Finish: 0.4; Chlorinated: 0.9',
+            'result_value' => 'Finish: 0.4',
             'result_finish' => '0.4',
-            'result_chlorinated' => '0.9',
+            'result_chlorinated' => null,
+            'result_raw' => null,
             'result_method' => 'DPD Colorimetric Method',
             'result_remarks_finish' => 'Finish note',
-            'result_remarks_chlorinated' => 'Cl note',
         ]);
         $line->setRelation('analysisType', $type);
 
@@ -192,22 +192,91 @@ class TdsRawFinishMatrixTest extends TestCase
         );
         $this->assertSame('Not applicable to Raw Water', $rows[2]['acceptable_values']);
         $this->assertSame('0.4', $rows[0]['result']);
-        $this->assertSame('0.9', $rows[1]['result']);
-        $this->assertSame('-', $rows[2]['result']);
+        $this->assertSame('', $rows[1]['result']);
+        $this->assertSame('', $rows[2]['result']);
         $this->assertSame('Finish note', $rows[0]['remarks']);
-        $this->assertSame('Cl note', $rows[1]['remarks']);
+        $this->assertNull($rows[1]['remarks']);
         $this->assertNull($rows[2]['remarks']);
         $this->assertSame('finish', $rows[0]['row_variant']);
         $this->assertSame('chlorinated', $rows[1]['row_variant']);
         $this->assertSame('raw', $rows[2]['row_variant']);
 
         $this->assertSame(
-            'Finish: 0.4; Chlorinated: 0.9',
-            OfficialAnalysisCatalog::summarizeResidualChlorineResults('0.4', '0.9'),
+            'Finish: 0.4',
+            OfficialAnalysisCatalog::summarizeResidualChlorineResults('0.4', null),
         );
         $this->assertSame(
             '<1.0 mg/L for RO water',
             OfficialAnalysisCatalog::acceptableValuesForCodeVariant('DW-05', 'finish'),
+        );
+    }
+
+    public function test_build_rows_expands_dw_05_chlorinated_only(): void
+    {
+        $type = new AnalysisType([
+            'code' => 'DW-05',
+            'name' => 'Residual Chlorine (mg/L)',
+            'method' => 'DPD Colorimetric Method',
+        ]);
+        $line = new JobOrderAnalysis([
+            'name' => 'Residual Chlorine (mg/L)',
+            'result_value' => 'Chlorinated: 0.9',
+            'result_finish' => null,
+            'result_chlorinated' => '0.9',
+            'result_raw' => null,
+            'result_method' => 'DPD Colorimetric Method',
+            'result_remarks_chlorinated' => 'Cl note',
+        ]);
+        $line->setRelation('analysisType', $type);
+
+        $rows = DynamicTestMatrix::buildRows(new Collection([$line]));
+
+        $this->assertCount(3, $rows);
+        $this->assertSame('', $rows[0]['result']);
+        $this->assertSame('0.9', $rows[1]['result']);
+        $this->assertSame('', $rows[2]['result']);
+        $this->assertNull($rows[0]['remarks']);
+        $this->assertSame('Cl note', $rows[1]['remarks']);
+        $this->assertSame(
+            'Chlorinated: 0.9',
+            OfficialAnalysisCatalog::summarizeResidualChlorineResults(null, '0.9'),
+        );
+    }
+
+    public function test_build_rows_expands_dw_05_raw_only(): void
+    {
+        $type = new AnalysisType([
+            'code' => 'DW-05',
+            'name' => 'Residual Chlorine (mg/L)',
+            'method' => 'DPD Colorimetric Method',
+        ]);
+        $line = new JobOrderAnalysis([
+            'name' => 'Residual Chlorine (mg/L)',
+            'result_value' => 'Raw: -',
+            'result_finish' => null,
+            'result_chlorinated' => null,
+            'result_raw' => OfficialAnalysisCatalog::RESIDUAL_CHLORINE_RAW_SENTINEL,
+            'result_method' => 'DPD Colorimetric Method',
+        ]);
+        $line->setRelation('analysisType', $type);
+
+        $rows = DynamicTestMatrix::buildRows(new Collection([$line]));
+
+        $this->assertCount(3, $rows);
+        $this->assertSame('', $rows[0]['result']);
+        $this->assertSame('', $rows[1]['result']);
+        $this->assertSame('-', $rows[2]['result']);
+        $this->assertSame(
+            'Raw: -',
+            OfficialAnalysisCatalog::summarizeResidualChlorineResults(null, null, '-'),
+        );
+        $this->assertSame(
+            ['-', null, null],
+            OfficialAnalysisCatalog::normalizeResidualChlorineEncode('-', '0.4', '0.9'),
+        );
+        $this->assertSame(
+            [null, '0.4', null],
+            OfficialAnalysisCatalog::normalizeResidualChlorineEncode(null, '0.4', '0.9'),
         );
     }
 
@@ -274,6 +343,6 @@ class TdsRawFinishMatrixTest extends TestCase
         $this->assertSame('Passed; Finish note', $placed[0]['remarks']);
         $this->assertNull($placed[1]['remarks']);
         $this->assertNull($placed[2]['remarks']);
-        $this->assertSame('-', $placed[2]['result']);
+        $this->assertSame('', $placed[2]['result']);
     }
 }

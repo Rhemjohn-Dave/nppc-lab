@@ -111,6 +111,12 @@ export function fieldBold(field: DesignerField): boolean {
 
 export type InlineBoldSegment = { text: string; bold: boolean };
 
+/**
+ * Exact **…** pairs only — mirror App\\Support\\InlineBoldMarkup
+ * (do not steal FO2 footnote markers like **Not / ***Not).
+ */
+const INLINE_BOLD_PAIR = /(?<!\*)\*\*(?!\*)([\s\S]*?)(?<!\*)\*\*(?!\*)/;
+
 /** Mirror App\\Support\\InlineBoldMarkup::segments for Designer canvas parity. */
 export function parseInlineBoldSegments(text: string): InlineBoldSegment[] {
     if (text === '') {
@@ -120,7 +126,7 @@ export function parseInlineBoldSegments(text: string): InlineBoldSegment[] {
         return [{ text, bold: false }];
     }
 
-    const parts = text.split(/\*\*([\s\S]*?)\*\*/);
+    const parts = text.split(INLINE_BOLD_PAIR);
     const segments: InlineBoldSegment[] = [];
     for (let index = 0; index < parts.length; index += 1) {
         const part = parts[index];

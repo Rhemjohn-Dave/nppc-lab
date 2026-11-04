@@ -64,6 +64,7 @@ type Props = {
     onNextJob?: () => void;
     onFocusTask: (task: AnalystTask) => void;
     onFieldChange: (key: keyof FormData, value: string) => void;
+    onFieldsPatch?: (patch: Partial<FormData>) => void;
     onSaveDraft: () => void;
     onRequestComplete: (event: FormEvent) => void;
     onPreview: (url: string) => void;
@@ -107,6 +108,7 @@ export default function AnalystEncodingStudio({
     onNextJob,
     onFocusTask,
     onFieldChange,
+    onFieldsPatch,
     onSaveDraft,
     onRequestComplete,
     onPreview,
@@ -579,6 +581,7 @@ export default function AnalystEncodingStudio({
                                             remarksPassFail={remarksPassFail}
                                             analysisError={analysisError}
                                             onFieldChange={onFieldChange}
+                                            onFieldsPatch={onFieldsPatch}
                                         />
                                     </div>
                                 </section>

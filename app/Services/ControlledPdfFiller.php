@@ -219,7 +219,7 @@ class ControlledPdfFiller
     private const PAGE_STAMP_NUDGE_UP_MM = 5.0;
 
     /** Small extra drop under notes when space remains above the Test Report footer. */
-    private const SIGNATORY_NUDGE_MM = 10.0;
+    private const SIGNATORY_NUDGE_MM = 20.0;
 
     /** Minimum spare room (clamp − flow) before the short-sheet nudge applies. */
     private const SIGNATORY_NUDGE_MIN_SPARE_MM = 24.0;

@@ -759,26 +759,40 @@ class JobOrderService
         $rawFinish = OfficialAnalysisCatalog::usesRawFinishResults($code);
         $residualCl = OfficialAnalysisCatalog::usesResidualChlorineResults($code);
 
-        $raw = $rawFinish ? $this->optionalText($data['result_raw'] ?? null) : null;
-        $finish = ($rawFinish || $residualCl) ? $this->optionalText($data['result_finish'] ?? null) : null;
-        $chlorinated = $residualCl ? $this->optionalText($data['result_chlorinated'] ?? null) : null;
-        $value = $rawFinish
-            ? OfficialAnalysisCatalog::summarizeRawFinishResults($raw, $finish)
-            : ($residualCl
-                ? OfficialAnalysisCatalog::summarizeResidualChlorineResults($finish, $chlorinated)
-                : $this->optionalText($data['result_value'] ?? null));
-        $remarksRaw = $rawFinish ? $this->optionalText($data['result_remarks_raw'] ?? null) : null;
-        $remarksFinish = ($rawFinish || $residualCl)
-            ? $this->optionalText($data['result_remarks_finish'] ?? null)
-            : null;
-        $remarksChlorinated = $residualCl
-            ? $this->optionalText($data['result_remarks_chlorinated'] ?? null)
-            : null;
-        $remarks = $rawFinish
-            ? OfficialAnalysisCatalog::summarizeRawFinishResults($remarksRaw, $remarksFinish)
-            : ($residualCl
-                ? OfficialAnalysisCatalog::summarizeResidualChlorineResults($remarksFinish, $remarksChlorinated)
-                : ($data['result_remarks'] ?? null));
+        if ($residualCl) {
+            [$raw, $finish, $chlorinated] = OfficialAnalysisCatalog::normalizeResidualChlorineEncode(
+                $this->optionalText($data['result_raw'] ?? null),
+                $this->optionalText($data['result_finish'] ?? null),
+                $this->optionalText($data['result_chlorinated'] ?? null),
+            );
+            $value = OfficialAnalysisCatalog::summarizeResidualChlorineResults($finish, $chlorinated, $raw);
+            $remarksRaw = null;
+            $remarksFinish = $finish !== null
+                ? $this->optionalText($data['result_remarks_finish'] ?? null)
+                : null;
+            $remarksChlorinated = $chlorinated !== null
+                ? $this->optionalText($data['result_remarks_chlorinated'] ?? null)
+                : null;
+            $remarks = OfficialAnalysisCatalog::summarizeResidualChlorineResults(
+                $remarksFinish,
+                $remarksChlorinated,
+            );
+        } else {
+            $raw = $rawFinish ? $this->optionalText($data['result_raw'] ?? null) : null;
+            $finish = $rawFinish ? $this->optionalText($data['result_finish'] ?? null) : null;
+            $chlorinated = null;
+            $value = $rawFinish
+                ? OfficialAnalysisCatalog::summarizeRawFinishResults($raw, $finish)
+                : $this->optionalText($data['result_value'] ?? null);
+            $remarksRaw = $rawFinish ? $this->optionalText($data['result_remarks_raw'] ?? null) : null;
+            $remarksFinish = $rawFinish
+                ? $this->optionalText($data['result_remarks_finish'] ?? null)
+                : null;
+            $remarksChlorinated = null;
+            $remarks = $rawFinish
+                ? OfficialAnalysisCatalog::summarizeRawFinishResults($remarksRaw, $remarksFinish)
+                : ($data['result_remarks'] ?? null);
+        }
         $requiresPassFail = (bool) ($analysis->analysisType?->requires_pass_fail);
         $passFail = $requiresPassFail
             ? $this->normalizedPassFail($data['result_pass_fail'] ?? null)
@@ -833,7 +847,7 @@ class JobOrderService
         $analysis->update([
             'assigned_to' => $analyst->id,
             'result_value' => $value,
-            'result_raw' => $rawFinish ? $raw : null,
+            'result_raw' => ($rawFinish || $residualCl) ? $raw : null,
             'result_finish' => ($rawFinish || $residualCl) ? $finish : null,
             'result_chlorinated' => $residualCl ? $chlorinated : null,
             'result_pass_fail' => $passFail,
@@ -883,26 +897,41 @@ class JobOrderService
         $code = $analysis->analysisType?->code;
         $rawFinish = OfficialAnalysisCatalog::usesRawFinishResults($code);
         $residualCl = OfficialAnalysisCatalog::usesResidualChlorineResults($code);
-        $raw = $rawFinish ? $this->optionalText($data['result_raw'] ?? null) : null;
-        $finish = ($rawFinish || $residualCl) ? $this->optionalText($data['result_finish'] ?? null) : null;
-        $chlorinated = $residualCl ? $this->optionalText($data['result_chlorinated'] ?? null) : null;
-        $value = $rawFinish
-            ? OfficialAnalysisCatalog::summarizeRawFinishResults($raw, $finish)
-            : ($residualCl
-                ? OfficialAnalysisCatalog::summarizeResidualChlorineResults($finish, $chlorinated)
-                : $this->optionalText($data['result_value'] ?? null));
-        $remarksRaw = $rawFinish ? $this->optionalText($data['result_remarks_raw'] ?? null) : null;
-        $remarksFinish = ($rawFinish || $residualCl)
-            ? $this->optionalText($data['result_remarks_finish'] ?? null)
-            : null;
-        $remarksChlorinated = $residualCl
-            ? $this->optionalText($data['result_remarks_chlorinated'] ?? null)
-            : null;
-        $remarks = $rawFinish
-            ? OfficialAnalysisCatalog::summarizeRawFinishResults($remarksRaw, $remarksFinish)
-            : ($residualCl
-                ? OfficialAnalysisCatalog::summarizeResidualChlorineResults($remarksFinish, $remarksChlorinated)
-                : ($data['result_remarks'] ?? null));
+
+        if ($residualCl) {
+            [$raw, $finish, $chlorinated] = OfficialAnalysisCatalog::normalizeResidualChlorineEncode(
+                $this->optionalText($data['result_raw'] ?? null),
+                $this->optionalText($data['result_finish'] ?? null),
+                $this->optionalText($data['result_chlorinated'] ?? null),
+            );
+            $value = OfficialAnalysisCatalog::summarizeResidualChlorineResults($finish, $chlorinated, $raw);
+            $remarksRaw = null;
+            $remarksFinish = $finish !== null
+                ? $this->optionalText($data['result_remarks_finish'] ?? null)
+                : null;
+            $remarksChlorinated = $chlorinated !== null
+                ? $this->optionalText($data['result_remarks_chlorinated'] ?? null)
+                : null;
+            $remarks = OfficialAnalysisCatalog::summarizeResidualChlorineResults(
+                $remarksFinish,
+                $remarksChlorinated,
+            );
+        } else {
+            $raw = $rawFinish ? $this->optionalText($data['result_raw'] ?? null) : null;
+            $finish = $rawFinish ? $this->optionalText($data['result_finish'] ?? null) : null;
+            $chlorinated = null;
+            $value = $rawFinish
+                ? OfficialAnalysisCatalog::summarizeRawFinishResults($raw, $finish)
+                : $this->optionalText($data['result_value'] ?? null);
+            $remarksRaw = $rawFinish ? $this->optionalText($data['result_remarks_raw'] ?? null) : null;
+            $remarksFinish = $rawFinish
+                ? $this->optionalText($data['result_remarks_finish'] ?? null)
+                : null;
+            $remarksChlorinated = null;
+            $remarks = $rawFinish
+                ? OfficialAnalysisCatalog::summarizeRawFinishResults($remarksRaw, $remarksFinish)
+                : ($data['result_remarks'] ?? null);
+        }
         $requiresPassFail = (bool) ($analysis->analysisType?->requires_pass_fail);
         $passFail = $requiresPassFail
             ? $this->normalizedPassFail($data['result_pass_fail'] ?? null)
@@ -929,9 +958,10 @@ class JobOrderService
                 $errors['result_finish'] = 'Enter Raw or Finish.';
             }
         } elseif ($residualCl) {
-            if (blank($finish) && blank($chlorinated) && ! $isPrep) {
-                $errors['result_finish'] = 'Enter Finish or Chlorinated.';
-                $errors['result_chlorinated'] = 'Enter Finish or Chlorinated.';
+            if (blank($raw) && blank($finish) && blank($chlorinated) && ! $isPrep) {
+                $errors['result_raw'] = 'Select Finish, Chlorinated, or Raw.';
+                $errors['result_finish'] = 'Select Finish, Chlorinated, or Raw.';
+                $errors['result_chlorinated'] = 'Select Finish, Chlorinated, or Raw.';
             }
         } elseif (blank($value) && ! $isPrep) {
             $errors['result_value'] = 'A result value is required to complete this analysis.';
@@ -948,7 +978,7 @@ class JobOrderService
         $fresh = DB::transaction(function () use ($analysis, $analyst, $value, $raw, $finish, $chlorinated, $rawFinish, $residualCl, $remarks, $remarksRaw, $remarksFinish, $remarksChlorinated, $passFail, $measurement, $unit, $method, $accreditationFootnote, $performedAt, $wasCompleted) {
             $payload = [
                 'result_value' => $value,
-                'result_raw' => $rawFinish ? $raw : null,
+                'result_raw' => ($rawFinish || $residualCl) ? $raw : null,
                 'result_finish' => ($rawFinish || $residualCl) ? $finish : null,
                 'result_chlorinated' => $residualCl ? $chlorinated : null,
                 'result_pass_fail' => $passFail,
@@ -1032,8 +1062,8 @@ class JobOrderService
                     continue;
                 }
             } elseif (OfficialAnalysisCatalog::usesResidualChlorineResults($line->analysisType?->code)) {
-                if (blank($line->result_finish) && blank($line->result_chlorinated)) {
-                    $missing[] = $line->name.' (Finish or Chlorinated)';
+                if (blank($line->result_finish) && blank($line->result_chlorinated) && blank($line->result_raw)) {
+                    $missing[] = $line->name.' (Finish, Chlorinated, or Raw)';
                     continue;
                 }
             } elseif (blank($line->result_value)) {

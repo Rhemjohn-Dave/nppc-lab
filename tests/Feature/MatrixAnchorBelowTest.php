@@ -88,14 +88,14 @@ class MatrixAnchorBelowTest extends TestCase
             ],
         ];
 
-        // Short table (spare 258-45-145=68 >= 24): nudge under notes.
+        // Short table (spare 258-45-145=68 >= 24): nudge under notes (+20 mm).
         $short = $method->invoke(
             $filler,
             $field,
             ['ww_fo2_matrix' => 100.0],
             ['fo2_form_meta' => 258.0],
         );
-        $this->assertEqualsWithDelta(155.0, $short['y'], 0.01);
+        $this->assertEqualsWithDelta(165.0, $short['y'], 0.01);
 
         // Medium/tall with little spare (213-190=23 < 24): no nudge, normal flow.
         $normal = $method->invoke(

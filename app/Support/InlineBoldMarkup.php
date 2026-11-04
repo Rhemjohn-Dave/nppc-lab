@@ -9,6 +9,11 @@ namespace App\Support;
 final class InlineBoldMarkup
 {
     /**
+     * Exact **…** pairs only — do not steal FO2 footnote markers like **Not / ***Not.
+     */
+    private const PAIR_PATTERN = '/(?<!\*)\*\*(?!\*)(.*?)(?<!\*)\*\*(?!\*)/s';
+
+    /**
      * @return list<array{text: string, bold: bool}>
      */
     public static function segments(string $text): array
@@ -21,7 +26,7 @@ final class InlineBoldMarkup
             return [['text' => $text, 'bold' => false]];
         }
 
-        $parts = preg_split('/\*\*(.*?)\*\*/s', $text, -1, PREG_SPLIT_DELIM_CAPTURE);
+        $parts = preg_split(self::PAIR_PATTERN, $text, -1, PREG_SPLIT_DELIM_CAPTURE);
         if ($parts === false) {
             return [['text' => $text, 'bold' => false]];
         }
@@ -46,7 +51,7 @@ final class InlineBoldMarkup
             return $text;
         }
 
-        return (string) preg_replace('/\*\*(.*?)\*\*/s', '$1', $text);
+        return (string) preg_replace(self::PAIR_PATTERN, '$1', $text);
     }
 
     public static function hasMarkup(string $text): bool

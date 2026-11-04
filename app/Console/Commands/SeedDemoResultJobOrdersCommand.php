@@ -364,7 +364,6 @@ class SeedDemoResultJobOrdersCommand extends Command
             $payload['result_finish'] = '1.0';
         } elseif (OfficialAnalysisCatalog::usesResidualChlorineResults($code)) {
             $payload['result_finish'] = '0.50';
-            $payload['result_chlorinated'] = '0.50';
         } else {
             $payload['result_value'] = '1.0';
         }

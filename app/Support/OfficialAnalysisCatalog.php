@@ -359,7 +359,7 @@ class OfficialAnalysisCatalog
     }
 
     /**
-     * Residual Chlorine (DW-05): Finish + Chlorinated measured; Raw Results always "-".
+     * Residual Chlorine (DW-05): exclusive Finish | Chlorinated | Raw (dash only in Raw mode).
      */
     public static function usesResidualChlorineResults(?string $code): bool
     {
@@ -512,11 +512,22 @@ class OfficialAnalysisCatalog
         return implode('; ', $parts);
     }
 
+    /** Stored in result_raw when Residual Chlorine encode mode is Raw. */
+    public const RESIDUAL_CHLORINE_RAW_SENTINEL = '-';
+
     /**
-     * Combined result_value summary for Residual Chlorine (Finish + Chlorinated; Raw is dash-only).
+     * Combined result_value summary for Residual Chlorine (exclusive Finish | Chlorinated | Raw).
      */
-    public static function summarizeResidualChlorineResults(?string $finish, ?string $chlorinated): ?string
-    {
+    public static function summarizeResidualChlorineResults(
+        ?string $finish,
+        ?string $chlorinated,
+        ?string $raw = null,
+    ): ?string {
+        $rawText = trim((string) $raw);
+        if ($rawText !== '') {
+            return 'Raw: '.self::RESIDUAL_CHLORINE_RAW_SENTINEL;
+        }
+
         $finishText = trim((string) $finish);
         $chlorinatedText = trim((string) $chlorinated);
         if ($finishText === '' && $chlorinatedText === '') {
@@ -532,6 +543,33 @@ class OfficialAnalysisCatalog
         }
 
         return implode('; ', $parts);
+    }
+
+    /**
+     * Normalize exclusive Residual Chlorine encode fields (Finish | Chlorinated | Raw).
+     *
+     * @return array{0: ?string, 1: ?string, 2: ?string} [raw, finish, chlorinated]
+     */
+    public static function normalizeResidualChlorineEncode(
+        ?string $raw,
+        ?string $finish,
+        ?string $chlorinated,
+    ): array {
+        $rawText = trim((string) $raw);
+        $finishText = trim((string) $finish);
+        $chlorinatedText = trim((string) $chlorinated);
+
+        if ($rawText !== '') {
+            return [self::RESIDUAL_CHLORINE_RAW_SENTINEL, null, null];
+        }
+        if ($finishText !== '') {
+            return [null, $finishText, null];
+        }
+        if ($chlorinatedText !== '') {
+            return [null, null, $chlorinatedText];
+        }
+
+        return [null, null, null];
     }
 
     /**

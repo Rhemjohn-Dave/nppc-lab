@@ -418,19 +418,27 @@ class AnalystController extends Controller
                 'max:255',
             ],
             'result_raw' => [
-                $rawFinish && ! $isPrep ? 'required_without:result_finish' : 'nullable',
+                $rawFinish && ! $isPrep
+                    ? 'required_without:result_finish'
+                    : ($residualCl && ! $isPrep
+                        ? 'required_without_all:result_finish,result_chlorinated'
+                        : 'nullable'),
                 'string',
                 'max:255',
             ],
             'result_finish' => [
                 $rawFinish && ! $isPrep
                     ? 'required_without:result_raw'
-                    : ($residualCl && ! $isPrep ? 'required_without:result_chlorinated' : 'nullable'),
+                    : ($residualCl && ! $isPrep
+                        ? 'required_without_all:result_raw,result_chlorinated'
+                        : 'nullable'),
                 'string',
                 'max:255',
             ],
             'result_chlorinated' => [
-                $residualCl && ! $isPrep ? 'required_without:result_finish' : 'nullable',
+                $residualCl && ! $isPrep
+                    ? 'required_without_all:result_raw,result_finish'
+                    : 'nullable',
                 'string',
                 'max:255',
             ],

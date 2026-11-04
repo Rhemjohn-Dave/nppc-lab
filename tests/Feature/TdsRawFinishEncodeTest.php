@@ -142,7 +142,7 @@ class TdsRawFinishEncodeTest extends TestCase
             ->assertSessionHasErrors(['result_raw', 'result_finish']);
     }
 
-    public function test_analyst_draft_and_complete_accept_finish_and_chlorinated_for_dw_05(): void
+    public function test_analyst_draft_and_complete_normalize_exclusive_finish_for_dw_05(): void
     {
         $this->seed();
 
@@ -162,6 +162,7 @@ class TdsRawFinishEncodeTest extends TestCase
 
         $line = $job->analyses()->firstOrFail();
 
+        // Sending both Finish + Chlorinated normalizes to Finish only.
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/draft", [
                 'performed_at' => '2026-07-29T15:00',
@@ -175,15 +176,14 @@ class TdsRawFinishEncodeTest extends TestCase
         $line->refresh();
         $this->assertNull($line->result_raw);
         $this->assertSame('0.4', $line->result_finish);
-        $this->assertSame('0.9', $line->result_chlorinated);
-        $this->assertSame('Finish: 0.4; Chlorinated: 0.9', $line->result_value);
+        $this->assertNull($line->result_chlorinated);
+        $this->assertSame('Finish: 0.4', $line->result_value);
         $this->assertSame(JobOrderAnalysisStatus::InProgress, $line->status);
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
                 'performed_at' => '2026-07-29T15:00',
                 'result_finish' => '0.4',
-                'result_chlorinated' => '0.9',
                 'result_method' => DynamicTestMatrix::methodForAnalysisType($cl) ?? 'DPD method',
             ])
             ->assertRedirect()
@@ -195,11 +195,11 @@ class TdsRawFinishEncodeTest extends TestCase
         $rows = DynamicTestMatrix::buildRows($job->fresh(['analyses.analysisType'])->analyses);
         $this->assertCount(3, $rows);
         $this->assertSame('0.4', $rows[0]['result']);
-        $this->assertSame('0.9', $rows[1]['result']);
-        $this->assertSame('-', $rows[2]['result']);
+        $this->assertSame('', $rows[1]['result']);
+        $this->assertSame('', $rows[2]['result']);
     }
 
-    public function test_complete_accepts_finish_only_or_chlorinated_only_for_dw_05(): void
+    public function test_complete_accepts_finish_chlorinated_or_raw_exclusive_for_dw_05(): void
     {
         $this->seed();
 
@@ -229,6 +229,7 @@ class TdsRawFinishEncodeTest extends TestCase
         $this->assertSame(JobOrderAnalysisStatus::Completed, $lineFinish->status);
         $this->assertSame('0.4', $lineFinish->result_finish);
         $this->assertNull($lineFinish->result_chlorinated);
+        $this->assertNull($lineFinish->result_raw);
         $this->assertSame('Finish: 0.4', $lineFinish->result_value);
 
         $jobCl = $this->intakeAndReceive(
@@ -252,7 +253,37 @@ class TdsRawFinishEncodeTest extends TestCase
         $this->assertSame(JobOrderAnalysisStatus::Completed, $lineCl->status);
         $this->assertNull($lineCl->result_finish);
         $this->assertSame('0.9', $lineCl->result_chlorinated);
+        $this->assertNull($lineCl->result_raw);
         $this->assertSame('Chlorinated: 0.9', $lineCl->result_value);
+
+        $jobRaw = $this->intakeAndReceive(
+            $receiving,
+            [$cl->id],
+            'Cl Raw Only Customer',
+            'cl-raw-only@example.com',
+        );
+        $lineRaw = $jobRaw->analyses()->firstOrFail();
+
+        $this->actingAs($analyst)
+            ->post("/analyst/tasks/{$lineRaw->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
+                'result_raw' => '-',
+                'result_method' => 'DPD method',
+            ])
+            ->assertRedirect()
+            ->assertSessionDoesntHaveErrors();
+
+        $lineRaw->refresh();
+        $this->assertSame(JobOrderAnalysisStatus::Completed, $lineRaw->status);
+        $this->assertNull($lineRaw->result_finish);
+        $this->assertNull($lineRaw->result_chlorinated);
+        $this->assertSame('-', $lineRaw->result_raw);
+        $this->assertSame('Raw: -', $lineRaw->result_value);
+
+        $rows = DynamicTestMatrix::buildRows($jobRaw->fresh(['analyses.analysisType'])->analyses);
+        $this->assertSame('', $rows[0]['result']);
+        $this->assertSame('', $rows[1]['result']);
+        $this->assertSame('-', $rows[2]['result']);
 
         $this->actingAs($analyst)
             ->from('/analyst')
@@ -261,7 +292,7 @@ class TdsRawFinishEncodeTest extends TestCase
                 'result_method' => 'DPD method',
             ])
             ->assertRedirect('/analyst')
-            ->assertSessionHasErrors(['result_finish', 'result_chlorinated']);
+            ->assertSessionHasErrors(['result_finish', 'result_chlorinated', 'result_raw']);
     }
 
     public function test_analyst_draft_and_complete_accept_raw_and_finish_for_dw_02(): void
@@ -363,6 +394,18 @@ class TdsRawFinishEncodeTest extends TestCase
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
+
+        $job = $job->fresh(['analyses.analysisType']) ?? $job;
+
+        // FO3/FO37 require lab atmosphere before complete.
+        $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+        $this->actingAs($analyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'TR-TEST-001',
+            ])
+            ->assertOk();
 
         return $job->fresh(['analyses.analysisType']) ?? $job;
     }

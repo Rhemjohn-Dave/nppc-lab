@@ -1118,7 +1118,7 @@ class DynamicTestMatrix
     }
 
     /**
-     * DW-05 Residual Chlorine: Finish / Chlorinated / Raw; Test/Method rowspan; Raw result is "-".
+     * DW-05 Residual Chlorine: exclusive Finish | Chlorinated | Raw (dash only in Raw mode).
      *
      * @return list<array<string, mixed>>
      */
@@ -1137,23 +1137,37 @@ class DynamicTestMatrix
             ? (string) $line->result_pass_fail
             : null;
 
+        [$rawMode, $finishValue, $chlorinatedValue] = OfficialAnalysisCatalog::normalizeResidualChlorineEncode(
+            $line->result_raw,
+            $line->result_finish,
+            $line->result_chlorinated,
+        );
+        $isRawMode = $rawMode !== null;
+        $isFinishMode = ! $isRawMode && $finishValue !== null;
+        $isChlorinatedMode = ! $isRawMode && ! $isFinishMode && $chlorinatedValue !== null;
+
+        $finishRemarks = $isFinishMode
+            ? (filled($line->result_remarks_finish)
+                ? (string) $line->result_remarks_finish
+                : (filled($line->result_remarks) ? (string) $line->result_remarks : null))
+            : null;
+        $chlorinatedRemarks = $isChlorinatedMode && filled($line->result_remarks_chlorinated)
+            ? (string) $line->result_remarks_chlorinated
+            : null;
+
         $variants = [
             [
                 'key' => 'finish',
                 'role' => 'start',
-                'measured' => $line->result_finish,
-                'remarks' => filled($line->result_remarks_finish)
-                    ? (string) $line->result_remarks_finish
-                    : (filled($line->result_remarks) ? (string) $line->result_remarks : null),
+                'measured' => $isFinishMode ? $finishValue : null,
+                'remarks' => $finishRemarks,
                 'fixed' => null,
             ],
             [
                 'key' => 'chlorinated',
                 'role' => 'continue',
-                'measured' => $line->result_chlorinated,
-                'remarks' => filled($line->result_remarks_chlorinated)
-                    ? (string) $line->result_remarks_chlorinated
-                    : null,
+                'measured' => $isChlorinatedMode ? $chlorinatedValue : null,
+                'remarks' => $chlorinatedRemarks,
                 'fixed' => null,
             ],
             [
@@ -1161,16 +1175,17 @@ class DynamicTestMatrix
                 'role' => 'continue',
                 'measured' => null,
                 'remarks' => null,
-                'fixed' => '-',
+                'fixed' => $isRawMode ? OfficialAnalysisCatalog::RESIDUAL_CHLORINE_RAW_SENTINEL : null,
             ],
         ];
 
         $rows = [];
         foreach ($variants as $variant) {
-            $measuredOnly = $variant['fixed'] ?? self::formatPrintedResult($variant['measured'], $unit);
+            $measuredOnly = $variant['fixed']
+                ?? (self::formatPrintedResult($variant['measured'], $unit) ?? '');
             $acceptable = OfficialAnalysisCatalog::acceptableValuesForCodeVariant($code, $variant['key']);
             $isStart = $variant['role'] === 'start';
-            $hasMeasured = filled($variant['measured']);
+            $hasMeasured = filled($variant['measured']) || filled($variant['fixed']);
 
             $rows[] = [
                 'test' => $baseName,
@@ -1271,6 +1286,21 @@ class DynamicTestMatrix
             }
 
             foreach (self::previewRowsForAnalysisType($type) as $catalog) {
+                // Residual Chlorine: only Raw sub-row is dashed when the test is waived.
+                if (OfficialAnalysisCatalog::usesResidualChlorineResults($type->code)) {
+                    $isRawVariant = ($catalog['row_variant'] ?? null) === 'raw';
+                    $dashOrBlank = $isRawVariant ? '-' : '';
+                    $rows[] = array_merge($catalog, [
+                        'result' => $dashOrBlank,
+                        'result_value' => $dashOrBlank,
+                        'pass_fail' => null,
+                        'sample_1' => $dashOrBlank,
+                        'remarks' => null,
+                    ]);
+
+                    continue;
+                }
+
                 $rows[] = array_merge($catalog, [
                     'result' => '-',
                     'result_value' => '-',
