@@ -420,12 +420,12 @@ function isGenericOtherCategory(label: string): boolean {
     return label.trim().toLowerCase() === 'other';
 }
 
+/** Others → food category: also show Metals in the individual catalog. */
 const FOOD_CATEGORY_SLUGS = new Set([
     'food_products_microbiological',
-    'proximate_analysis',
     'other_food_analysis',
+    'proximate_analysis',
     'nutrifacts',
-    'phytochemical',
 ]);
 
 function isAquaClassificationValue(classification: string): boolean {
@@ -439,7 +439,7 @@ function isAquaClassificationValue(classification: string): boolean {
 
 /** Category slugs shown in the individual-test catalog for a Details classification. */
 const CLASSIFICATION_CATEGORY_SLUGS: Record<string, string[]> = {
-    Potability: ['drinking_water', 'microbiological'],
+    Potability: ['drinking_water', 'microbiological', 'metals'],
     Wastewater: ['waste_water'],
     Aqua: [
         'water_analysis_aquaculture',
@@ -500,6 +500,10 @@ function categorySlugsForClassification(
             (group) => group.label.trim().toLowerCase() === otherLabel,
         );
         if (match?.category) {
+            if (FOOD_CATEGORY_SLUGS.has(match.category)) {
+                return new Set([match.category, 'metals']);
+            }
+
             return new Set([match.category]);
         }
 
