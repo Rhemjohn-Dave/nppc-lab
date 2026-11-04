@@ -32,6 +32,10 @@ type Props = {
         discount_amount?: string | number | null;
         discount_percent?: string | number | null;
         subtotal?: string | number | null;
+        is_bulk?: boolean;
+        has_attachment?: boolean;
+        attachment_url?: string | null;
+        attachment_original_name?: string | null;
     };
     emailLogs?: EmailLogSummary[];
 };
@@ -404,8 +408,30 @@ export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
                                         </dt>
                                         <dd className="font-medium tabular-nums">
                                             {jobOrder.analyses.length}
+                                            {jobOrder.is_bulk
+                                                ? ' · bulk'
+                                                : ''}
                                         </dd>
                                     </div>
+                                    {jobOrder.has_attachment &&
+                                    jobOrder.attachment_url ? (
+                                        <div className="flex justify-between gap-3">
+                                            <dt className="text-muted-foreground">
+                                                Attachment
+                                            </dt>
+                                            <dd className="text-right">
+                                                <a
+                                                    href={
+                                                        jobOrder.attachment_url
+                                                    }
+                                                    className="text-xs font-medium text-nppc-800 underline"
+                                                >
+                                                    {jobOrder.attachment_original_name ||
+                                                        'Download list'}
+                                                </a>
+                                            </dd>
+                                        </div>
+                                    ) : null}
                                     <div className="flex justify-between gap-3">
                                         <dt className="text-muted-foreground">
                                             Submitted
@@ -446,6 +472,7 @@ export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
                                                 </p>
                                                 <p className="text-[11px] text-slate-500">
                                                     {[
+                                                        sample.control_number,
                                                         sample.matrix,
                                                         sample.quantity != null
                                                             ? `${sample.quantity}${sample.unit ? ` ${sample.unit}` : ''}`
@@ -455,6 +482,11 @@ export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
                                                         .join(' · ') ||
                                                         'No matrix/qty'}
                                                 </p>
+                                                {sample.remarks ? (
+                                                    <p className="mt-0.5 text-[11px] text-slate-500">
+                                                        {sample.remarks}
+                                                    </p>
+                                                ) : null}
                                             </li>
                                         ),
                                     )}

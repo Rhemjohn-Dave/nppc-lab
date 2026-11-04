@@ -222,15 +222,21 @@ class AnalystController extends Controller
             })
             ->values();
 
-        $reportByJob = [];
+        $reportByJobSample = [];
         foreach ($tasks as $task) {
-            $jobId = $task->job_order_id;
-            if (! isset($reportByJob[$jobId])) {
-                $reportByJob[$jobId] = $this->reports->forJobOrder($task->jobOrder, $user, withValues: false)->summary();
+            $jobId = (int) $task->job_order_id;
+            $sampleKey = $task->sample_id !== null ? (int) $task->sample_id : 0;
+            $cacheKey = $jobId.':'.$sampleKey;
+            if (! isset($reportByJobSample[$cacheKey])) {
+                $allReports = $this->reports->reportsForJobOrder($task->jobOrder, $user, withValues: false);
+                $resolved = $task->sample_id !== null
+                    ? $this->reports->pickReport($allReports, (int) $task->sample_id, null)
+                    : $this->reports->forJobOrder($task->jobOrder, $user, withValues: false);
+                $reportByJobSample[$cacheKey] = $resolved->summary();
             }
         }
 
-        $tasks = $tasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin, $qualifiedTypeIds, $reportByJob) {
+        $tasks = $tasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin, $qualifiedTypeIds, $reportByJobSample) {
             $isMine = $isAdmin || (int) $task->assigned_to === (int) $user->id;
             $canWork = $isAdmin
                 || $isMine
@@ -313,7 +319,10 @@ class AnalystController extends Controller
                 'assignee_name' => $task->assignee?->name,
                 'is_mine' => $isMine,
                 'can_work' => $canWork,
-                'report' => $this->taskReportSummary($reportByJob[$task->job_order_id] ?? null, $task->jobOrder),
+                'report' => $this->taskReportSummary(
+                    $reportByJobSample[(int) $task->job_order_id.':'.($task->sample_id !== null ? (int) $task->sample_id : 0)] ?? null,
+                    $task->jobOrder,
+                ),
                 'job_order' => [
                     'id' => $task->jobOrder->id,
                     'reference_no' => $task->jobOrder->reference_no,
@@ -337,6 +346,8 @@ class AnalystController extends Controller
                                 $index,
                                 $sampleCount,
                             ),
+                            'submitted_for_review' => $sample->submitted_for_review_at !== null,
+                            'released' => $sample->released_at !== null,
                         ];
                     })->values()->all(),
                 ],
@@ -481,16 +492,29 @@ class AnalystController extends Controller
     public function submitForReview(Request $request, JobOrder $jobOrder): RedirectResponse
     {
         $data = $request->validate([
+            'sample_id' => ['nullable', 'integer', 'exists:samples,id'],
             'signatories' => ['nullable', 'array', 'min:1', 'max:4'],
             'signatories.*.name' => ['nullable', 'string', 'max:180'],
             'signatories.*.prc_id' => ['nullable', 'string', 'max:60'],
         ]);
 
+        $sampleId = isset($data['sample_id']) ? (int) $data['sample_id'] : null;
+
         $this->jobOrders->submitForReview(
             $jobOrder,
             $request->user(),
             $data['signatories'] ?? null,
+            $sampleId,
         );
+
+        if ($sampleId !== null) {
+            $sample = $jobOrder->samples()->find($sampleId);
+
+            return back()->with(
+                'success',
+                "Sample ".($sample?->sample_code ?: '#'.$sampleId)." on {$jobOrder->reference_no} sent to Head for signature.",
+            );
+        }
 
         return back()->with('success', "Job order {$jobOrder->reference_no} sent to Head for signature.");
     }
@@ -827,11 +851,20 @@ class AnalystController extends Controller
     ) {
         $completed = JobOrderAnalysisStatus::Completed;
 
+        // Whole JO ready, or at least one unsubmitted sample whose assays are all complete.
         $query = JobOrder::query()
             ->where('status', JobOrderStatus::InAnalysis)
             ->whereHas('analyses')
-            ->whereDoesntHave('analyses', function ($analyses) use ($completed) {
-                $analyses->where('status', '!=', $completed);
+            ->where(function ($outer) use ($completed) {
+                $outer->whereDoesntHave('analyses', function ($analyses) use ($completed) {
+                    $analyses->where('status', '!=', $completed);
+                })->orWhereHas('samples', function ($samples) use ($completed) {
+                    $samples->whereNull('submitted_for_review_at')
+                        ->whereHas('analyses')
+                        ->whereDoesntHave('analyses', function ($analyses) use ($completed) {
+                            $analyses->where('status', '!=', $completed);
+                        });
+                });
             });
 
         if (! $isAdmin) {

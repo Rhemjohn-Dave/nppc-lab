@@ -38,6 +38,9 @@ type Order = {
     total_cost: string | number;
     analyses_count: number;
     samples_count: number;
+    is_bulk?: boolean;
+    is_bulk_draft?: boolean;
+    bulk_continue_url?: string | null;
     created_at: string | null;
 };
 
@@ -359,16 +362,29 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                         refreshing={isRefreshing}
                         refreshLabel="Updating queue…"
                         actions={
-                            <Button
-                                asChild
-                                size="sm"
-                                className="h-8 gap-1.5 bg-nppc-900 text-xs hover:bg-nppc-700"
-                            >
-                                <Link href="/intake">
-                                    <Plus className="size-3.5" />
-                                    New Job Order Intake
-                                </Link>
-                            </Button>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                    asChild
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 gap-1.5 text-xs"
+                                >
+                                    <Link href="/receiving/bulk-orders">
+                                        <Plus className="size-3.5" />
+                                        Bulk order
+                                    </Link>
+                                </Button>
+                                <Button
+                                    asChild
+                                    size="sm"
+                                    className="h-8 gap-1.5 bg-nppc-900 text-xs hover:bg-nppc-700"
+                                >
+                                    <Link href="/intake">
+                                        <Plus className="size-3.5" />
+                                        New Job Order Intake
+                                    </Link>
+                                </Button>
+                            </div>
                         }
                     />
 
@@ -493,15 +509,33 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                                         </Badge>
                                     </div>
                                     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
-                                        <span>
-                                            {order.samples_count} sample
-                                            {order.samples_count === 1
-                                                ? ''
-                                                : 's'}{' '}
-                                            · {order.analyses_count} test
-                                            {order.analyses_count === 1
-                                                ? ''
-                                                : 's'}
+                                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                                            {order.is_bulk_draft ? (
+                                                <Badge
+                                                    variant="outline"
+                                                    className="h-5 border-amber-200 bg-amber-50 px-1.5 text-[10px] font-semibold text-amber-900"
+                                                >
+                                                    Bulk draft
+                                                </Badge>
+                                            ) : order.is_bulk ||
+                                              order.samples_count >= 2 ? (
+                                                <Badge
+                                                    variant="outline"
+                                                    className="h-5 border-sky-200 bg-sky-50 px-1.5 text-[10px] font-semibold text-sky-900"
+                                                >
+                                                    Bulk
+                                                </Badge>
+                                            ) : null}
+                                            <span>
+                                                {order.samples_count} sample
+                                                {order.samples_count === 1
+                                                    ? ''
+                                                    : 's'}{' '}
+                                                · {order.analyses_count} test
+                                                {order.analyses_count === 1
+                                                    ? ''
+                                                    : 's'}
+                                            </span>
                                         </span>
                                         <span className="font-semibold text-slate-900">
                                             {money(order.total_cost)}

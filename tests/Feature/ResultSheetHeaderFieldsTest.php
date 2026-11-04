@@ -576,4 +576,56 @@ class ResultSheetHeaderFieldsTest extends TestCase
         $this->assertSame('Wastewater', $bag['results.sample_description']);
         $this->assertSame('Wastewater', $bag['results.classification']);
     }
+
+    public function test_per_sample_result_customer_uses_encoded_sample_name(): void
+    {
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $type = \App\Models\AnalysisType::query()
+            ->where('is_active', true)
+            ->where('show_on_kiosk', true)
+            ->firstOrFail();
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO5')->firstOrFail();
+
+        $this->actingAs($receiving)
+            ->post('/receiving/bulk-orders', [
+                'customer_name' => 'Juan Requestor',
+                'company_name' => 'Bayawan Water District',
+                'classification' => 'Potability',
+                'analysis_type_ids' => [$type->id],
+                'samples' => [
+                    ['description' => 'SOURCE A', 'matrix' => 'Water'],
+                    ['description' => 'SOURCE B', 'matrix' => 'Water'],
+                    ['description' => '', 'matrix' => 'Water'],
+                ],
+            ])
+            ->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail()->fresh(['analyses', 'packages', 'samples']);
+        $this->assertCount(3, $job->samples);
+
+        $revision = $form->fresh()->revisions()->firstOrFail();
+        $revision->setRelation('fields', collect());
+        $resolver = app(FieldValueResolver::class);
+        $formFresh = $form->fresh(['analysisPackage']);
+
+        $sampleA = $job->samples[0];
+        $sampleB = $job->samples[1];
+        $sampleBlank = $job->samples[2];
+
+        $bagA = $resolver->forResult($revision, $job, null, $formFresh, $sampleA);
+        $this->assertSame('SOURCE A', $bagA['results.customer']);
+
+        $bagB = $resolver->forResult($revision, $job, null, $formFresh, $sampleB);
+        $this->assertSame('SOURCE B', $bagB['results.customer']);
+
+        // Blank sample Name falls back to company / client display name.
+        $bagBlank = $resolver->forResult($revision, $job, null, $formFresh, $sampleBlank);
+        $this->assertSame('Bayawan Water District', $bagBlank['results.customer']);
+
+        // Without focusSample, job-level client display name remains.
+        $bagJob = $resolver->forResult($revision, $job, null, $formFresh);
+        $this->assertSame('Bayawan Water District', $bagJob['results.customer']);
+    }
 }

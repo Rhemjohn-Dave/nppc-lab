@@ -21,6 +21,7 @@ use App\Notifications\ResultsReleased;
 use App\Support\OfficialAnalysisCatalog;
 use App\Support\ResultFooter;
 use App\Support\ResultSignatories;
+use App\Support\SampleControlNumber;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +35,193 @@ class JobOrderService
         private readonly AnalysisResultReportResolver $reports,
         private readonly CustomerEmailService $customerEmails,
     ) {}
+
+    /**
+     * Receiving bulk wizard: save customer + samples without tests (resume later).
+     *
+     * @param  array<string, mixed>  $data
+     * @param  list<array{sample_code?: mixed, description?: mixed, matrix?: mixed, quantity?: mixed, unit?: mixed, remarks?: mixed}>  $samples
+     */
+    public function saveBulkDraft(array $data, array $samples, ?JobOrder $existing = null): JobOrder
+    {
+        return DB::transaction(function () use ($data, $samples, $existing) {
+            Customer::rememberFromIntake($data);
+
+            if ($existing !== null) {
+                abort_unless($existing->is_bulk_draft, 403);
+                abort_unless($existing->status === JobOrderStatus::DraftSubmitted, 422);
+
+                $existing->update([
+                    'customer_name' => $data['customer_name'],
+                    'customer_email' => $data['customer_email'] ?? null,
+                    'customer_contact' => $data['customer_contact'] ?? null,
+                    'customer_address' => $data['customer_address'] ?? null,
+                    'company_name' => $data['company_name'] ?? null,
+                    'ownership_type' => $data['ownership_type'] ?? null,
+                    'classification' => $data['classification'] ?? null,
+                    'sampling_date' => $data['sampling_date'] ?? null,
+                    'sampling_time' => $data['sampling_time'] ?? null,
+                    'sample_collected_by' => $data['sample_collected_by'] ?? null,
+                    'field_data' => $data['field_data'] ?? null,
+                    'sample_storage_temp' => $data['sample_storage_temp'] ?? null,
+                    'wastewater_source' => $data['wastewater_source'] ?? null,
+                    'sampling_site' => $data['sampling_site'] ?? null,
+                    'specimen' => $data['specimen'] ?? null,
+                    'payment_mode' => $data['payment_mode'] ?? null,
+                    'payment_terms' => $data['payment_terms'] ?? null,
+                    'other_tests' => $data['other_tests'] ?? null,
+                    'see_attached_file' => (bool) ($data['see_attached_file'] ?? false),
+                    'is_bulk_draft' => true,
+                ]);
+
+                $existing->analyses()->delete();
+                $existing->packageLinks()->delete();
+                $existing->samples()->delete();
+
+                foreach ($samples as $index => $sample) {
+                    $existing->samples()->create([
+                        'sample_code' => $sample['sample_code'] ?? null,
+                        'description' => $sample['description'] ?? null,
+                        'matrix' => $sample['matrix'] ?? null,
+                        'quantity' => $sample['quantity'] ?? null,
+                        'unit' => $sample['unit'] ?? null,
+                        'remarks' => $sample['remarks'] ?? null,
+                        'sort_order' => $index,
+                    ]);
+                }
+
+                $existing->recalculateTotal();
+                LabQueueUpdated::notify([LabQueueUpdated::SCOPE_RECEIVING], $existing->id);
+
+                return $existing->fresh(['samples', 'analyses']) ?? $existing;
+            }
+
+            $jobOrder = JobOrder::create([
+                'reference_no' => $this->referenceNumbers->next(),
+                'customer_name' => $data['customer_name'],
+                'customer_email' => $data['customer_email'] ?? null,
+                'customer_contact' => $data['customer_contact'] ?? null,
+                'customer_address' => $data['customer_address'] ?? null,
+                'company_name' => $data['company_name'] ?? null,
+                'ownership_type' => $data['ownership_type'] ?? null,
+                'classification' => $data['classification'] ?? null,
+                'sampling_date' => $data['sampling_date'] ?? null,
+                'sampling_time' => $data['sampling_time'] ?? null,
+                'sample_collected_by' => $data['sample_collected_by'] ?? null,
+                'field_data' => $data['field_data'] ?? null,
+                'sample_storage_temp' => $data['sample_storage_temp'] ?? null,
+                'wastewater_source' => $data['wastewater_source'] ?? null,
+                'sampling_site' => $data['sampling_site'] ?? null,
+                'specimen' => $data['specimen'] ?? null,
+                'payment_mode' => $data['payment_mode'] ?? null,
+                'payment_terms' => $data['payment_terms'] ?? null,
+                'other_tests' => $data['other_tests'] ?? null,
+                'see_attached_file' => (bool) ($data['see_attached_file'] ?? false),
+                'status' => JobOrderStatus::DraftSubmitted,
+                'is_bulk_draft' => true,
+                'total_cost' => 0,
+            ]);
+
+            foreach ($samples as $index => $sample) {
+                $jobOrder->samples()->create([
+                    'sample_code' => $sample['sample_code'] ?? null,
+                    'description' => $sample['description'] ?? null,
+                    'matrix' => $sample['matrix'] ?? null,
+                    'quantity' => $sample['quantity'] ?? null,
+                    'unit' => $sample['unit'] ?? null,
+                    'remarks' => $sample['remarks'] ?? null,
+                    'sort_order' => $index,
+                ]);
+            }
+
+            LabQueueUpdated::notify([LabQueueUpdated::SCOPE_RECEIVING], $jobOrder->id);
+
+            return $jobOrder->fresh(['samples', 'analyses']) ?? $jobOrder;
+        });
+    }
+
+    /**
+     * Finish a bulk draft: replace samples and attach shared tests.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  list<array{sample_code?: mixed, description?: mixed, matrix?: mixed, quantity?: mixed, unit?: mixed, remarks?: mixed, package_ids?: list<int>, analysis_type_ids?: list<int>}>  $samples
+     */
+    public function finalizeBulkDraft(JobOrder $jobOrder, array $data, array $samples): JobOrder
+    {
+        abort_unless($jobOrder->is_bulk_draft, 403);
+        abort_unless($jobOrder->status === JobOrderStatus::DraftSubmitted, 422);
+
+        return DB::transaction(function () use ($jobOrder, $data, $samples) {
+            Customer::rememberFromIntake($data);
+
+            $jobOrder->update([
+                'customer_name' => $data['customer_name'],
+                'customer_email' => $data['customer_email'] ?? null,
+                'customer_contact' => $data['customer_contact'] ?? null,
+                'customer_address' => $data['customer_address'] ?? null,
+                'company_name' => $data['company_name'] ?? null,
+                'ownership_type' => $data['ownership_type'] ?? null,
+                'classification' => $data['classification'] ?? null,
+                'sampling_date' => $data['sampling_date'] ?? null,
+                'sampling_time' => $data['sampling_time'] ?? null,
+                'sample_collected_by' => $data['sample_collected_by'] ?? null,
+                'field_data' => $data['field_data'] ?? null,
+                'sample_storage_temp' => $data['sample_storage_temp'] ?? null,
+                'wastewater_source' => $data['wastewater_source'] ?? null,
+                'sampling_site' => $data['sampling_site'] ?? null,
+                'specimen' => $data['specimen'] ?? null,
+                'payment_mode' => $data['payment_mode'] ?? null,
+                'payment_terms' => $data['payment_terms'] ?? null,
+                'other_tests' => $data['other_tests'] ?? null,
+                'see_attached_file' => (bool) ($data['see_attached_file'] ?? false),
+                'is_bulk_draft' => false,
+            ]);
+
+            $jobOrder->analyses()->delete();
+            $jobOrder->packageLinks()->delete();
+            $jobOrder->samples()->delete();
+
+            $createdSamples = [];
+            foreach ($samples as $index => $sample) {
+                $createdSamples[] = $jobOrder->samples()->create([
+                    'sample_code' => $sample['sample_code'] ?? null,
+                    'description' => $sample['description'] ?? null,
+                    'matrix' => $sample['matrix'] ?? null,
+                    'quantity' => $sample['quantity'] ?? null,
+                    'unit' => $sample['unit'] ?? null,
+                    'remarks' => $sample['remarks'] ?? null,
+                    'sort_order' => $index,
+                ]);
+            }
+
+            $perSampleSelections = [];
+            foreach ($createdSamples as $index => $_) {
+                $perSampleSelections[] = [
+                    'package_ids' => $samples[$index]['package_ids'] ?? [],
+                    'analysis_type_ids' => $samples[$index]['analysis_type_ids'] ?? [],
+                ];
+            }
+
+            $this->attachAnalysesForSamples(
+                $jobOrder,
+                $createdSamples,
+                $perSampleSelections,
+                $data['other_tests'] ?? null,
+                true,
+            );
+
+            $jobOrder->recalculateTotal();
+
+            User::role(['receiving', 'admin'])->get()->each(
+                fn (User $user) => $user->notify(new JobOrderSubmitted($jobOrder))
+            );
+
+            LabQueueUpdated::notify([LabQueueUpdated::SCOPE_RECEIVING], $jobOrder->id);
+            $this->customerEmails->queueRequestReceived($jobOrder);
+
+            return $jobOrder->fresh(['samples', 'analyses']) ?? $jobOrder;
+        });
+    }
 
     /**
      * @param  array<string, mixed>  $data
@@ -64,6 +252,7 @@ class JobOrderService
                 'payment_mode' => $data['payment_mode'] ?? null,
                 'payment_terms' => $data['payment_terms'] ?? null,
                 'other_tests' => $data['other_tests'] ?? null,
+                'see_attached_file' => (bool) ($data['see_attached_file'] ?? false),
                 'status' => JobOrderStatus::DraftSubmitted,
                 'total_cost' => 0,
             ]);
@@ -923,15 +1112,23 @@ class JobOrderService
     /**
      * @param  list<array{name?: mixed, prc_id?: mixed}>|null  $signatories
      */
-    public function submitForReview(JobOrder $jobOrder, User $analyst, ?array $signatories = null): JobOrder
-    {
+    public function submitForReview(
+        JobOrder $jobOrder,
+        User $analyst,
+        ?array $signatories = null,
+        ?int $sampleId = null,
+    ): JobOrder {
+        if ($sampleId !== null) {
+            return $this->submitSampleForReview($jobOrder, $analyst, $sampleId, $signatories);
+        }
+
         if ($jobOrder->status !== JobOrderStatus::InAnalysis) {
             throw ValidationException::withMessages([
                 'job_order' => 'Only jobs still in analysis can be sent to Head.',
             ]);
         }
 
-        $jobOrder->load(['analyses.assignee', 'analyses.analysisType', 'packages']);
+        $jobOrder->load(['analyses.assignee', 'analyses.analysisType', 'packages', 'samples']);
         $this->assertUserCanSubmitForReview($jobOrder, $analyst);
 
         $incomplete = $jobOrder->analyses->reject(
@@ -957,59 +1154,189 @@ class JobOrderService
             }
         }
 
-        $resultForm = $this->reports->matchingControlledForm($jobOrder);
-        $updates = ['status' => JobOrderStatus::PendingReview];
-
-        if ($resultForm !== null) {
-            $stored = is_array($jobOrder->result_signatories) ? $jobOrder->result_signatories : null;
-
-            if ($signatories !== null && $signatories !== []) {
-                $normalized = ResultSignatories::normalizeForStorage(
-                    $signatories,
-                    $resultForm,
-                    $jobOrder,
-                );
-                $stored = ResultSignatories::mergeIntoStorage(
-                    $stored,
-                    $resultForm,
-                    $normalized,
-                );
-                $updates['result_signatories'] = $stored;
-            }
-
-            $requiredForms = $this->reports
-                ->reportsForJobOrder($jobOrder, $analyst, withValues: false)
-                ->map(fn ($report) => $report->controlledForm)
-                ->filter()
-                ->unique(fn ($form) => $form->form_code)
-                ->values();
-
-            $missing = ResultSignatories::missingFormCodes(
-                $updates['result_signatories'] ?? $stored,
-                $requiredForms,
-            );
-
-            if ($missing !== []) {
-                throw ValidationException::withMessages([
-                    'signatories' => 'Confirm analyst signatories for every result sheet before sending to Head'
-                        .(count($missing) > 1 ? ' ('.implode(', ', $missing).').' : '.'),
-                ]);
-            }
-        }
+        $updates = $this->applySubmitSignatories(
+            $jobOrder,
+            $analyst,
+            $signatories,
+            sampleId: null,
+        );
+        $updates['status'] = JobOrderStatus::PendingReview;
 
         $jobOrder->update($updates);
+
+        $now = now();
+        foreach ($jobOrder->samples as $sample) {
+            if ($sample->submitted_for_review_at === null) {
+                $sample->update(['submitted_for_review_at' => $now]);
+            }
+        }
 
         User::role(['head_analysis', 'admin'])->get()->each(
             fn (User $user) => $user->notify(new JobOrderPendingReview($jobOrder))
         );
 
-        $fresh = $jobOrder->fresh(['analyses.assignee', 'packages']) ?? $jobOrder;
+        $fresh = $jobOrder->fresh(['analyses.assignee', 'packages', 'samples']) ?? $jobOrder;
         LabQueueUpdated::notify([
             LabQueueUpdated::SCOPE_HEAD,
             LabQueueUpdated::SCOPE_ANALYST,
         ], $fresh->id);
 
         return $fresh;
+    }
+
+    /**
+     * Send one sample's completed assays to Head while other samples stay encodable.
+     *
+     * @param  list<array{name?: mixed, prc_id?: mixed}>|null  $signatories
+     */
+    public function submitSampleForReview(
+        JobOrder $jobOrder,
+        User $analyst,
+        int $sampleId,
+        ?array $signatories = null,
+    ): JobOrder {
+        if ($jobOrder->status !== JobOrderStatus::InAnalysis) {
+            throw ValidationException::withMessages([
+                'job_order' => 'Only jobs still in analysis can be sent to Head.',
+            ]);
+        }
+
+        $jobOrder->load(['analyses.assignee', 'analyses.analysisType', 'packages', 'samples']);
+        $this->assertUserCanSubmitForReview($jobOrder, $analyst);
+
+        $sample = $jobOrder->samples->firstWhere('id', $sampleId);
+        if ($sample === null) {
+            throw ValidationException::withMessages([
+                'sample_id' => 'Sample not found on this job order.',
+            ]);
+        }
+
+        if ($sample->submitted_for_review_at !== null) {
+            throw ValidationException::withMessages([
+                'sample_id' => 'This sample was already sent to Head.',
+            ]);
+        }
+
+        $lines = $jobOrder->analyses
+            ->filter(fn (JobOrderAnalysis $line) => (int) $line->sample_id === $sampleId)
+            ->values();
+
+        if ($lines->isEmpty()) {
+            throw ValidationException::withMessages([
+                'sample_id' => 'No assays found for this sample.',
+            ]);
+        }
+
+        $incomplete = $lines->reject(fn (JobOrderAnalysis $line) => $this->lineHasResult($line));
+        if ($incomplete->isNotEmpty()) {
+            $names = $incomplete->pluck('name')->filter()->implode(', ');
+
+            throw ValidationException::withMessages([
+                'job_order' => 'Encode all results for this sample before sending to Head'
+                    .($names !== '' ? ': '.$names : '.'),
+            ]);
+        }
+
+        foreach ($lines as $line) {
+            if ($line->isSamplePreparation() && $line->status !== JobOrderAnalysisStatus::Completed) {
+                $line->update([
+                    'status' => JobOrderAnalysisStatus::Completed,
+                    'completed_at' => now(),
+                    'assigned_to' => $line->assigned_to ?? $analyst->id,
+                ]);
+            }
+        }
+
+        $updates = $this->applySubmitSignatories(
+            $jobOrder,
+            $analyst,
+            $signatories,
+            sampleId: $sampleId,
+        );
+
+        $sample->update(['submitted_for_review_at' => now()]);
+        $jobOrder->unsetRelation('samples');
+        $jobOrder->load('samples');
+
+        if ($jobOrder->samples->every(fn ($row) => $row->submitted_for_review_at !== null)) {
+            $updates['status'] = JobOrderStatus::PendingReview;
+        }
+
+        if ($updates !== []) {
+            $jobOrder->update($updates);
+        }
+
+        User::role(['head_analysis', 'admin'])->get()->each(
+            fn (User $user) => $user->notify(new JobOrderPendingReview($jobOrder))
+        );
+
+        $fresh = $jobOrder->fresh(['analyses.assignee', 'packages', 'samples']) ?? $jobOrder;
+        LabQueueUpdated::notify([
+            LabQueueUpdated::SCOPE_HEAD,
+            LabQueueUpdated::SCOPE_ANALYST,
+        ], $fresh->id);
+
+        return $fresh;
+    }
+
+    /**
+     * @param  list<array{name?: mixed, prc_id?: mixed}>|null  $signatories
+     * @return array<string, mixed>
+     */
+    private function applySubmitSignatories(
+        JobOrder $jobOrder,
+        User $analyst,
+        ?array $signatories,
+        ?int $sampleId,
+    ): array {
+        $updates = [];
+        $resultForm = $this->reports->matchingControlledForm($jobOrder);
+        if ($resultForm === null) {
+            return $updates;
+        }
+
+        $stored = is_array($jobOrder->result_signatories) ? $jobOrder->result_signatories : null;
+
+        if ($signatories !== null && $signatories !== []) {
+            $normalized = ResultSignatories::normalizeForStorage(
+                $signatories,
+                $resultForm,
+                $jobOrder,
+            );
+            $stored = ResultSignatories::mergeIntoStorage(
+                $stored,
+                $resultForm,
+                $normalized,
+            );
+            $updates['result_signatories'] = $stored;
+        }
+
+        $requiredForms = $this->reports
+            ->reportsForJobOrder($jobOrder, $analyst, withValues: false)
+            ->when(
+                $sampleId !== null,
+                fn ($reports) => $reports->filter(
+                    fn ($report) => (int) ($report->sampleId ?? 0) === $sampleId
+                ),
+            )
+            ->map(fn ($report) => $report->controlledForm)
+            ->filter()
+            ->unique(fn ($form) => $form->form_code)
+            ->values();
+
+        $missing = ResultSignatories::missingFormCodes(
+            $updates['result_signatories'] ?? $stored,
+            $requiredForms,
+        );
+
+        if ($missing !== []) {
+            throw ValidationException::withMessages([
+                'signatories' => 'Confirm analyst signatories for every result sheet before sending to Head'
+                    .(count($missing) > 1 ? ' ('.implode(', ', $missing).').' : '.'),
+            ]);
+        }
+
+        return $updates;
     }
 
     public function userCanSubmitForReview(JobOrder $jobOrder, User $user): bool
@@ -1075,7 +1402,7 @@ class JobOrderService
     {
         $jobs = JobOrder::query()
             ->where('status', JobOrderStatus::InAnalysis)
-            ->with(['analyses.assignee', 'analyses.analysisType', 'packages.signatory'])
+            ->with(['analyses.assignee', 'analyses.analysisType', 'packages.signatory', 'samples'])
             ->latest('id')
             ->limit(40)
             ->get()
@@ -1083,26 +1410,72 @@ class JobOrderService
             ->values();
 
         return $jobs->map(function (JobOrder $job) use ($user) {
-            $incomplete = $job->analyses->reject(
-                fn (JobOrderAnalysis $line) => $this->lineHasResult($line)
-            );
+            $sampleCount = $job->samples->count();
+            $sampleRows = $job->samples->values()->map(function ($sample, int $index) use ($job, $sampleCount) {
+                $lines = $job->analyses
+                    ->filter(fn (JobOrderAnalysis $line) => (int) $line->sample_id === (int) $sample->id)
+                    ->values();
+                $incomplete = $lines->reject(fn (JobOrderAnalysis $line) => $this->lineHasResult($line));
+                $submitted = $sample->submitted_for_review_at !== null;
+                $released = $sample->released_at !== null;
+                $sampleComplete = $lines->isNotEmpty() && $incomplete->isEmpty();
+                // Preview stays available after Send to Head as long as this sample's assays are complete.
+                $canPreviewSample = $sampleComplete;
+
+                return [
+                    'id' => $sample->id,
+                    'sample_code' => $sample->sample_code,
+                    'description' => $sample->description,
+                    'control_number' => SampleControlNumber::forIndex(
+                        (string) $job->reference_no,
+                        $index,
+                        $sampleCount,
+                    ),
+                    'can_submit' => ! $submitted && $sampleComplete,
+                    'can_preview' => $canPreviewSample,
+                    'preview_url' => $canPreviewSample
+                        ? "/analyst/job-orders/{$job->id}/result-report?sample_id={$sample->id}"
+                        : null,
+                    'submitted' => $submitted,
+                    'released' => $released,
+                    'missing' => $incomplete->pluck('name')->values()->all(),
+                ];
+            })->values()->all();
+
+            // Legacy / unscoped lines (no sample_id): fall back to whole-JO completeness.
+            $unscoped = $job->analyses->filter(fn (JobOrderAnalysis $line) => $line->sample_id === null);
+            $unscopedIncomplete = $unscoped->reject(fn (JobOrderAnalysis $line) => $this->lineHasResult($line));
+            $anySampleReady = collect($sampleRows)->contains(fn (array $row) => $row['can_submit'] === true);
+            $allLinesReady = $job->analyses->every(fn (JobOrderAnalysis $line) => $this->lineHasResult($line));
+
+            $incompleteNames = $job->analyses
+                ->reject(fn (JobOrderAnalysis $line) => $this->lineHasResult($line))
+                ->pluck('name')
+                ->values()
+                ->all();
+
             $summary = $this->reports->forJobOrder($job, $user, withValues: false)->summary();
+            $anySamplePreview = collect($sampleRows)->contains(fn (array $row) => $row['can_preview'] === true);
             $previewUrl = "/analyst/job-orders/{$job->id}/result-report";
 
             return [
                 'id' => $job->id,
                 'reference_no' => $job->reference_no,
                 'customer_name' => $job->customer_name,
-                'can_submit' => $incomplete->isEmpty(),
-                'can_preview' => $summary['can_preview'],
+                'can_submit' => $anySampleReady || ($sampleRows === [] && $allLinesReady),
+                // Allow preview when any sample sheet is ready (not only when every sample is complete).
+                'can_preview' => (bool) ($summary['can_preview'] || $anySamplePreview),
                 'preview_message' => $summary['message'],
                 'preview_url' => $previewUrl,
-                'missing' => $incomplete->pluck('name')->values()->all(),
+                'missing' => $incompleteNames,
                 'review_notes' => $job->review_notes,
                 'signatory' => $this->consolidationSignatoryPayload($job),
                 'footer' => $this->consolidationFooterPayload($job),
+                'samples' => $sampleRows,
+                'unscoped_can_submit' => $unscoped->isNotEmpty() && $unscopedIncomplete->isEmpty(),
                 'lines' => $job->analyses->map(fn (JobOrderAnalysis $line) => [
                     'id' => $line->id,
+                    'sample_id' => $line->sample_id,
                     'name' => $line->name,
                     'assignee_name' => $line->assignee?->name,
                     'status' => $line->status->value,
@@ -1161,11 +1534,18 @@ class JobOrderService
     public function releasedResultPrintsFor(User $user): array
     {
         $jobs = JobOrder::query()
-            ->whereIn('status', [
-                JobOrderStatus::PendingReview,
-                JobOrderStatus::ReadyForPickup,
-            ])
-            ->with(['analyses', 'packages'])
+            ->where(function ($query) {
+                $query->whereIn('status', [
+                    JobOrderStatus::PendingReview,
+                    JobOrderStatus::ReadyForPickup,
+                ])->orWhere(function ($inner) {
+                    $inner->where('status', JobOrderStatus::InAnalysis)
+                        ->whereHas('samples', function ($samples) {
+                            $samples->whereNotNull('submitted_for_review_at');
+                        });
+                });
+            })
+            ->with(['analyses', 'packages', 'samples'])
             ->latest('id')
             ->limit(40)
             ->get()
@@ -1186,9 +1566,30 @@ class JobOrderService
             ->values();
 
         return $jobs->map(function (JobOrder $job) use ($user) {
+            $reports = $this->reports->reportsForJobOrder($job, $user, withValues: false);
             $summary = $this->reports->forJobOrder($job, $user, withValues: false)->summary();
+            $anyPreview = $reports->contains(fn ($report) => $report->canPreview());
             $form = $this->reports->matchingControlledForm($job);
             $previewUrl = "/analyst/job-orders/{$job->id}/result-report";
+            $samplePreviews = $job->samples->values()->map(function ($sample) use ($job, $reports) {
+                $report = $reports->first(
+                    fn ($row) => $row->sampleId !== null && (int) $row->sampleId === (int) $sample->id,
+                );
+                $canPreview = $report?->canPreview() === true
+                    || ($sample->submitted_for_review_at !== null && $job->analyses
+                        ->where('sample_id', $sample->id)
+                        ->every(fn (JobOrderAnalysis $line) => $this->lineHasResult($line)));
+
+                return [
+                    'id' => $sample->id,
+                    'can_preview' => $canPreview,
+                    'preview_url' => $canPreview
+                        ? "/analyst/job-orders/{$job->id}/result-report?sample_id={$sample->id}"
+                        : null,
+                    'submitted' => $sample->submitted_for_review_at !== null,
+                    'released' => $sample->released_at !== null,
+                ];
+            })->values()->all();
 
             return [
                 'id' => $job->id,
@@ -1196,9 +1597,10 @@ class JobOrderService
                 'customer_name' => $job->customer_name,
                 'job_status' => $job->status->value,
                 'can_print' => (bool) ($summary['can_print'] ?? false),
-                'can_preview' => (bool) ($summary['can_preview'] ?? false),
+                'can_preview' => (bool) (($summary['can_preview'] ?? false) || $anyPreview),
                 'print_url' => $previewUrl,
                 'preview_url' => $previewUrl,
+                'samples' => $samplePreviews,
                 'signatory' => $form
                     ? ResultSignatories::manifestPayload(
                         $job,
@@ -1347,20 +1749,105 @@ class JobOrderService
         ]);
     }
 
-    public function sign(JobOrder $jobOrder, User $reviewer, ?string $notes = null): JobOrder
-    {
-        if ($jobOrder->status !== JobOrderStatus::PendingReview) {
-            throw ValidationException::withMessages([
-                'job_order' => 'Only jobs sent by the designated analyst can be signed.',
-            ]);
-        }
-
+    public function sign(
+        JobOrder $jobOrder,
+        User $reviewer,
+        ?string $notes = null,
+        ?int $sampleId = null,
+    ): JobOrder {
         if ($jobOrder->reviewed_at) {
             throw ValidationException::withMessages([
                 'job_order' => 'This job order has already been signed.',
             ]);
         }
 
+        $jobOrder->loadMissing('samples');
+
+        if ($sampleId !== null) {
+            return $this->signSample($jobOrder, $reviewer, $sampleId, $notes);
+        }
+
+        $awaitingPartial = $jobOrder->status === JobOrderStatus::InAnalysis
+            && $jobOrder->samples->contains(
+                fn ($sample) => $sample->submitted_for_review_at !== null && $sample->released_at === null
+            );
+
+        if ($jobOrder->status !== JobOrderStatus::PendingReview && ! $awaitingPartial) {
+            throw ValidationException::withMessages([
+                'job_order' => 'Only jobs sent by the designated analyst can be signed.',
+            ]);
+        }
+
+        // Whole-JO release: stamp every submitted sample, then finalize.
+        $now = now();
+        foreach ($jobOrder->samples as $sample) {
+            if ($sample->submitted_for_review_at !== null && $sample->released_at === null) {
+                $sample->update(['released_at' => $now]);
+            }
+        }
+
+        return $this->finalizeJobRelease($jobOrder, $reviewer, $notes);
+    }
+
+    public function signSample(
+        JobOrder $jobOrder,
+        User $reviewer,
+        int $sampleId,
+        ?string $notes = null,
+    ): JobOrder {
+        if (! in_array($jobOrder->status, [JobOrderStatus::InAnalysis, JobOrderStatus::PendingReview], true)) {
+            throw ValidationException::withMessages([
+                'job_order' => 'Only jobs with results awaiting Head can be signed.',
+            ]);
+        }
+
+        $jobOrder->loadMissing('samples');
+        $sample = $jobOrder->samples->firstWhere('id', $sampleId);
+        if ($sample === null) {
+            throw ValidationException::withMessages([
+                'sample_id' => 'Sample not found on this job order.',
+            ]);
+        }
+
+        if ($sample->submitted_for_review_at === null) {
+            throw ValidationException::withMessages([
+                'sample_id' => 'This sample has not been sent to Head yet.',
+            ]);
+        }
+
+        if ($sample->released_at !== null) {
+            throw ValidationException::withMessages([
+                'sample_id' => 'This sample was already released.',
+            ]);
+        }
+
+        $sample->update(['released_at' => now()]);
+        $jobOrder->unsetRelation('samples');
+        $jobOrder->load('samples');
+
+        $allReleased = $jobOrder->samples->isNotEmpty()
+            && $jobOrder->samples->every(fn ($row) => $row->released_at !== null);
+
+        if ($allReleased) {
+            return $this->finalizeJobRelease($jobOrder, $reviewer, $notes);
+        }
+
+        if ($notes !== null && $notes !== '') {
+            $jobOrder->update(['review_notes' => $notes]);
+        }
+
+        $fresh = $jobOrder->fresh(['samples', 'analyses.assignee', 'packages.signatory', 'reviewer']) ?? $jobOrder;
+        LabQueueUpdated::notify([
+            LabQueueUpdated::SCOPE_HEAD,
+            LabQueueUpdated::SCOPE_RECEIVING,
+            LabQueueUpdated::SCOPE_ANALYST,
+        ], $fresh->id);
+
+        return $fresh;
+    }
+
+    private function finalizeJobRelease(JobOrder $jobOrder, User $reviewer, ?string $notes = null): JobOrder
+    {
         $jobOrder->update([
             'status' => JobOrderStatus::ReadyForPickup,
             'reviewed_by' => $reviewer->id,
@@ -1392,8 +1879,17 @@ class JobOrderService
 
         $orders = JobOrder::query()
             ->whereIn('id', $ids)
-            ->where('status', JobOrderStatus::PendingReview)
             ->whereNull('reviewed_at')
+            ->where(function ($query) {
+                $query->where('status', JobOrderStatus::PendingReview)
+                    ->orWhere(function ($inner) {
+                        $inner->where('status', JobOrderStatus::InAnalysis)
+                            ->whereHas('samples', function ($samples) {
+                                $samples->whereNotNull('submitted_for_review_at')
+                                    ->whereNull('released_at');
+                            });
+                    });
+            })
             ->get();
 
         foreach ($orders as $order) {
@@ -1408,7 +1904,19 @@ class JobOrderService
      */
     public function returnAnalyses(JobOrder $jobOrder, iterable $analysisIds, User $reviewer, ?string $notes = null): JobOrder
     {
-        if ($jobOrder->status !== JobOrderStatus::PendingReview || $jobOrder->reviewed_at !== null) {
+        if ($jobOrder->reviewed_at !== null) {
+            throw ValidationException::withMessages([
+                'job_order' => 'Only jobs awaiting result release can be returned. Released results cannot be returned.',
+            ]);
+        }
+
+        $awaitingHead = $jobOrder->status === JobOrderStatus::PendingReview
+            || (
+                $jobOrder->status === JobOrderStatus::InAnalysis
+                && $jobOrder->samples()->whereNotNull('submitted_for_review_at')->whereNull('released_at')->exists()
+            );
+
+        if (! $awaitingHead) {
             throw ValidationException::withMessages([
                 'job_order' => 'Only jobs awaiting result release can be returned. Released results cannot be returned.',
             ]);
@@ -1418,6 +1926,7 @@ class JobOrderService
             $ids = collect($analysisIds)->unique()->values()->all();
 
             $analyses = $jobOrder->analyses()->whereIn('id', $ids)->get();
+            $touchedSampleIds = $analyses->pluck('sample_id')->filter()->unique()->values();
 
             $analyses->each(function (JobOrderAnalysis $analysis) {
                 $analysis->update([
@@ -1436,6 +1945,22 @@ class JobOrderService
                     $analysis->assignee->notify(new AnalysisReturned($analysis->jobOrder, $analysis));
                 }
             });
+
+            $jobOrder->load(['samples', 'analyses']);
+            foreach ($touchedSampleIds as $sampleId) {
+                $sample = $jobOrder->samples->firstWhere('id', (int) $sampleId);
+                if ($sample === null || $sample->released_at !== null) {
+                    continue;
+                }
+
+                $sampleLines = $jobOrder->analyses->where('sample_id', (int) $sampleId);
+                $stillComplete = $sampleLines->every(
+                    fn (JobOrderAnalysis $line) => $this->lineHasResult($line)
+                );
+                if (! $stillComplete) {
+                    $sample->update(['submitted_for_review_at' => null]);
+                }
+            }
 
             $jobOrder->update([
                 'status' => JobOrderStatus::InAnalysis,

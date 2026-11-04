@@ -39,7 +39,12 @@ class LabQueueUpdated implements ShouldBroadcastNow
     {
         $list = is_array($scopes) ? $scopes : [$scopes];
 
-        event(new self($list, $jobOrderId));
+        try {
+            event(new self($list, $jobOrderId));
+        } catch (\Throwable $exception) {
+            // Bulk/intake saves must not die when Reverb/Guzzle hangs or refuses.
+            report($exception);
+        }
     }
 
     /**

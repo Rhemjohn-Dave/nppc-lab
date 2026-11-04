@@ -29,7 +29,7 @@ type Props = {
     releasedPrint?: ReleasedPrint;
     onOpenTask: (task: AnalystTask) => void;
     onPreview: (url: string) => void;
-    onSubmit: (jobId: number) => void;
+    onSubmit: (jobId: number, sampleId?: number | null) => void;
     onEditSignatories?: (jobId: number) => void;
 };
 
@@ -361,14 +361,28 @@ export default function AnalystJobSheet({
                                         size="sm"
                                         variant="outline"
                                         disabled={
-                                            !consolidation.can_preview ||
-                                            !consolidation.preview_url
+                                            !(
+                                                consolidation.samples?.some(
+                                                    (sample) =>
+                                                        sample.can_preview &&
+                                                        sample.preview_url,
+                                                ) ||
+                                                (consolidation.can_preview &&
+                                                    consolidation.preview_url)
+                                            )
                                         }
                                         onClick={() => {
-                                            if (consolidation.preview_url) {
-                                                onPreview(
-                                                    consolidation.preview_url,
-                                                );
+                                            const sampleUrl =
+                                                consolidation.samples?.find(
+                                                    (sample) =>
+                                                        sample.can_preview &&
+                                                        sample.preview_url,
+                                                )?.preview_url;
+                                            const url =
+                                                sampleUrl ||
+                                                consolidation.preview_url;
+                                            if (url) {
+                                                onPreview(url);
                                             }
                                         }}
                                     >
@@ -377,10 +391,29 @@ export default function AnalystJobSheet({
                                     <Button
                                         size="sm"
                                         className="bg-nppc-900 hover:bg-nppc-700"
-                                        disabled={!consolidation.can_submit}
-                                        onClick={() => onSubmit(job.id)}
+                                        disabled={
+                                            !(
+                                                consolidation.samples?.some(
+                                                    (sample) =>
+                                                        sample.can_submit,
+                                                ) ||
+                                                consolidation.unscoped_can_submit ||
+                                                consolidation.can_submit
+                                            )
+                                        }
+                                        onClick={() => {
+                                            const sampleId =
+                                                consolidation.samples?.find(
+                                                    (sample) =>
+                                                        sample.can_submit,
+                                                )?.id ?? null;
+                                            onSubmit(job.id, sampleId);
+                                        }}
                                     >
-                                        Send to Head
+                                        {(consolidation.samples?.length ?? 0) >
+                                        1
+                                            ? 'Send sample to Head'
+                                            : 'Send to Head'}
                                     </Button>
                                 </>
                             )}

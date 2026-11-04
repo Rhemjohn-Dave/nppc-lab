@@ -16,10 +16,13 @@ return [
     */
 
     'ssr' => [
-        'enabled' => true,
-        'url' => 'http://127.0.0.1:13714',
+        // Local Vite SSR warmup often hangs; disable via .env or rely on short timeouts below.
+        'enabled' => (bool) env('INERTIA_SSR_ENABLED', false),
+        'url' => env('INERTIA_SSR_URL', 'http://127.0.0.1:13714'),
+        'hot_url' => env('INERTIA_SSR_HOT_URL'),
+        'timeout' => (float) env('INERTIA_SSR_TIMEOUT', 3),
+        'connect_timeout' => (float) env('INERTIA_SSR_CONNECT_TIMEOUT', 1),
         // 'bundle' => base_path('bootstrap/ssr/ssr.mjs'),
-
     ],
 
     /*

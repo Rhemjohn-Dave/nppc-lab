@@ -13,6 +13,7 @@ import type {
 } from '@/components/analyst/types';
 import {
     groupTasksBySample,
+    hasEncodedResult,
     jobProgress,
 } from '@/components/analyst/types';
 import { Button } from '@/components/ui/button';
@@ -66,7 +67,7 @@ type Props = {
     onSaveDraft: () => void;
     onRequestComplete: (event: FormEvent) => void;
     onPreview: (url: string) => void;
-    onSendToHead: (jobId: number) => void;
+    onSendToHead: (jobId: number, sampleId?: number | null) => void;
     onEditSignatories?: (jobId: number) => void;
     onEditFooter?: (jobId: number) => void;
 };
@@ -129,18 +130,6 @@ export default function AnalystEncodingStudio({
         ''
     ).trim();
 
-    const previewUrl =
-        consolidation?.preview_url ||
-        releasedPrint?.preview_url ||
-        (tasks[0]
-            ? `/analyst/job-orders/${job.id}/result-report`
-            : null);
-    const canPreview = Boolean(
-        consolidation?.can_preview ||
-            releasedPrint?.can_preview ||
-            tasks.some((t) => t.report?.can_preview),
-    );
-    const canSend = Boolean(consolidation?.can_submit);
     const canEditFooter = Boolean(
         consolidation?.footer?.can_edit || releasedPrint?.footer?.can_edit,
     );
@@ -198,6 +187,66 @@ export default function AnalystEncodingStudio({
             job.samples?.find((s) => Number(s.id) === Number(id)) ?? null
         );
     }, [active, activeSampleGroup, job.samples]);
+
+    const activeSampleId =
+        active?.sample_id ?? activeSampleGroup?.sample_id ?? null;
+    const activeConsolidationSample = consolidation?.samples?.find(
+        (sample) => Number(sample.id) === Number(activeSampleId),
+    );
+    const sampleAlreadyAtHead = Boolean(
+        activeConsolidationSample?.submitted ||
+            activeSample?.submitted_for_review,
+    );
+    const activeReleasedSample = releasedPrint?.samples?.find(
+        (sample) => Number(sample.id) === Number(activeSampleId),
+    );
+    // Active-sample readiness (ignore other samples on the JO).
+    const sampleFullyEncoded =
+        checklist.length > 0 &&
+        checklist.every(
+            (task) =>
+                task.is_sample_preparation === true ||
+                hasEncodedResult(task) ||
+                task.status === 'completed',
+        );
+    const sampleFullyCompleted =
+        checklist.length > 0 &&
+        checklist.every(
+            (task) =>
+                task.is_sample_preparation === true ||
+                task.status === 'completed',
+        );
+    const canSend = Boolean(
+        !sampleAlreadyAtHead &&
+            (activeConsolidationSample?.can_submit ||
+                (activeSampleId != null
+                    ? sampleFullyCompleted
+                    : consolidation?.unscoped_can_submit ||
+                      consolidation?.can_submit ||
+                      sampleFullyCompleted)),
+    );
+    const previewUrl =
+        (activeSampleId != null
+            ? activeConsolidationSample?.preview_url ||
+              activeReleasedSample?.preview_url ||
+              `/analyst/job-orders/${job.id}/result-report?sample_id=${activeSampleId}`
+            : null) ||
+        consolidation?.preview_url ||
+        releasedPrint?.preview_url ||
+        (tasks[0]
+            ? `/analyst/job-orders/${job.id}/result-report`
+            : null);
+    // Overlay preview needs Completed lines (not drafts). Show the button once the
+    // sample is fully encoded so analysts know the next step is Save & Complete.
+    const canPreview = Boolean(
+        previewUrl &&
+            (activeConsolidationSample?.can_preview ||
+                activeReleasedSample?.can_preview ||
+                sampleFullyCompleted ||
+                sampleAlreadyAtHead ||
+                consolidation?.can_preview ||
+                releasedPrint?.can_preview),
+    );
 
     const sampleLabel =
         active?.sample_label?.trim() ||
@@ -637,13 +686,23 @@ export default function AnalystEncodingStudio({
                     </div>
 
                     <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                        {canPreview && previewUrl ? (
+                        {previewUrl ? (
                             <Button
                                 type="button"
                                 variant="outline"
                                 size="sm"
                                 className="h-9 gap-1 border-slate-200 text-xs shadow-xs"
-                                onClick={() => onPreview(previewUrl)}
+                                disabled={!canPreview}
+                                title={
+                                    canPreview
+                                        ? 'Preview result form for this sample'
+                                        : 'Encode all tests on this sample to preview'
+                                }
+                                onClick={() => {
+                                    if (canPreview) {
+                                        onPreview(previewUrl);
+                                    }
+                                }}
                             >
                                 <FileText className="size-3.5" />
                                 <span className="hidden sm:inline">Preview</span>
@@ -703,7 +762,10 @@ export default function AnalystEncodingStudio({
                                 ) : null}
                             </Button>
                         ) : null}
-                        {canSend ? (
+                        {sampleFullyEncoded ||
+                        sampleFullyCompleted ||
+                        canSend ||
+                        sampleAlreadyAtHead ? (
                             <div className="flex flex-col items-end gap-1">
                                 {sendGateError ? (
                                     <p
@@ -713,15 +775,41 @@ export default function AnalystEncodingStudio({
                                         {sendGateError}
                                     </p>
                                 ) : null}
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    className="h-9 gap-1 bg-nppc-900 text-xs font-semibold hover:bg-nppc-700"
-                                    onClick={() => onSendToHead(job.id)}
-                                >
-                                    {hasReturned ? 'Resubmit' : 'Send to Head'}
-                                    <Send className="size-3.5" />
-                                </Button>
+                                {sampleAlreadyAtHead && !canSend ? (
+                                    <p className="max-w-xs text-right text-[11px] font-medium text-emerald-800">
+                                        This sample is already with Head.
+                                    </p>
+                                ) : (
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        className="h-9 gap-1 bg-nppc-900 text-xs font-semibold hover:bg-nppc-700"
+                                        disabled={!canSend}
+                                        title={
+                                            canSend
+                                                ? 'Send this sample to Head for release'
+                                                : 'Save & Complete every test on this sample first'
+                                        }
+                                        onClick={() => {
+                                            if (canSend) {
+                                                onSendToHead(
+                                                    job.id,
+                                                    activeSampleId,
+                                                );
+                                            }
+                                        }}
+                                    >
+                                        {hasReturned
+                                            ? 'Resubmit sample'
+                                            : activeSampleId != null &&
+                                                (sampleGroups.length > 1 ||
+                                                    (consolidation?.samples
+                                                        ?.length ?? 0) > 1)
+                                              ? 'Send sample to Head'
+                                              : 'Send to Head'}
+                                        <Send className="size-3.5" />
+                                    </Button>
+                                )}
                             </div>
                         ) : null}
                     </div>

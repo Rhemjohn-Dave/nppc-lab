@@ -83,9 +83,19 @@ class ReviewController extends Controller
         }
         $search = trim($request->string('q')->toString());
 
+        // Whole JO pending review, or still in analysis with at least one submitted sample.
         $unsignedQuery = JobOrder::query()
-            ->where('status', JobOrderStatus::PendingReview)
-            ->whereNull('reviewed_at');
+            ->whereNull('reviewed_at')
+            ->where(function ($query) {
+                $query->where('status', JobOrderStatus::PendingReview)
+                    ->orWhere(function ($inner) {
+                        $inner->where('status', JobOrderStatus::InAnalysis)
+                            ->whereHas('samples', function ($samples) {
+                                $samples->whereNotNull('submitted_for_review_at')
+                                    ->whereNull('released_at');
+                            });
+                    });
+            });
 
         $signedTodayQuery = JobOrder::query()
             ->where('status', JobOrderStatus::ReadyForPickup)
@@ -238,10 +248,29 @@ class ReviewController extends Controller
     public function sign(Request $request, JobOrder $jobOrder): RedirectResponse
     {
         $data = $request->validate([
+            'sample_id' => ['nullable', 'integer', 'exists:samples,id'],
             'review_notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        $this->jobOrders->sign($jobOrder, $request->user(), $data['review_notes'] ?? null);
+        $sampleId = isset($data['sample_id']) ? (int) $data['sample_id'] : null;
+
+        $this->jobOrders->sign(
+            $jobOrder,
+            $request->user(),
+            $data['review_notes'] ?? null,
+            $sampleId,
+        );
+
+        if ($sampleId !== null && $jobOrder->fresh()?->reviewed_at === null) {
+            $sample = $jobOrder->samples()->find($sampleId);
+
+            return redirect()
+                ->route('head.show', $jobOrder)
+                ->with(
+                    'success',
+                    "Sample ".($sample?->sample_code ?: '#'.$sampleId)." on {$jobOrder->reference_no} released. Other samples may still be pending.",
+                );
+        }
 
         return redirect()->route('head.results', ['tab' => 'unsigned'])->with('success', "Job order {$jobOrder->reference_no} results released.");
     }

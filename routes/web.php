@@ -17,6 +17,7 @@ use App\Http\Controllers\EmailLogController;
 use App\Http\Controllers\HistoryController;
 use App\Http\Controllers\IntakeController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\ReceivingBulkOrderController;
 use App\Http\Controllers\ReceivingController;
 use App\Http\Controllers\ReviewController;
 use Illuminate\Support\Facades\Route;
@@ -53,6 +54,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::middleware('role:receiving')->prefix('receiving')->name('receiving.')->group(function () {
         Route::get('/', [ReceivingController::class, 'index'])->name('index');
+        Route::get('/bulk-orders', [ReceivingBulkOrderController::class, 'index'])->name('bulk-orders.index');
+        Route::get('/bulk-orders/create', [ReceivingBulkOrderController::class, 'create'])->name('bulk-orders.create');
+        Route::post('/bulk-orders', [ReceivingBulkOrderController::class, 'store'])->name('bulk-orders.store');
+        Route::post('/bulk-orders/draft', [ReceivingBulkOrderController::class, 'saveDraft'])->name('bulk-orders.draft');
+        Route::get('/bulk-orders/{jobOrder}/edit', [ReceivingBulkOrderController::class, 'edit'])->name('bulk-orders.edit');
+        Route::post('/bulk-orders/{jobOrder}/draft', [ReceivingBulkOrderController::class, 'saveDraft'])->name('bulk-orders.draft.update');
+        Route::get('/{jobOrder}/attachment', [ReceivingBulkOrderController::class, 'downloadAttachment'])->name('attachment');
         Route::get('/{jobOrder}', [ReceivingController::class, 'show'])->name('show');
         Route::patch('/{jobOrder}/pricing', [ReceivingController::class, 'updatePricing'])->name('pricing');
         Route::post('/{jobOrder}/receive', [ReceivingController::class, 'receive'])->name('receive');

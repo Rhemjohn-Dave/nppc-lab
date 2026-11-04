@@ -20,6 +20,8 @@ type Props = {
     onConfirm: () => void;
     jobReference?: string | null;
     samples: SampleBreakdownRow[];
+    /** When set, only this sample must be encoded to confirm (multi-sample JOs). */
+    activeSampleId?: number | null;
     activeTaskId?: number | null;
     formResultValue?: string;
 };
@@ -81,11 +83,19 @@ export default function CompleteJobOrderDialog({
     onConfirm,
     jobReference,
     samples,
+    activeSampleId = null,
     activeTaskId = null,
     formResultValue = '',
 }: Props) {
+    const sampleScoped = activeSampleId != null;
+
     const workableSamples = useMemo((): SampleStats[] => {
         return samples
+            .filter((group) =>
+                sampleScoped
+                    ? Number(group.sample_id) === Number(activeSampleId)
+                    : true,
+            )
             .map((group) => {
                 const tasks = group.tasks.filter((t) => canWorkTask(t));
                 const encoded = tasks.filter((t) =>
@@ -106,7 +116,7 @@ export default function CompleteJobOrderDialog({
                 };
             })
             .filter((group) => group.tasks.length > 0);
-    }, [samples, activeTaskId, formResultValue]);
+    }, [samples, sampleScoped, activeSampleId, activeTaskId, formResultValue]);
 
     const initialKey = useMemo(() => {
         if (activeTaskId != null) {
@@ -158,16 +168,22 @@ export default function CompleteJobOrderDialog({
             <DialogContent className="flex max-h-[82vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[800px]">
                 <DialogHeader className="shrink-0 space-y-1 border-b border-slate-200 px-5 py-3.5 text-left sm:px-6">
                     <DialogTitle className="font-heading text-base text-nppc-900 sm:text-lg">
-                        Complete all tests for this job order?
+                        {sampleScoped
+                            ? 'Complete all tests for this sample?'
+                            : 'Complete all tests for this job order?'}
                     </DialogTitle>
                     {jobReference ? (
                         <p className="font-mono text-xs font-medium text-slate-500">
                             JO #{jobReference.replace(/^JO\s*#?/i, '')}
+                            {sampleScoped && workableSamples[0]
+                                ? ` · ${chipLabel(workableSamples[0])}`
+                                : ''}
                         </p>
                     ) : null}
                     <DialogDescription className="text-xs text-slate-600 sm:text-sm">
-                        Mark every encoded test on this job order complete. You
-                        can still Send to Head afterward.
+                        {sampleScoped
+                            ? 'Mark every encoded test on this sample complete. Other samples stay open. You can Send this sample to Head afterward.'
+                            : 'Mark every encoded test on this job order complete. You can still Send to Head afterward.'}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -364,7 +380,9 @@ export default function CompleteJobOrderDialog({
                         )}
                     >
                         {ready
-                            ? `✓ All ${testTotal} tests are encoded and ready to complete.`
+                            ? sampleScoped
+                                ? `✓ All ${testTotal} tests on this sample are encoded and ready to complete.`
+                                : `✓ All ${testTotal} tests are encoded and ready to complete.`
                             : `${remaining} test${remaining === 1 ? '' : 's'} still need encoding.`}
                     </p>
                     <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -391,7 +409,9 @@ export default function CompleteJobOrderDialog({
                         >
                             {processing
                                 ? 'Completing…'
-                                : 'Confirm & Complete Job Order →'}
+                                : sampleScoped
+                                  ? 'Confirm & Complete Sample →'
+                                  : 'Confirm & Complete Job Order →'}
                         </Button>
                     </div>
                 </DialogFooter>

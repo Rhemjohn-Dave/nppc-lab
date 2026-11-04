@@ -57,6 +57,19 @@ export function AppSidebar({ collapsible = 'icon' }: AppSidebarProps) {
                       title: 'Receiving',
                       href: '/receiving',
                       icon: PackageOpen,
+                      children: [
+                          {
+                              title: 'Queue',
+                              href: '/receiving',
+                              icon: ClipboardCheck,
+                          },
+                          {
+                              title: 'Bulk order',
+                              href: '/receiving/bulk-orders',
+                              activeMatch: '/receiving/bulk-orders',
+                              icon: FileStack,
+                          },
+                      ],
                   } satisfies NavItem,
               ]
             : []),

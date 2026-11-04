@@ -8,7 +8,7 @@ use Illuminate\Support\Collection;
 /**
  * Per-sample control numbers printed on RFA Job Order forms.
  *
- * Rule: one sample → reference_no only; two or more → reference_no + A/B/C…
+ * Rule: one sample → reference_no only; two or more → reference_no + A/B/C…Z then AA, AB, AC…
  */
 class SampleControlNumber
 {
@@ -30,11 +30,27 @@ class SampleControlNumber
             return $referenceNo;
         }
 
-        if ($indexZeroBased > 25) {
-            return $referenceNo.($indexZeroBased + 1);
+        return $referenceNo.self::letterSuffix($indexZeroBased);
+    }
+
+    /**
+     * Excel-style column letters: 0→A … 25→Z, 26→AA, 27→AB, …
+     */
+    public static function letterSuffix(int $indexZeroBased): string
+    {
+        if ($indexZeroBased < 0) {
+            return '';
         }
 
-        return $referenceNo.chr(ord('A') + $indexZeroBased);
+        $n = $indexZeroBased;
+        $suffix = '';
+
+        while ($n >= 0) {
+            $suffix = chr(ord('A') + ($n % 26)).$suffix;
+            $n = intdiv($n, 26) - 1;
+        }
+
+        return $suffix;
     }
 
     public static function forJobOrder(JobOrder $jobOrder, int $indexZeroBased): ?string

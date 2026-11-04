@@ -45,7 +45,7 @@ type Props = {
     onOpenJobDetails: (jobId: number) => void;
     onOpenTask: (task: AnalystTask) => void;
     onPreview: (url: string) => void;
-    onSendToHead: (jobId: number) => void;
+    onSendToHead: (jobId: number, sampleId?: number | null) => void;
 };
 
 function assigneeLabel(task: AnalystTask): string {
@@ -218,17 +218,38 @@ export default function AnalystWorkQueueTable({
                             const consolidation = consolidationsById.get(
                                 job.id,
                             );
+                            const readySampleId =
+                                consolidation?.samples?.find(
+                                    (sample) => sample.can_submit,
+                                )?.id ?? null;
                             const canSendToHead = Boolean(
-                                consolidation?.can_submit,
+                                readySampleId != null ||
+                                    consolidation?.unscoped_can_submit ||
+                                    consolidation?.can_submit,
                             );
-                            const previewUrl = consolidation?.preview_url
-                                ? consolidation.preview_url
-                                : tasks[0]?.report?.can_preview
-                                  ? `/analyst/job-orders/${job.id}/result-report`
-                                  : null;
+                            const readyPreviewSample =
+                                consolidation?.samples?.find(
+                                    (sample) =>
+                                        sample.can_preview && sample.preview_url,
+                                ) ?? null;
+                            const previewUrl =
+                                readyPreviewSample?.preview_url ||
+                                consolidation?.preview_url ||
+                                (tasks[0]?.report?.can_preview
+                                    ? `/analyst/job-orders/${job.id}/result-report`
+                                    : null);
                             const canPreview = Boolean(
-                                consolidation?.can_preview ||
-                                    tasks[0]?.report?.can_preview,
+                                readyPreviewSample?.can_preview ||
+                                    consolidation?.can_preview ||
+                                    tasks[0]?.report?.can_preview ||
+                                    tasks.some(
+                                        (task) =>
+                                            task.status === 'completed' &&
+                                            task.job_order.samples?.some(
+                                                (sample) =>
+                                                    sample.submitted_for_review,
+                                            ),
+                                    ),
                             );
                             const sampleRows = sampleBreakdown(tasks);
                             const multiSample =
@@ -324,14 +345,22 @@ export default function AnalystWorkQueueTable({
                                                         size="sm"
                                                         className="h-7 gap-1.5 bg-nppc-900 hover:bg-nppc-700"
                                                         onClick={() =>
-                                                            onSendToHead(job.id)
+                                                            onSendToHead(
+                                                                job.id,
+                                                                readySampleId,
+                                                            )
                                                         }
                                                     >
                                                         <Send
                                                             className="size-3.5 shrink-0"
                                                             aria-hidden="true"
                                                         />
-                                                        Send to Head
+                                                        {readySampleId !=
+                                                            null &&
+                                                        (consolidation?.samples
+                                                            ?.length ?? 0) > 1
+                                                            ? 'Send sample'
+                                                            : 'Send to Head'}
                                                     </Button>
                                                 ) : (
                                                     primaryTask && (

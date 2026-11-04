@@ -27,6 +27,10 @@ function itemPath(item: NavItem): string {
     return toUrl(item.href);
 }
 
+function itemMatchPath(item: NavItem): string {
+    return item.activeMatch ? toUrl(item.activeMatch) : itemPath(item);
+}
+
 function pathMatches(
     currentPath: string,
     target: string,
@@ -40,6 +44,18 @@ function pathMatches(
     }
 
     return currentPath === target;
+}
+
+function childIsActive(
+    currentPath: string,
+    child: NavItem,
+    parentPath: string,
+): boolean {
+    const matchPath = itemMatchPath(child);
+    // Parent queue routes (e.g. `/receiving`) must not steal active from children.
+    const startsWith = matchPath !== parentPath;
+
+    return pathMatches(currentPath, matchPath, startsWith);
 }
 
 function NavLeaf({
@@ -82,7 +98,7 @@ function NavBranch({
     const children = item.children ?? [];
     const parentPath = itemPath(item);
     const childActive = children.some((child) =>
-        pathMatches(currentPath, itemPath(child), true),
+        childIsActive(currentPath, child, parentPath),
     );
     const exactParent = pathMatches(currentPath, parentPath, false);
     const underParent = exactParent || childActive;
@@ -127,10 +143,10 @@ function NavBranch({
                 <CollapsibleContent>
                     <SidebarMenuSub className="mx-0 ml-3.5 border-l border-slate-200 px-0 pl-2.5">
                         {children.map((child) => {
-                            const active = pathMatches(
+                            const active = childIsActive(
                                 currentPath,
-                                itemPath(child),
-                                true,
+                                child,
+                                parentPath,
                             );
 
                             return (

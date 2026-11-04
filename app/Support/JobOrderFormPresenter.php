@@ -62,6 +62,13 @@ class JobOrderFormPresenter
             'payment_terms' => $jobOrder->payment_terms?->value,
             'payment_terms_label' => $jobOrder->payment_terms?->label(),
             'other_tests' => $jobOrder->other_tests,
+            'attachment_path' => $jobOrder->attachment_path,
+            'attachment_original_name' => $jobOrder->attachment_original_name,
+            'has_attachment' => filled($jobOrder->attachment_path),
+            'attachment_url' => filled($jobOrder->attachment_path)
+                ? "/receiving/{$jobOrder->id}/attachment"
+                : null,
+            'is_bulk' => $jobOrder->samples->count() >= 2,
             'status' => $jobOrder->status->value,
             'status_label' => $jobOrder->status->label(),
             'total_cost' => $jobOrder->total_cost,
@@ -101,6 +108,10 @@ class JobOrderFormPresenter
                         $index,
                         $jobOrder->samples->count(),
                     ),
+                    'submitted_for_review' => $sample->submitted_for_review_at !== null,
+                    'submitted_for_review_at' => $sample->submitted_for_review_at?->toIso8601String(),
+                    'released' => $sample->released_at !== null,
+                    'released_at' => $sample->released_at?->toIso8601String(),
                 ];
             })->values(),
             'analyses' => $jobOrder->analyses->map(function ($line) use ($jobOrder, $withResults) {

@@ -47,6 +47,10 @@ use Illuminate\Support\Carbon;
  * @property string|null $review_notes
  * @property array{by_form?: array<string, list<array{name: string, prc_id: string|null}>>}|list<array{name: string, prc_id: string|null}>|null $result_signatories
  * @property array{temperature_c?: string|null, humidity_pct?: string|null, test_report_no?: string|null, lab_conditions?: string|null, references?: string|null, notes?: string|null}|null $result_footer
+ * @property string|null $attachment_path
+ * @property string|null $attachment_original_name
+ * @property bool $is_bulk_draft
+ * @property bool $see_attached_file
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Collection<int, Sample> $samples
@@ -78,6 +82,10 @@ class JobOrder extends Model
         'payment_mode',
         'payment_terms',
         'other_tests',
+        'attachment_path',
+        'attachment_original_name',
+        'is_bulk_draft',
+        'see_attached_file',
         'status',
         'total_cost',
         'discount_amount',
@@ -108,6 +116,8 @@ class JobOrder extends Model
             'reviewed_at' => 'datetime',
             'result_signatories' => 'array',
             'result_footer' => 'array',
+            'is_bulk_draft' => 'boolean',
+            'see_attached_file' => 'boolean',
         ];
     }
 

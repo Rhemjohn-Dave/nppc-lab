@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Ssr\TimedHttpGateway;
 use App\Support\Mail\MailSettings;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
@@ -9,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Inertia\Ssr\Gateway;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -17,7 +19,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(Gateway::class, TimedHttpGateway::class);
     }
 
     /**

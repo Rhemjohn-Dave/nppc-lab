@@ -18,12 +18,16 @@ class Sample extends Model
         'unit',
         'remarks',
         'sort_order',
+        'submitted_for_review_at',
+        'released_at',
     ];
 
     protected function casts(): array
     {
         return [
             'quantity' => 'decimal:2',
+            'submitted_for_review_at' => 'datetime',
+            'released_at' => 'datetime',
         ];
     }
 

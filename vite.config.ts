@@ -18,7 +18,8 @@ export default defineConfig({
             input: ['resources/css/app.css', 'resources/js/app.tsx'],
             refresh: true,
         }),
-        inertia(),
+        // Dev SSR warmup hangs on Windows (font CSS fetchModule timeouts). Use client-only.
+        inertia({ ssr: false }),
         react({
             babel: {
                 plugins: ['babel-plugin-react-compiler'],

@@ -79,7 +79,7 @@ They are responsible for:
 - entering test results (including Passed/Failed where the catalog requires it)
 - saving drafts while work is ongoing
 - completing analysis lines
-- the **designated package analyst** consolidating the job and sending it to Head when every result is encoded
+- the **designated package analyst** consolidating results and sending them to Head (on multi-sample JOs, one sample at a time when that sample’s assays are complete)
 - **previewing** the filled result form on screen before Send to Head
 - **correcting** encoded results and the **printed analyst name/PRC** after Send to Head and after Head Release (before wet-sign print), without waiting for Head to return the line
 - **printing** the dated result form only after Head Release, then wet-signing it with Head
@@ -92,16 +92,16 @@ Analysts encode lines suggested to them or any open line for types they are qual
 Head Analysis has **two distinct checkpoints**:
 
 1. **Approve Job Order** (Step 1) — after Receiving costing; unlocks JO print ×3 and send to analysts
-2. **Release results** (Step 4) — after analysts encode and Send to Head; sets Ready for pickup
+2. **Release results** (Step 4) — after analysts Send to Head (whole JO or per sample on multi-sample jobs); Ready for pickup when **all** samples are released
 
 They are responsible for:
 - approving priced Job Orders so Receiving can print and start analysis
 - reviewing encoded results on the job screen
-- releasing completed result outputs (system “sign / release”)
+- releasing completed result outputs (system “sign / release”), including **one submitted sample at a time** while other samples are still in analysis
 - returning analyses for correction when needed
 - reviewing completed records in history
 
-Head does **not** print the RFA (Receiving does). After result Release:
+Head does **not** print the RFA (Receiving does). After **all** samples on the JO are released:
 - the job becomes Ready for pickup
 - Report date and Release date on the result sheet fill from that moment (`Asia/Manila`)
 - the customer “results ready” email is queued if an email is on file (delivery status is visible on the job; Receiving can resend)
@@ -125,7 +125,9 @@ The intake area captures:
 - optional **standalone tests** that are not part of a package
 - for **Wastewater**, a required **Sample description** kind (**Wastewater** / **River water** / **Abstracted water**) chosen **per sample** (not once for the whole JO) and printed on that sample’s result sheet **Sample Description**. One JO may mix kinds (e.g. Abstracted + River). Selecting the **Physico-chem panel** (intake preset still `LSP-7.8-FO2`) defaults to the **full** panel for Wastewater and River water, or **pH / DO / BOD / TSS** only for Abstracted water (members remain editable individual-pay lines, not a package). Kind also selects which result form prints: **FO2** (WW/River, 4 signatories + 6 notes) vs **FO2A** (Abstracted, 3 signatories + 4 notes). Signatories are stored **per form code** so FO2 and FO2A role slots do not cross-wire. Lab **temperature**, **humidity**, and **Test Report #** stay JO-wide on `job_orders.result_footer` (FO2/FO2A may also edit references/notes). Those four sheets also print a centered bottom page stamp (`- page 1/1 -`)
 
-**Multi-sample (same classification):** one JO keeps reference `YY-NNNN`; printed control numbers are `YY-NNNNA`, `YY-NNNNB`, … when there are 2+ samples. Each sample picks its own packages/tests and (for Wastewater) its own Sample description; billing is the **sum of each sample’s lines** (four samples with the same package = 4×). Different classifications (e.g. food + water) stay **separate JOs** for now.
+**Multi-sample (same classification):** one JO keeps reference `YY-NNNN`; printed control numbers are `YY-NNNNA`, `YY-NNNNB`, … `YY-NNNNZ`, then `YY-NNNNAA`, `YY-NNNNAB`, … when there are 2+ samples. Each sample picks its own packages/tests and (for Wastewater) its own Sample description; billing is the **sum of each sample’s lines** (four samples with the same package = 4×). Different classifications (e.g. food + water) stay **separate JOs** for now.
+
+**Receiving bulk order:** Receiving staff manage multi-sample JOs from **Receiving → Bulk order** (table of drafts + submitted, then **New bulk order**). Customer once, sample grid from a paper list, optional attachment, same packages/tests on every sample. With **see attached file**, the printed JO/RFA shows a single sample line (`see attached file`) and one unsuffixed control number (the JO reference); receiver-encoded names and A/B/C control suffixes are stored for result sheets. **Save for later** parks a draft on that table (**Continue**); finishing clears the draft flag and puts a normal JO on the Receiving queue for pricing. Downstream pricing / Head JO approval / analyst result sheets are unchanged — N samples still yield N result reports.
 
 **Aqua scope:** when classification is Aqua, only aquaculture packages/tests (plus shared `both` items such as Metals and Chloramphenicol) appear. Non-Aqua classifications hide Aqua-only Soil/Water/Prawn packages.
 
@@ -139,9 +141,10 @@ After submission, the job enters the internal workflow and the customer is remem
 The dashboard gives a high-level summary of system activity: counts by status, recent job orders, and role-based next actions.
 
 ### 3. Receiving Module
-Used to process new jobs: price → await Head JO approval → print JO ×3 → **Send to analysts** from the queue (without opening the JO) or from the Job Order screen; later reprint after result release.
+Used to process new jobs: price → await Head JO approval → print JO ×3 → **Send to analysts** from the queue (without opening the JO) or from the Job Order screen; later reprint after result release. Receiving may also **create bulk multi-sample JOs** (sample list + shared tests + optional attachment).
 
 It handles:
+- **Bulk order** create via sidebar **Receiving → Bulk order** (many samples, one JO; same tests on every sample; **Save for later** draft)
 - queue: needs pricing / awaiting Head JO / ready for analysts / **Sent to analysts** (`in_analysis` + `pending_review`) / results released; intake-day picker (Today / Yesterday / date) on `created_at` (lab timezone) — with a day selected, sent jobs for that day also appear under All for Open / reprint
 - pricing (status `pending_jo_approval`)
 - print JO/RFA after `jo_approved` (default 3 copies: customer, accounting, Head file; max 20)
@@ -399,10 +402,10 @@ Configurable (Admin → History access). Default orientation: `admin` and `head_
 | `jo_approved` | Head approved JO; Receiving may print ×3 and send to analysts |
 | `priced` | Legacy alias after old costing (migrated to `pending_jo_approval`) |
 | `in_analysis` | Sent to analysts; encoding (or returned from Head) |
-| `pending_review` | Designated analyst sent to Head for result release |
-| `ready_for_pickup` | Head released results (`reviewed_at` set) |
+| `pending_review` | All samples on the JO have been sent to Head for result release |
+| `ready_for_pickup` | Head released **every** sample (`reviewed_at` set) |
 
-Completing all lines does **not** leave `in_analysis`. Submit-for-review is a separate action.
+Completing all lines does **not** leave `in_analysis`. Submit-for-review is a separate action. On multi-sample JOs, analysts may submit **one sample** while the JO stays `in_analysis`; Head may release that sample before the others are submitted. The JO flips to `pending_review` only when every sample has `submitted_for_review_at`, and to `ready_for_pickup` only when every sample has `released_at`.
 
 ---
 
@@ -418,10 +421,10 @@ Operational counts and role-specific next steps.
 Prices lines → status `pending_jo_approval`. After Head JO approval, `JobOrderService::receive()` requires `jo_approved`. Assignment uses `AnalystAssignmentPicker`: open-task counts (Assigned / Pending / In progress / Returned on In analysis jobs) among users on `analysis_assignments` for that type; lowest load, then lower user id; in-batch increment. RFA `print`/`pdf` abort unless `canPrintRfa()` (from `jo_approved` onward). Index chip `reviewed` lists `ReadyForPickup` jobs with `reviewed_at`. Copies via `?copies=` (1–20, default 3) with labels Customer / Accounting / Head file.
 
 ### 4. Analyst Module
-Queue includes lines suggested to the user (`assigned_to`) and other open lines for types on their Admin Assignments matrix (`can_work`). Draft/complete takes ownership. Package signatory (or admin) may view combined report JSON for preview. `can_preview` when the overlay is complete; `can_print` only when `reviewed_at` is set. Combined PDF `?print=1` and non-inline individual PDF download are forbidden until print is allowed. `submitForReview` requires all lines complete and package signatory (or any assignee if no package). After release, `releasedResultPrintsFor()` lists jobs the signatory may print.
+Queue includes lines suggested to the user (`assigned_to`) and other open lines for types on their Admin Assignments matrix (`can_work`). Draft/complete takes ownership. Package signatory (or admin) may view combined report JSON for preview. `can_preview` when the overlay is complete; `can_print` only when `reviewed_at` is set. Combined PDF `?print=1` and non-inline individual PDF download are forbidden until print is allowed. `submitForReview` may take optional `sample_id` on multi-sample JOs (`submitSampleForReview`): that sample’s lines must be complete; other samples stay encodable and the JO remains `in_analysis` until every sample is submitted. Omitting `sample_id` still requires all lines complete (whole-JO path). Package signatory (or any assignee if no package) gates submit. After release, `releasedResultPrintsFor()` lists jobs the signatory may print.
 
 ### 5. Head Analysis Module
-Sidebar parent **Head Analysis** with children **JO approval** (`/head/jo`) and **Results** (`/head/results`). JO chips: awaiting / approved (download JO PDF). Results chips: awaiting release / released today (preview/download result overlay). Queues `pending_jo_approval` for **Approve JO** (`approveJobOrder` / batch). Queues `pending_review` for result **Release**. `sign()` sets `ready_for_pickup`, `reviewed_at`, `reviewed_by`, sends `ResultsReadyMail` to the customer when an email exists, and sends in-app `ResultsReleased` to the package signatory (or line assignees) plus Receiving/admin. Return (before release only) clears selected results back to In analysis, clears `result_signatories`, and notifies the line assignee via `AnalysisReturned`. After release, return is blocked. Head RFA **print** aborts (Receiving prints); Head may **download** JO/result PDFs for review. Head **pdf** serves the controlled JO/RFA overlay. On result release, Head reviews the **analysis result** controlled form (`result-report` / `combined-pdf`): `can_preview` when the overlay is ready (before release); `can_print` / `?print=1` only after `reviewed_at`. RFA is not the released-results document.
+Sidebar parent **Head Analysis** with children **JO approval** (`/head/jo`) and **Results** (`/head/results`). JO chips: awaiting / approved (download JO PDF). Results chips: awaiting release / released today (preview/download result overlay). Queues `pending_jo_approval` for **Approve JO** (`approveJobOrder` / batch). Results queue includes `pending_review` **and** `in_analysis` jobs that have at least one unreleased submitted sample. `sign()` accepts optional `sample_id` to release one sample; full release (`ready_for_pickup`, `reviewed_at`, `reviewed_by`, `ResultsReadyMail`, in-app `ResultsReleased`) runs only when every sample has `released_at`. Return (before that sample’s release) clears selected results back to In analysis, may clear that sample’s `submitted_for_review_at`, clears `result_signatories` when appropriate, and notifies the line assignee via `AnalysisReturned`. After the JO is fully released, return is blocked. Head RFA **print** aborts (Receiving prints); Head may **download** JO/result PDFs for review. Head **pdf** serves the controlled JO/RFA overlay. On result release, Head reviews the **analysis result** controlled form (`result-report` / `combined-pdf`): `can_preview` when the overlay is ready (before release); `can_print` / `?print=1` only after `reviewed_at`. RFA is not the released-results document.
 
 ### 6. History Module
 Ready-for-pickup jobs; signed vs unsigned filters on `reviewed_at`.
@@ -460,10 +463,10 @@ UI label **Send to analysts**. Suggests each line via picker (soft `assigned_to`
 Line statuses: pending → assigned → in_progress → completed (or returned). Soft assignment: qualified analysts may encode teammate-suggested lines; draft/complete takes ownership and emits `LabQueueUpdated` for analyst boards.
 
 ### 6. Submit for review
-`JobOrderService::submitForReview()`. Status `pending_review`. `JobOrderPendingReview` notifications. No customer email.
+`JobOrderService::submitForReview()` (optional `sample_id` → `submitSampleForReview`). Sets `samples.submitted_for_review_at`. Status stays `in_analysis` until every sample is submitted, then `pending_review`. `JobOrderPendingReview` notifications. No customer email.
 
 ### 7. Release results
-`JobOrderService::sign()`. Status `ready_for_pickup`. `reviewed_at` now. Queues `ResultsReadyMail` if an email is present.
+`JobOrderService::sign()` (optional `sample_id` → `signSample`). Sets `samples.released_at`. Status `ready_for_pickup` and `reviewed_at` only when every sample is released. Queues `ResultsReadyMail` if an email is present.
 
 ### Customer email delivery
 `CustomerEmailService` writes an `email_logs` row (`queued` / `sent` / `failed` / `skipped` when no address) and dispatches `SendCustomerEmail` after commit (3 tries; `failed()` records the error). SMTP failures never roll back intake or release. SMTP comes from **Admin → Email Settings** (`MailSettings`, `settings.mail.smtp`, password encrypted) applied at boot and per job; when disabled, `.env` `MAIL_*` applies. Receiving/History job pages list customer emails; admin/receiving can **Resend** (`POST /email-logs/{id}/resend`). Public `/register` is disabled (Fortify registration feature off).

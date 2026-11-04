@@ -17,6 +17,16 @@ import { limsPanel } from '@/lib/lims-page-shell';
 import { cn } from '@/lib/utils';
 import { ChevronDown } from 'lucide-react';
 
+type HeadSample = {
+    id?: number | null;
+    sample_code?: string | null;
+    description?: string | null;
+    matrix?: string | null;
+    control_number?: string | null;
+    submitted_for_review?: boolean;
+    released?: boolean;
+};
+
 type Props = {
     viewMode?: 'jo' | 'results';
     jobOrder: RequestForAnalysisData & {
@@ -26,6 +36,7 @@ type Props = {
         needs_jo_approval?: boolean;
         jo_approved_at?: string | null;
         jo_approver_name?: string | null;
+        samples?: HeadSample[];
     };
 };
 
@@ -59,11 +70,21 @@ export default function HeadShow({ jobOrder, viewMode }: Props) {
     const [resultFormTitle, setResultFormTitle] = useState<string | null>(null);
     const form = useForm({
         review_notes: '',
+        sample_id: null as number | null,
     });
+    const [signSampleId, setSignSampleId] = useState<number | null>(null);
 
     const needsJoApproval = Boolean(jobOrder.needs_jo_approval);
     const showJoForm = needsJoApproval || viewMode === 'jo';
     const isSigned = Boolean(jobOrder.is_signed || jobOrder.reviewed_at);
+    const samples = (jobOrder.samples ?? []) as HeadSample[];
+    const releasableSamples = samples.filter(
+        (sample) =>
+            Boolean(sample.submitted_for_review) &&
+            !sample.released &&
+            sample.id != null,
+    );
+    const multiSamplePending = releasableSamples.length > 0 && samples.length > 1;
     const rfaPdfUrl = `/head/${jobOrder.id}/pdf?inline=1&results=0`;
     const resultReportUrl = `/head/${jobOrder.id}/result-report`;
     const [selectedResultUrl, setSelectedResultUrl] = useState(resultReportUrl);
@@ -185,9 +206,20 @@ export default function HeadShow({ jobOrder, viewMode }: Props) {
         );
     }
 
+    function openSignConfirm(sampleId: number | null = null) {
+        setSignSampleId(sampleId);
+        form.setData('sample_id', sampleId);
+        setConfirmSign(true);
+    }
+
     function sign() {
+        form.setData('sample_id', signSampleId);
         form.post(`/head/${jobOrder.id}/sign`, {
-            onFinish: () => setConfirmSign(false),
+            onFinish: () => {
+                setConfirmSign(false);
+                setSignSampleId(null);
+                form.setData('sample_id', null);
+            },
         });
     }
 
@@ -273,30 +305,73 @@ export default function HeadShow({ jobOrder, viewMode }: Props) {
             </LimsSection>
 
             <LimsSection
-                title={`Samples (${jobOrder.samples?.length ?? 0})`}
+                title={`Samples (${samples.length})`}
                 className="min-w-0"
             >
                 <ul className="divide-y divide-slate-100 text-sm">
-                    {(jobOrder.samples ?? []).slice(0, 5).map((sample, index) => (
-                        <li key={sample.id ?? index} className="py-1.5 first:pt-0 last:pb-0">
-                            <p className="font-medium leading-snug">
-                                {sample.sample_code
-                                    ? `${sample.sample_code} — `
-                                    : ''}
-                                {sample.description || `Sample ${index + 1}`}
-                            </p>
-                            {sample.matrix ? (
-                                <p className="text-xs text-muted-foreground">
-                                    {sample.matrix}
+                    {samples.map((sample, index) => (
+                        <li
+                            key={sample.id ?? index}
+                            className="flex items-start justify-between gap-2 py-1.5 first:pt-0 last:pb-0"
+                        >
+                            <div className="min-w-0">
+                                <p className="font-medium leading-snug">
+                                    {sample.control_number
+                                        ? `${sample.control_number} · `
+                                        : ''}
+                                    {sample.sample_code
+                                        ? `${sample.sample_code} — `
+                                        : ''}
+                                    {sample.description || `Sample ${index + 1}`}
                                 </p>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                                    {sample.matrix ? (
+                                        <span className="text-xs text-muted-foreground">
+                                            {sample.matrix}
+                                        </span>
+                                    ) : null}
+                                    {sample.released ? (
+                                        <Badge
+                                            variant="outline"
+                                            className="h-5 border-emerald-200 bg-emerald-50 text-[10px] text-emerald-900"
+                                        >
+                                            Released
+                                        </Badge>
+                                    ) : sample.submitted_for_review ? (
+                                        <Badge
+                                            variant="outline"
+                                            className="h-5 border-amber-200 bg-amber-50 text-[10px] text-amber-900"
+                                        >
+                                            Awaiting release
+                                        </Badge>
+                                    ) : (
+                                        <Badge
+                                            variant="outline"
+                                            className="h-5 text-[10px] text-slate-600"
+                                        >
+                                            Encoding
+                                        </Badge>
+                                    )}
+                                </div>
+                            </div>
+                            {!showJoForm &&
+                            !isSigned &&
+                            sample.submitted_for_review &&
+                            !sample.released &&
+                            sample.id != null ? (
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 shrink-0 text-xs"
+                                    disabled={form.processing || returning}
+                                    onClick={() => openSignConfirm(sample.id!)}
+                                >
+                                    Release
+                                </Button>
                             ) : null}
                         </li>
                     ))}
-                    {(jobOrder.samples?.length ?? 0) > 5 && (
-                        <li className="py-1 text-xs text-muted-foreground">
-                            +{(jobOrder.samples?.length ?? 0) - 5} more on form
-                        </li>
-                    )}
                 </ul>
             </LimsSection>
 
@@ -685,10 +760,12 @@ export default function HeadShow({ jobOrder, viewMode }: Props) {
                                 !isSigned && (
                                     <Button
                                         className="h-10 bg-nppc-900 hover:bg-nppc-700"
-                                        onClick={() => setConfirmSign(true)}
+                                        onClick={() => openSignConfirm(null)}
                                         disabled={form.processing || returning}
                                     >
-                                        Release results
+                                        {multiSamplePending
+                                            ? 'Release all submitted'
+                                            : 'Release results'}
                                     </Button>
                                 )
                             )}
@@ -710,10 +787,28 @@ export default function HeadShow({ jobOrder, viewMode }: Props) {
 
             <ConfirmDialog
                 open={confirmSign}
-                onOpenChange={setConfirmSign}
-                title={`Release results for ${jobOrder.reference_no}?`}
-                description="Marks results ready for pickup, emails the customer when email is on file, and unlocks dated result print."
-                confirmLabel="Release results"
+                onOpenChange={(open) => {
+                    setConfirmSign(open);
+                    if (!open) {
+                        setSignSampleId(null);
+                        form.setData('sample_id', null);
+                    }
+                }}
+                title={
+                    signSampleId
+                        ? `Release sample on ${jobOrder.reference_no}?`
+                        : `Release results for ${jobOrder.reference_no}?`
+                }
+                description={
+                    signSampleId
+                        ? 'Releases this sample’s result sheets. The job stays open until every sample is released.'
+                        : multiSamplePending
+                          ? 'Releases every submitted sample still awaiting Head. Customer email and ready-for-pickup wait until all samples on the JO are released.'
+                          : 'Marks results ready for pickup, emails the customer when email is on file, and unlocks dated result print.'
+                }
+                confirmLabel={
+                    signSampleId ? 'Release sample' : 'Release results'
+                }
                 processingLabel="Releasing…"
                 processing={form.processing}
                 onConfirm={sign}

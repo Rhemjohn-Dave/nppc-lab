@@ -4,6 +4,8 @@ export type SampleSummary = {
     description?: string | null;
     matrix?: string | null;
     control_number?: string | null;
+    submitted_for_review?: boolean;
+    released?: boolean;
 };
 
 export type ReportSummary = {
@@ -96,6 +98,19 @@ export type ResultFooterConfig = {
     can_edit?: boolean;
 };
 
+export type ConsolidationSample = {
+    id: number;
+    sample_code?: string | null;
+    description?: string | null;
+    control_number?: string | null;
+    can_submit: boolean;
+    can_preview?: boolean;
+    preview_url?: string | null;
+    submitted: boolean;
+    released: boolean;
+    missing: string[];
+};
+
 export type Consolidation = {
     id: number;
     reference_no: string;
@@ -108,8 +123,11 @@ export type Consolidation = {
     review_notes?: string | null;
     signatory?: ResultSignatoryConfig | null;
     footer?: ResultFooterConfig | null;
+    samples?: ConsolidationSample[];
+    unscoped_can_submit?: boolean;
     lines: Array<{
         id: number;
+        sample_id?: number | null;
         name: string;
         assignee_name?: string | null;
         status: string;
@@ -128,6 +146,13 @@ export type ReleasedPrint = {
     can_preview?: boolean;
     print_url: string | null;
     preview_url?: string | null;
+    samples?: Array<{
+        id: number;
+        can_preview?: boolean;
+        preview_url?: string | null;
+        submitted?: boolean;
+        released?: boolean;
+    }>;
     signatory?: ResultSignatoryConfig | null;
     footer?: ResultFooterConfig | null;
 };

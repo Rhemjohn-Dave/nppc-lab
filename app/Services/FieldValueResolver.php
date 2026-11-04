@@ -111,8 +111,12 @@ class FieldValueResolver
             );
             $bag['results.control_no'] = $resolvedControl;
             $bag['results.sample_code'] = $this->rfaSampleCodeOnly($focusSample);
+            $desc = trim((string) ($focusSample->description ?? ''));
+            // Bulk-encoded sample Name prints as Customer on that sample's result sheet.
+            if ($desc !== '') {
+                $bag['results.customer'] = $desc;
+            }
             if (($form?->form_code ?? null) !== 'LSP-7.8-FO4') {
-                $desc = trim((string) ($focusSample->description ?? ''));
                 if ($desc !== '') {
                     $bag['results.sample_description'] = $desc;
                 }
@@ -816,24 +820,41 @@ class FieldValueResolver
 
         $samples = $jobOrder->samples->values();
         $sampleCount = $samples->count();
-        $bag['samples[]'] = $samples->values()->map(function ($sample, int $index) use ($jobOrder, $sampleCount) {
-            return [
-                'sample_code' => $sample->sample_code,
-                'description' => $sample->description,
-                'control_number' => SampleControlNumber::forIndex(
-                    (string) $jobOrder->reference_no,
-                    $index,
-                    $sampleCount,
-                ),
-                'matrix' => $sample->matrix,
-                'quantity' => $sample->quantity,
-                'unit' => $sample->unit,
-                'remarks' => $sample->remarks,
-            ];
-        })->all();
+        $seeAttached = (bool) $jobOrder->see_attached_file;
+        // Bulk "see attached file": JO prints one sample line + unsuffixed control no.
+        // Per-sample letters/names remain for result sheets (forResult), not RFA slots.
+        if ($seeAttached && $sampleCount > 0) {
+            $bag['samples[]'] = [[
+                'sample_code' => null,
+                'description' => 'see attached file',
+                'control_number' => (string) $jobOrder->reference_no,
+                'matrix' => $samples->first()?->matrix,
+                'quantity' => null,
+                'unit' => null,
+                'remarks' => null,
+            ]];
+        } else {
+            $bag['samples[]'] = $samples->values()->map(function ($sample, int $index) use ($jobOrder, $sampleCount) {
+                return [
+                    'sample_code' => $sample->sample_code,
+                    'description' => $sample->description,
+                    'control_number' => SampleControlNumber::forIndex(
+                        (string) $jobOrder->reference_no,
+                        $index,
+                        $sampleCount,
+                    ),
+                    'matrix' => $sample->matrix,
+                    'quantity' => $sample->quantity,
+                    'unit' => $sample->unit,
+                    'remarks' => $sample->remarks,
+                ];
+            })->all();
+        }
         $firstSample = $samples->first();
-        $bag['samples.sample_code'] = $firstSample?->sample_code;
-        $bag['samples.description'] = $firstSample?->description;
+        $bag['samples.sample_code'] = $seeAttached ? null : $firstSample?->sample_code;
+        $bag['samples.description'] = $seeAttached
+            ? 'see attached file'
+            : $firstSample?->description;
 
         $bag['results.customer'] = $clientDisplayName;
         $bag['results.address'] = $jobOrder->customer_address;
@@ -865,6 +886,17 @@ class FieldValueResolver
         $this->putResultAnalystBag($bag, $jobOrder);
 
         for ($i = 1; $i <= self::RFA_SAMPLE_TOTAL_SLOTS; $i++) {
+            if ($seeAttached) {
+                $bag["sample_code_{$i}"] = $i === 1 && $sampleCount > 0
+                    ? 'see attached file'
+                    : null;
+                $bag["control_number_{$i}"] = $i === 1 && $sampleCount > 0
+                    ? (string) $jobOrder->reference_no
+                    : null;
+
+                continue;
+            }
+
             $sample = $samples->get($i - 1);
             $bag["sample_code_{$i}"] = $this->rfaSampleCodeDescription($sample);
             $bag["control_number_{$i}"] = SampleControlNumber::forIndex(

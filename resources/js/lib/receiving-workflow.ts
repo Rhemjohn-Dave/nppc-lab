@@ -9,6 +9,8 @@ export type ReceivingOrderLike = {
     jo_approver_name?: string | null;
     can_print_rfa?: boolean;
     can_receive?: boolean;
+    is_bulk_draft?: boolean;
+    bulk_continue_url?: string | null;
     created_at?: string | null;
     received_at?: string | null;
 };
@@ -67,6 +69,9 @@ export function markPrintedThisSession(jobOrderId: number): void {
 }
 
 export function receivingStatusLabel(order: ReceivingOrderLike): string {
+    if (order.is_bulk_draft) {
+        return 'Bulk draft';
+    }
     if (order.reviewed || order.reviewed_at) {
         return 'Results released';
     }
@@ -136,6 +141,20 @@ export function nextAction(
             primaryHref: `/receiving/${order.id}`,
             printHref,
             printLabel,
+            emphasize: false,
+        };
+    }
+
+    if (order.is_bulk_draft) {
+        return {
+            title: 'Bulk draft',
+            steps: ['Finish samples and shared tests, then create the JO.'],
+            primaryLabel: 'Continue bulk',
+            primaryHref:
+                order.bulk_continue_url ??
+                `/receiving/bulk-orders/${order.id}/edit`,
+            printHref: null,
+            printLabel: null,
             emphasize: false,
         };
     }

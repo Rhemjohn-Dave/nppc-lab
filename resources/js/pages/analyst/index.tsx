@@ -182,6 +182,7 @@ export default function AnalystIndex({
     const [confirmComplete, setConfirmComplete] = useState(false);
     const [sampleCompletePending, setSampleCompletePending] = useState<{
         jobId: number;
+        sampleId: number | null;
     } | null>(null);
     const [sampleCompleteProcessing, setSampleCompleteProcessing] =
         useState(false);
@@ -199,6 +200,9 @@ export default function AnalystIndex({
     const pendingAfterDraft = useRef<(() => void) | null>(null);
     const draftTaskIdRef = useRef<number | null>(null);
     const [submitSignatoryJobId, setSubmitSignatoryJobId] = useState<
+        number | null
+    >(null);
+    const [submitSignatorySampleId, setSubmitSignatorySampleId] = useState<
         number | null
     >(null);
     const [submitSignatoryError, setSubmitSignatoryError] = useState<
@@ -878,11 +882,20 @@ export default function AnalystIndex({
             return;
         }
 
-        const jobTasks = jobWorkableTasks();
-        const missing = missingJobAssays(jobTasks);
+        const sampleId = active.sample_id ?? null;
+        const jobTasks = jobWorkableTasks().filter((task) =>
+            sampleId == null
+                ? task.sample_id == null
+                : Number(task.sample_id) === Number(sampleId),
+        );
+        const scopeTasks =
+            jobTasks.length > 0 ? jobTasks : jobWorkableTasks();
+        const missing = missingJobAssays(scopeTasks);
         if (missing.length > 0) {
             setSampleCompleteError(
-                `Encode all results before completing this job order: ${missing.join(', ')}.`,
+                sampleId != null
+                    ? `Encode all results for this sample before completing: ${missing.join(', ')}.`
+                    : `Encode all results before completing this job order: ${missing.join(', ')}.`,
             );
             return;
         }
@@ -890,12 +903,13 @@ export default function AnalystIndex({
         setSampleCompleteError(null);
         setSampleCompletePending({
             jobId: selectedGroup.job.id,
+            sampleId,
         });
 
         const consolidation = consolidationsById.get(selectedGroup.job.id);
         const canPreview = Boolean(
             consolidation?.can_preview ||
-                jobTasks.some((t) => t.report?.can_preview),
+                scopeTasks.some((t) => t.report?.can_preview),
         );
 
         if (!canPreview) {
@@ -903,8 +917,10 @@ export default function AnalystIndex({
             return;
         }
 
+        const previewQuery =
+            sampleId != null ? `?sample_id=${sampleId}` : '';
         setPreviewUrl(
-            `/analyst/job-orders/${selectedGroup.job.id}/result-report`,
+            `/analyst/job-orders/${selectedGroup.job.id}/result-report${previewQuery}`,
         );
     }
 
@@ -1048,73 +1064,86 @@ export default function AnalystIndex({
         }
 
         const jobId = sampleCompletePending.jobId;
+        const sampleId = sampleCompletePending.sampleId;
 
         setSampleCompleteProcessing(true);
         setSampleCompleteError(null);
 
-        router.post(`/analyst/job-orders/${jobId}/complete-sample`, {}, {
-            preserveScroll: true,
-            onSuccess: () => {
-                setPreviewUrl(null);
-                setSampleCompletePending(null);
-                setSampleCompleteFallback(false);
-                setSavedJustNow(true);
-                // Completed lines leave open tabs; follow the JO so Send to Head stays reachable.
-                if (filters.status !== 'completed') {
-                    router.get(
-                        '/analyst',
-                        {
-                            q: query,
-                            status: 'completed',
-                            sort: filters.sort ?? 'needs_action',
-                            // Completed tab matches completed_at, which is today.
-                            ...(filters.day ? { day: labDate() } : {}),
-                            job: jobId,
-                        },
-                        {
-                            preserveState: true,
-                            preserveScroll: true,
-                            replace: true,
-                        },
+        router.post(
+            `/analyst/job-orders/${jobId}/complete-sample`,
+            sampleId != null ? { sample_id: sampleId } : {},
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setPreviewUrl(null);
+                    setSampleCompletePending(null);
+                    setSampleCompleteFallback(false);
+                    setSavedJustNow(true);
+                    // Completed lines leave open tabs; follow the JO so Send to Head stays reachable.
+                    if (filters.status !== 'completed') {
+                        router.get(
+                            '/analyst',
+                            {
+                                q: query,
+                                status: 'completed',
+                                sort: filters.sort ?? 'needs_action',
+                                // Completed tab matches completed_at, which is today.
+                                ...(filters.day ? { day: labDate() } : {}),
+                                job: jobId,
+                            },
+                            {
+                                preserveState: true,
+                                preserveScroll: true,
+                                replace: true,
+                            },
+                        );
+                    }
+                },
+                onError: (errs) => {
+                    const first =
+                        errs.assays ||
+                        errs.sample_id ||
+                        errs.job_order ||
+                        Object.values(errs)[0];
+                    setSampleCompleteError(
+                        typeof first === 'string'
+                            ? first
+                            : 'Could not complete this job order.',
                     );
-                }
+                    setSampleCompleteFallback(false);
+                    setPreviewUrl(null);
+                },
+                onFinish: () => setSampleCompleteProcessing(false),
             },
-            onError: (errs) => {
-                const first =
-                    errs.assays ||
-                    errs.sample_id ||
-                    errs.job_order ||
-                    Object.values(errs)[0];
-                setSampleCompleteError(
-                    typeof first === 'string'
-                        ? first
-                        : 'Could not complete this job order.',
-                );
-                setSampleCompleteFallback(false);
-                setPreviewUrl(null);
-            },
-            onFinish: () => setSampleCompleteProcessing(false),
-        });
+        );
     }
 
-    function proceedSubmitAfterFooter(jobId: number) {
+    function proceedSubmitAfterFooter(
+        jobId: number,
+        sampleId: number | null = null,
+    ) {
         const consolidation = consolidationsById.get(jobId);
         if (consolidation?.signatory) {
             setSubmitSignatoryError(null);
             setSubmitSignatoryJobId(jobId);
+            setSubmitSignatorySampleId(sampleId);
 
             return;
         }
 
         router.post(
             `/analyst/job-orders/${jobId}/submit-for-review`,
-            {},
+            sampleId != null ? { sample_id: sampleId } : {},
             { preserveScroll: true },
         );
     }
 
-    function submitJob(jobId: number) {
+    function submitJob(jobId: number, sampleId: number | null = null) {
         const consolidation = consolidationsById.get(jobId);
+        const resolvedSampleId =
+            sampleId ??
+            consolidation?.samples?.find((sample) => sample.can_submit)?.id ??
+            null;
         const footer = consolidation?.footer;
         if (
             footer?.requires_atmosphere &&
@@ -1129,7 +1158,7 @@ export default function AnalystIndex({
 
         setSendGateError(null);
         // Lab conditions are captured at encode time — Send to Head goes to signatories only.
-        proceedSubmitAfterFooter(jobId);
+        proceedSubmitAfterFooter(jobId, resolvedSampleId);
     }
 
     function openEditFooter(jobId: number) {
@@ -1198,7 +1227,10 @@ export default function AnalystIndex({
                 preserveScroll: true,
                 onFinish: () => {
                     if (continueSubmit && jobId) {
-                        proceedSubmitAfterFooter(jobId);
+                        proceedSubmitAfterFooter(
+                            jobId,
+                            submitSignatorySampleId,
+                        );
                     }
                 },
             });
@@ -1223,11 +1255,17 @@ export default function AnalystIndex({
 
         router.post(
             `/analyst/job-orders/${submitSignatoryJobId}/submit-for-review`,
-            { signatories },
+            {
+                signatories,
+                ...(submitSignatorySampleId != null
+                    ? { sample_id: submitSignatorySampleId }
+                    : {}),
+            },
             {
                 preserveScroll: true,
                 onSuccess: () => {
                     setSubmitSignatoryJobId(null);
+                    setSubmitSignatorySampleId(null);
                 },
                 onError: (formErrors) => {
                     const first =
@@ -1254,6 +1292,28 @@ export default function AnalystIndex({
 
         return consolidationsById.get(submitSignatoryJobId)?.signatory ?? null;
     }, [submitSignatoryJobId, consolidationsById]);
+
+    const submitSignatorySampleLabel = useMemo(() => {
+        if (!submitSignatoryJobId || submitSignatorySampleId == null) {
+            return null;
+        }
+
+        const samples =
+            consolidationsById.get(submitSignatoryJobId)?.samples ?? [];
+        const sample = samples.find(
+            (row) => row.id === submitSignatorySampleId,
+        );
+        if (!sample) {
+            return null;
+        }
+
+        return (
+            sample.control_number ||
+            sample.sample_code ||
+            sample.description ||
+            String(sample.id)
+        );
+    }, [submitSignatoryJobId, submitSignatorySampleId, consolidationsById]);
 
     const editSignatoryConfig: ResultSignatoryConfig | null = useMemo(() => {
         if (!editSignatoryJobId) {
@@ -1632,7 +1692,7 @@ export default function AnalystIndex({
                         setSampleCompleteError(null);
                     }
                 }}
-                title="Job order not ready"
+                title="Sample not ready"
                 description={sampleCompleteError ?? ''}
                 confirmLabel="OK"
                 onConfirm={() => setSampleCompleteError(null)}
@@ -1650,6 +1710,7 @@ export default function AnalystIndex({
                 onConfirm={confirmCompleteSample}
                 jobReference={selectedGroup?.job.reference_no}
                 samples={groupTasksBySample(selectedGroup?.tasks ?? [])}
+                activeSampleId={sampleCompletePending?.sampleId ?? null}
                 activeTaskId={active?.id ?? null}
                 formResultValue={
                     active?.uses_raw_finish === true
@@ -1723,6 +1784,7 @@ export default function AnalystIndex({
                 onOpenChange={(open) => {
                     if (!open && !submitSignatorySaving) {
                         setSubmitSignatoryJobId(null);
+                        setSubmitSignatorySampleId(null);
                         setSubmitSignatoryError(null);
                     }
                 }}
@@ -1733,10 +1795,15 @@ export default function AnalystIndex({
                             config={submitSignatoryConfig}
                             submitting={submitSignatorySaving}
                             error={submitSignatoryError}
-                            confirmLabel="Send to Head"
+                            confirmLabel={
+                                submitSignatorySampleLabel
+                                    ? `Send sample ${submitSignatorySampleLabel} to Head`
+                                    : 'Send to Head'
+                            }
                             onCancel={() => {
                                 if (!submitSignatorySaving) {
                                     setSubmitSignatoryJobId(null);
+                                    setSubmitSignatorySampleId(null);
                                     setSubmitSignatoryError(null);
                                 }
                             }}

@@ -49,7 +49,10 @@ class ReceivingController extends Controller
             $intakeStatuses[] = JobOrderStatus::PendingReview;
         }
 
-        $intakeQuery = JobOrder::query()->whereIn('status', $intakeStatuses);
+        // Bulk drafts live under Receiving → Bulk order until finished.
+        $intakeQuery = JobOrder::query()
+            ->whereIn('status', $intakeStatuses)
+            ->where('is_bulk_draft', false);
         $sentQuery = JobOrder::query()->whereIn('status', [
             JobOrderStatus::InAnalysis,
             JobOrderStatus::PendingReview,
@@ -144,6 +147,11 @@ class ReceivingController extends Controller
                 'total_cost' => $order->total_cost,
                 'analyses_count' => $order->analyses_count,
                 'samples_count' => $order->samples_count,
+                'is_bulk' => $order->samples_count >= 2 || (bool) $order->is_bulk_draft,
+                'is_bulk_draft' => (bool) $order->is_bulk_draft,
+                'bulk_continue_url' => $order->is_bulk_draft
+                    ? "/receiving/bulk-orders/{$order->id}/edit"
+                    : null,
                 'created_at' => $order->created_at?->toDayDateTimeString(),
             ]);
 
