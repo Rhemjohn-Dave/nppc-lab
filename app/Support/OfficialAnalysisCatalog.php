@@ -940,7 +940,9 @@ TXT;
                 'official' => 'LSP 7.8 FO5',
                 'revision' => '01',
                 'effective' => 'TBD',
-                'type_codes' => ['MB-02A', 'MB-02B', 'MB-01'],
+                // Prefer package bind; type_codes kept as fallback sync for member slots.
+                'package_code' => 'PKG-DW-BACT',
+                'type_codes' => ['DW-BACT-HPC', 'DW-BACT-TC', 'DW-BACT-FC'],
                 'source_pdf' => 'lsp-7.8-fo5-micro-drinking-water.pdf',
             ],
             'ww_physico' => [

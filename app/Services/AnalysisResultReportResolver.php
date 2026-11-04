@@ -362,7 +362,105 @@ class AnalysisResultReportResolver
             return $exact;
         }
 
+        // Individual intake of package member tests (no package on the JO) still
+        // uses the package-bound result form (e.g. FO5 for HPC+TC+FC).
+        $packageForm = $this->matchingPackageFormByMemberTypes($typeIds);
+        if ($packageForm !== null) {
+            return $packageForm;
+        }
+
         return $this->matchingTypesOnlyMatrixSubsetForm($typeIds, $jobOrder);
+    }
+
+    /**
+     * When the job has no package link but selected types are members of a
+     * package that has an active Analysis Result form, use that form.
+     *
+     * Prefers an exact member-set match, otherwise the smallest package that
+     * contains every selected type (waived slots print as "-" as usual).
+     *
+     * @param  list<int>  $typeIds
+     */
+    private function matchingPackageFormByMemberTypes(array $typeIds): ?ControlledForm
+    {
+        $wanted = array_values(array_unique(array_map('intval', $typeIds)));
+        if ($wanted === []) {
+            return null;
+        }
+        sort($wanted);
+
+        $forms = ControlledForm::query()
+            ->with([
+                'analysisTypes',
+                'currentRevision.fields',
+                'analysisPackage.analysisTypes',
+            ])
+            ->where('category', ControlledFormCategory::AnalysisResult)
+            ->whereNotNull('analysis_package_id')
+            ->whereHas('revisions', fn ($query) => $query->where('status', ControlledFormRevisionStatus::Active))
+            ->orderBy('id')
+            ->get();
+
+        $exact = null;
+        /** @var list<array{form: ControlledForm, size: int}> $subsets */
+        $subsets = [];
+
+        foreach ($forms as $form) {
+            $package = $form->analysisPackage;
+            if ($package === null) {
+                continue;
+            }
+
+            $memberIds = $package->analysisTypes
+                ->pluck('id')
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->sort()
+                ->values()
+                ->all();
+
+            if ($memberIds === []) {
+                continue;
+            }
+
+            $allowed = array_fill_keys($memberIds, true);
+            foreach ($wanted as $typeId) {
+                if (! isset($allowed[$typeId])) {
+                    continue 2;
+                }
+            }
+
+            if ($memberIds === $wanted) {
+                $exact = $form;
+                break;
+            }
+
+            $subsets[] = [
+                'form' => $form,
+                'size' => count($memberIds),
+            ];
+        }
+
+        if ($exact instanceof ControlledForm) {
+            return $exact;
+        }
+
+        if ($subsets === []) {
+            return null;
+        }
+
+        usort(
+            $subsets,
+            function (array $a, array $b): int {
+                if ($a['size'] !== $b['size']) {
+                    return $a['size'] <=> $b['size'];
+                }
+
+                return $a['form']->id <=> $b['form']->id;
+            },
+        );
+
+        return $subsets[0]['form'];
     }
 
     /**

@@ -124,8 +124,44 @@ class AnalysisPackageTest extends TestCase
 
         $this->assertDatabaseMissing('analysis_packages', ['code' => 'PKG-MIC-DW']);
 
+        $package = AnalysisPackage::query()->where('code', 'PKG-DW-BACT')->firstOrFail();
         $fo5 = ControlledForm::query()->where('form_code', 'LSP-7.8-FO5')->firstOrFail();
-        $this->assertNull($fo5->analysis_package_id);
+        $this->assertSame($package->id, $fo5->analysis_package_id);
+    }
+
+    public function test_individual_dw_bact_types_resolve_fo5_without_package_on_jo(): void
+    {
+        $this->seed();
+
+        $hpc = AnalysisType::query()->where('code', 'DW-BACT-HPC')->firstOrFail();
+        $tc = AnalysisType::query()->where('code', 'DW-BACT-TC')->firstOrFail();
+        $fc = AnalysisType::query()->where('code', 'DW-BACT-FC')->firstOrFail();
+        $fo5 = ControlledForm::query()->where('form_code', 'LSP-7.8-FO5')->firstOrFail();
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'Individual Bact Customer',
+            'customer_email' => 'bact-solo@example.com',
+            'classification' => 'Potability',
+            'samples' => [
+                ['description' => 'Drinking water', 'matrix' => 'Liquid'],
+            ],
+            'package_ids' => [],
+            'analysis_type_ids' => [$hpc->id, $tc->id, $fc->id],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $this->assertTrue($job->packages->isEmpty());
+        $this->assertCount(0, $job->packageLinks);
+        $this->assertEqualsCanonicalizing(
+            [$hpc->id, $tc->id, $fc->id],
+            $job->analyses()->pluck('analysis_type_id')->all(),
+        );
+
+        $matched = app(\App\Services\AnalysisResultReportResolver::class)
+            ->matchingControlledForm($job);
+        $this->assertNotNull($matched);
+        $this->assertSame($fo5->id, $matched->id);
+        $this->assertSame('LSP-7.8-FO5', $matched->form_code);
     }
 
     public function test_combined_result_form_matches_package_member_types(): void

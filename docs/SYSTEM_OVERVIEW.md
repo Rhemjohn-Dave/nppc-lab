@@ -211,7 +211,7 @@ Includes:
 | Upload | Category / binding | When used |
 | --- | --- | --- |
 | RFA | Job Order (no package) | Every job — Receiving / History RFA print |
-| Package result sheet (FO4, FO5, …) | Analysis Result → select **Package** | Whenever that package is on the job (full or partial members) |
+| Package result sheet (FO4, FO5, …) | Analysis Result → select **Package** | Whenever that package is on the job **or** the job’s selected tests are those package members chosen individually (full set or subset; waived slots print `-`) |
 | Standalone result sheet | Analysis Result → select analysis type(s) only | Job’s selected tests match that type set and no package form already applies |
 
 Official FO4 / FO5 PDFs live under `resources/forms/` and must still be uploaded, bound to the matching package, mapped, and activated. Other result PDFs follow the same upload → bind → map → activate path.
