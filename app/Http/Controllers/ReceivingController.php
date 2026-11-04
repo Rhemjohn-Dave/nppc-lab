@@ -93,6 +93,7 @@ class ReceivingController extends Controller
 
         $orders = (clone $baseQuery)
             ->withCount(['analyses', 'samples'])
+            ->with(['samples:id,job_order_id,description'])
             ->when(
                 ! $showingReviewed && ! $showingSent && in_array($statusFilter, [
                     JobOrderStatus::DraftSubmitted->value,
@@ -131,29 +132,50 @@ class ReceivingController extends Controller
             })
             ->paginate(15)
             ->withQueryString()
-            ->through(fn (JobOrder $order) => [
-                'id' => $order->id,
-                'reference_no' => $order->reference_no,
-                'customer_name' => $order->customer_name,
-                'customer_email' => $order->customer_email,
-                'customer_contact' => $order->customer_contact,
-                'company_name' => $order->company_name,
-                'status' => $order->status->value,
-                'status_label' => $order->status->label(),
-                'reviewed' => $order->reviewed_at !== null,
-                'jo_approved' => $order->jo_approved_at !== null,
-                'can_print_rfa' => $order->status->canPrintRfa(),
-                'can_receive' => $order->status->canReceiveSamples(),
-                'total_cost' => $order->total_cost,
-                'analyses_count' => $order->analyses_count,
-                'samples_count' => $order->samples_count,
-                'is_bulk' => $order->samples_count >= 2 || (bool) $order->is_bulk_draft,
-                'is_bulk_draft' => (bool) $order->is_bulk_draft,
-                'bulk_continue_url' => $order->is_bulk_draft
-                    ? "/receiving/bulk-orders/{$order->id}/edit"
-                    : null,
-                'created_at' => $order->created_at?->toDayDateTimeString(),
-            ]);
+            ->through(function (JobOrder $order) {
+                $samplesCount = (int) $order->samples_count;
+                $namedCount = $order->samples
+                    ->filter(fn ($sample) => filled(trim((string) ($sample->description ?? ''))))
+                    ->count();
+                $canEncode = ! $order->is_bulk_draft
+                    && $samplesCount >= 2
+                    && in_array($order->status, [
+                        JobOrderStatus::DraftSubmitted,
+                        JobOrderStatus::PendingJoApproval,
+                        JobOrderStatus::Priced,
+                        JobOrderStatus::JoApproved,
+                    ], true);
+
+                return [
+                    'id' => $order->id,
+                    'reference_no' => $order->reference_no,
+                    'customer_name' => $order->customer_name,
+                    'customer_email' => $order->customer_email,
+                    'customer_contact' => $order->customer_contact,
+                    'company_name' => $order->company_name,
+                    'status' => $order->status->value,
+                    'status_label' => $order->status->label(),
+                    'reviewed' => $order->reviewed_at !== null,
+                    'jo_approved' => $order->jo_approved_at !== null,
+                    'can_print_rfa' => $order->status->canPrintRfa(),
+                    'can_receive' => $order->status->canReceiveSamples(),
+                    'total_cost' => $order->total_cost,
+                    'analyses_count' => $order->analyses_count,
+                    'samples_count' => $samplesCount,
+                    'samples_named_count' => $namedCount,
+                    'samples_encode_complete' => $samplesCount < 2 || $namedCount === $samplesCount,
+                    'can_encode_samples' => $canEncode,
+                    'samples_encode_url' => $samplesCount >= 2 && ! $order->is_bulk_draft
+                        ? "/receiving/{$order->id}/samples"
+                        : null,
+                    'is_bulk' => $samplesCount >= 2 || (bool) $order->is_bulk_draft,
+                    'is_bulk_draft' => (bool) $order->is_bulk_draft,
+                    'bulk_continue_url' => $order->is_bulk_draft
+                        ? "/receiving/bulk-orders/{$order->id}/edit"
+                        : null,
+                    'created_at' => $order->created_at?->toDayDateTimeString(),
+                ];
+            });
 
         return Inertia::render('receiving/index', [
             'orders' => $orders,
@@ -181,6 +203,82 @@ class ReceivingController extends Controller
             'jobOrder' => $this->transformJobOrder($jobOrder),
             'emailLogs' => EmailLog::summariesFor($jobOrder),
         ]);
+    }
+
+    public function editSamples(JobOrder $jobOrder): Response
+    {
+        abort_unless($this->jobOrders->canEncodeSampleDetails($jobOrder), 404);
+
+        $jobOrder->load(['samples']);
+        $named = $this->jobOrders->samplesNamedCount($jobOrder);
+
+        return Inertia::render('receiving/encode-samples', [
+            'jobOrder' => [
+                'id' => $jobOrder->id,
+                'reference_no' => $jobOrder->reference_no,
+                'customer_name' => $jobOrder->customer_name,
+                'company_name' => $jobOrder->company_name,
+                'classification' => $jobOrder->classification,
+                'status' => $jobOrder->status->value,
+                'status_label' => $jobOrder->status->label(),
+                'see_attached_file' => (bool) $jobOrder->see_attached_file,
+                'samples_count' => $jobOrder->samples->count(),
+                'samples_named_count' => $named,
+                'samples_encode_complete' => $named === $jobOrder->samples->count(),
+                'show_url' => route('receiving.show', $jobOrder, false),
+            ],
+            'samples' => $jobOrder->samples->values()->map(function ($sample, int $index) use ($jobOrder) {
+                $parsed = $this->parseSampleRemarks((string) ($sample->remarks ?? ''));
+
+                return [
+                    'id' => $sample->id,
+                    'control_number' => \App\Support\SampleControlNumber::forIndex(
+                        (string) $jobOrder->reference_no,
+                        $index,
+                        $jobOrder->samples->count(),
+                    ),
+                    'sample_code' => $sample->sample_code ?? '',
+                    'description' => $sample->description ?? '',
+                    'location' => $parsed['location'],
+                    'sample_point' => $parsed['sample_point'],
+                    'collected_time' => $parsed['collected_time'],
+                    'matrix' => $sample->matrix ?? 'Water',
+                    'quantity' => $sample->quantity !== null ? (string) $sample->quantity : '',
+                    'unit' => $sample->unit ?? 'mL',
+                ];
+            })->all(),
+        ]);
+    }
+
+    public function updateSamples(Request $request, JobOrder $jobOrder): RedirectResponse
+    {
+        abort_unless($this->jobOrders->canEncodeSampleDetails($jobOrder), 404);
+
+        $data = $request->validate([
+            'samples' => ['required', 'array', 'min:2'],
+            'samples.*.id' => ['required', 'integer', 'exists:samples,id'],
+            'samples.*.sample_code' => ['nullable', 'string', 'max:100'],
+            'samples.*.description' => ['nullable', 'string', 'max:255'],
+            'samples.*.location' => ['nullable', 'string', 'max:255'],
+            'samples.*.sample_point' => ['nullable', 'string', 'max:255'],
+            'samples.*.collected_time' => ['nullable', 'string', 'max:50'],
+            'samples.*.matrix' => ['nullable', 'string', 'max:100'],
+            'samples.*.quantity' => ['nullable', 'numeric', 'min:0'],
+            'samples.*.unit' => ['nullable', 'string', 'max:50'],
+        ]);
+
+        $updated = $this->jobOrders->updateBulkSampleDetails($jobOrder, $data['samples']);
+        $named = $this->jobOrders->samplesNamedCount($updated);
+        $total = $updated->samples()->count();
+
+        return redirect()
+            ->route('receiving.samples.edit', $updated)
+            ->with(
+                'success',
+                $named === $total
+                    ? "All {$total} sample names saved."
+                    : "Sample details saved ({$named}/{$total} named). Continue encoding before Send to analysts.",
+            );
     }
 
     public function updatePricing(Request $request, JobOrder $jobOrder): RedirectResponse
@@ -267,5 +365,30 @@ class ReceivingController extends Controller
             403,
             'Print the Job Order / RFA after Head approves the JO (3 copies: customer, accounting, Head).',
         );
+    }
+
+    /**
+     * @return array{location: string, sample_point: string, collected_time: string}
+     */
+    private function parseSampleRemarks(string $remarks): array
+    {
+        $out = [
+            'location' => '',
+            'sample_point' => '',
+            'collected_time' => '',
+        ];
+
+        foreach (explode(' | ', $remarks) as $part) {
+            $part = trim($part);
+            if (str_starts_with($part, 'Location: ')) {
+                $out['location'] = trim(substr($part, 10));
+            } elseif (str_starts_with($part, 'Sample point: ')) {
+                $out['sample_point'] = trim(substr($part, 14));
+            } elseif (str_starts_with($part, 'Collected: ')) {
+                $out['collected_time'] = trim(substr($part, 11));
+            }
+        }
+
+        return $out;
     }
 }

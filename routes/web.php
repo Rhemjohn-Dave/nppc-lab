@@ -61,6 +61,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/bulk-orders/{jobOrder}/edit', [ReceivingBulkOrderController::class, 'edit'])->name('bulk-orders.edit');
         Route::post('/bulk-orders/{jobOrder}/draft', [ReceivingBulkOrderController::class, 'saveDraft'])->name('bulk-orders.draft.update');
         Route::get('/{jobOrder}/attachment', [ReceivingBulkOrderController::class, 'downloadAttachment'])->name('attachment');
+        Route::get('/{jobOrder}/samples', [ReceivingController::class, 'editSamples'])->name('samples.edit');
+        Route::patch('/{jobOrder}/samples', [ReceivingController::class, 'updateSamples'])->name('samples.update');
         Route::get('/{jobOrder}', [ReceivingController::class, 'show'])->name('show');
         Route::patch('/{jobOrder}/pricing', [ReceivingController::class, 'updatePricing'])->name('pricing');
         Route::post('/{jobOrder}/receive', [ReceivingController::class, 'receive'])->name('receive');

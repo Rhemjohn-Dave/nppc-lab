@@ -38,6 +38,10 @@ type Order = {
     total_cost: string | number;
     analyses_count: number;
     samples_count: number;
+    samples_named_count?: number;
+    samples_encode_complete?: boolean;
+    can_encode_samples?: boolean;
+    samples_encode_url?: string | null;
     is_bulk?: boolean;
     is_bulk_draft?: boolean;
     bulk_continue_url?: string | null;

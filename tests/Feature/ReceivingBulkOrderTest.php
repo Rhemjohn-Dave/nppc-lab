@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\JobOrderStatus;
 use App\Models\AnalysisType;
 use App\Models\ControlledForm;
 use App\Models\JobOrder;
@@ -242,5 +243,101 @@ class ReceivingBulkOrderTest extends TestCase
         $this->assertFalse((bool) $job->is_bulk_draft);
         $this->assertCount(2, $job->samples);
         $this->assertCount(2, $job->analyses);
+    }
+
+    public function test_bulk_can_price_with_blank_names_then_encode_before_send(): void
+    {
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $type = AnalysisType::query()->where('is_active', true)->where('show_on_kiosk', true)->firstOrFail();
+
+        $this->actingAs($receiving)
+            ->post('/receiving/bulk-orders', [
+                'customer_name' => 'Price First Customer',
+                'classification' => 'Potability',
+                'see_attached_file' => true,
+                'analysis_type_ids' => [$type->id],
+                'samples' => [
+                    ['description' => '', 'matrix' => 'Water'],
+                    ['description' => '', 'matrix' => 'Water'],
+                    ['description' => '', 'matrix' => 'Water'],
+                ],
+            ])
+            ->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $job->load(['samples', 'analyses']);
+        $this->assertCount(3, $job->samples);
+        $this->assertTrue($job->samples->every(fn ($sample) => blank($sample->description)));
+
+        $this->actingAs($receiving)
+            ->get("/receiving/{$job->id}/samples")
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('receiving/encode-samples')
+                ->where('jobOrder.samples_named_count', 0)
+                ->where('jobOrder.samples_count', 3));
+
+        $this->actingAs($receiving)
+            ->patch("/receiving/{$job->id}/pricing", [
+                'lines' => $job->analyses->map(fn ($line) => [
+                    'id' => $line->id,
+                    'unit_price' => 100,
+                    'quantity' => 1,
+                ])->all(),
+            ])
+            ->assertRedirect();
+
+        $job->refresh();
+        $this->assertSame(JobOrderStatus::PendingJoApproval, $job->status);
+
+        $this->approveJobOrder($job);
+
+        $job->refresh();
+        $this->assertSame(JobOrderStatus::JoApproved, $job->status);
+
+        $this->actingAs($receiving)
+            ->post("/receiving/{$job->id}/receive")
+            ->assertSessionHasErrors('samples');
+
+        $this->actingAs($receiving)
+            ->patch("/receiving/{$job->id}/samples", [
+                'samples' => $job->samples->values()->map(fn ($sample, int $index) => [
+                    'id' => $sample->id,
+                    'description' => 'SOURCE '.chr(65 + $index),
+                    'location' => 'Site '.$index,
+                    'sample_point' => 'Tap',
+                    'collected_time' => '10:0'.$index,
+                    'matrix' => 'Water',
+                ])->all(),
+            ])
+            ->assertRedirect(route('receiving.samples.edit', $job));
+
+        $job->load('samples');
+        $this->assertSame('SOURCE A', $job->samples[0]->description);
+        $this->assertSame('SOURCE C', $job->samples[2]->description);
+        $this->assertStringContainsString('Location: Site 0', (string) $job->samples[0]->remarks);
+
+        $this->actingAs($receiving)
+            ->post("/receiving/{$job->id}/receive")
+            ->assertRedirect(route('receiving.index'));
+
+        $job->refresh();
+        $this->assertSame(JobOrderStatus::InAnalysis, $job->status);
+
+        $this->actingAs($receiving)
+            ->get("/receiving/{$job->id}/samples")
+            ->assertNotFound();
+
+        $this->actingAs($receiving)
+            ->patch("/receiving/{$job->id}/samples", [
+                'samples' => $job->samples->values()->map(fn ($sample) => [
+                    'id' => $sample->id,
+                    'description' => 'Blocked',
+                    'matrix' => 'Water',
+                ])->all(),
+            ])
+            ->assertNotFound();
     }
 }

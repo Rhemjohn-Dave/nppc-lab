@@ -59,6 +59,7 @@ class ReceivingBulkOrderController extends Controller
 
         $orders = JobOrder::query()
             ->withCount(['samples', 'analyses'])
+            ->with(['samples:id,job_order_id,description'])
             ->when($tab === 'drafts', fn ($query) => $query->where('is_bulk_draft', true))
             ->when($tab === 'submitted', function ($query) {
                 $query->where('is_bulk_draft', false)->has('samples', '>=', 2);
@@ -74,29 +75,41 @@ class ReceivingBulkOrderController extends Controller
             ->latest()
             ->paginate(15)
             ->withQueryString()
-            ->through(fn (JobOrder $order) => [
-                'id' => $order->id,
-                'reference_no' => $order->reference_no,
-                'customer_name' => $order->customer_name,
-                'company_name' => $order->company_name,
-                'customer_contact' => $order->customer_contact,
-                'classification' => $order->classification,
-                'status' => $order->status->value,
-                'status_label' => $order->status->label(),
-                'samples_count' => $order->samples_count,
-                'analyses_count' => $order->analyses_count,
-                'is_bulk_draft' => (bool) $order->is_bulk_draft,
-                'has_attachment' => filled($order->attachment_path),
-                'attachment_original_name' => $order->attachment_original_name,
-                'continue_url' => $order->is_bulk_draft
-                    ? route('receiving.bulk-orders.edit', $order, false)
-                    : null,
-                'show_url' => $order->is_bulk_draft
-                    ? null
-                    : route('receiving.show', $order, false),
-                'updated_at' => $order->updated_at?->toDayDateTimeString(),
-                'created_at' => $order->created_at?->toDayDateTimeString(),
-            ]);
+            ->through(function (JobOrder $order) {
+                $named = $order->samples
+                    ->filter(fn ($sample) => filled(trim((string) ($sample->description ?? ''))))
+                    ->count();
+
+                return [
+                    'id' => $order->id,
+                    'reference_no' => $order->reference_no,
+                    'customer_name' => $order->customer_name,
+                    'company_name' => $order->company_name,
+                    'customer_contact' => $order->customer_contact,
+                    'classification' => $order->classification,
+                    'status' => $order->status->value,
+                    'status_label' => $order->status->label(),
+                    'samples_count' => $order->samples_count,
+                    'samples_named_count' => $named,
+                    'samples_encode_complete' => (int) $order->samples_count < 2
+                        || $named === (int) $order->samples_count,
+                    'analyses_count' => $order->analyses_count,
+                    'is_bulk_draft' => (bool) $order->is_bulk_draft,
+                    'has_attachment' => filled($order->attachment_path),
+                    'attachment_original_name' => $order->attachment_original_name,
+                    'continue_url' => $order->is_bulk_draft
+                        ? route('receiving.bulk-orders.edit', $order, false)
+                        : null,
+                    'encode_url' => ! $order->is_bulk_draft
+                        ? route('receiving.samples.edit', $order, false)
+                        : null,
+                    'show_url' => $order->is_bulk_draft
+                        ? null
+                        : route('receiving.show', $order, false),
+                    'updated_at' => $order->updated_at?->toDayDateTimeString(),
+                    'created_at' => $order->created_at?->toDayDateTimeString(),
+                ];
+            });
 
         return Inertia::render('receiving/bulk-orders', [
             'orders' => $orders,

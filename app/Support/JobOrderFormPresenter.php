@@ -94,6 +94,25 @@ class JobOrderFormPresenter
                     JobOrderStatus::PendingJoApproval,
                     JobOrderStatus::Priced,
                 ], true),
+            'samples_count' => $jobOrder->samples->count(),
+            'samples_named_count' => $jobOrder->samples
+                ->filter(fn ($sample) => filled(trim((string) ($sample->description ?? ''))))
+                ->count(),
+            'can_encode_samples' => ! $jobOrder->is_bulk_draft
+                && $jobOrder->samples->count() >= 2
+                && in_array($jobOrder->status, [
+                    JobOrderStatus::DraftSubmitted,
+                    JobOrderStatus::PendingJoApproval,
+                    JobOrderStatus::Priced,
+                    JobOrderStatus::JoApproved,
+                ], true),
+            'samples_encode_complete' => $jobOrder->samples->count() < 2
+                || $jobOrder->samples->every(
+                    fn ($sample) => filled(trim((string) ($sample->description ?? ''))),
+                ),
+            'samples_encode_url' => (! $jobOrder->is_bulk_draft && $jobOrder->samples->count() >= 2)
+                ? "/receiving/{$jobOrder->id}/samples"
+                : null,
             'samples' => $jobOrder->samples->values()->map(function ($sample, int $index) use ($jobOrder) {
                 return [
                     'id' => $sample->id,

@@ -9,8 +9,14 @@ export type ReceivingOrderLike = {
     jo_approver_name?: string | null;
     can_print_rfa?: boolean;
     can_receive?: boolean;
+    is_bulk?: boolean;
     is_bulk_draft?: boolean;
     bulk_continue_url?: string | null;
+    can_encode_samples?: boolean;
+    samples_encode_complete?: boolean;
+    samples_encode_url?: string | null;
+    samples_named_count?: number;
+    samples_count?: number;
     created_at?: string | null;
     received_at?: string | null;
 };
@@ -159,12 +165,34 @@ export function nextAction(
         };
     }
 
+    const encodeIncomplete =
+        Boolean(order.can_encode_samples) &&
+        order.samples_encode_complete === false;
+    const encodeHref =
+        order.samples_encode_url ??
+        (order.can_encode_samples
+            ? `/receiving/${order.id}/samples`
+            : null);
+    const namedProgress =
+        order.samples_count != null && order.samples_named_count != null
+            ? `${order.samples_named_count}/${order.samples_count} named`
+            : null;
+
     if (order.status === 'draft_submitted') {
         return {
             title: 'Needs pricing',
-            steps: ['Enter quantities and unit prices, then save.'],
+            steps: encodeIncomplete
+                ? [
+                      'Enter quantities and unit prices, then save.',
+                      namedProgress
+                          ? `Encode sample names anytime (${namedProgress}).`
+                          : 'Encode sample names anytime before Send to analysts.',
+                  ]
+                : ['Enter quantities and unit prices, then save.'],
             primaryLabel: 'Price',
             primaryHref: `/receiving/${order.id}`,
+            secondaryLabel: encodeIncomplete ? 'Encode samples' : null,
+            secondaryHref: encodeIncomplete ? encodeHref : null,
             printHref: null,
             printLabel: null,
             emphasize: false,
@@ -177,11 +205,24 @@ export function nextAction(
     ) {
         return {
             title: 'Awaiting Head JO approval',
-            steps: [
-                'Head must approve the Job Order before print or send.',
-            ],
-            primaryLabel: 'Open',
-            primaryHref: `/receiving/${order.id}`,
+            steps: encodeIncomplete
+                ? [
+                      'Head must approve the Job Order before print or send.',
+                      namedProgress
+                          ? `Meanwhile encode sample names (${namedProgress}).`
+                          : 'Meanwhile encode sample names.',
+                  ]
+                : [
+                      'Head must approve the Job Order before print or send.',
+                  ],
+            primaryLabel: encodeIncomplete ? 'Encode samples' : 'Open',
+            primaryHref: encodeIncomplete
+                ? (encodeHref ?? `/receiving/${order.id}`)
+                : `/receiving/${order.id}`,
+            secondaryLabel: encodeIncomplete ? 'Open JO' : null,
+            secondaryHref: encodeIncomplete
+                ? `/receiving/${order.id}`
+                : null,
             printHref: null,
             printLabel: null,
             emphasize: false,
@@ -189,6 +230,27 @@ export function nextAction(
     }
 
     if (order.status === 'jo_approved' || canReceive) {
+        if (encodeIncomplete) {
+            return {
+                title: 'Encode samples before send',
+                steps: [
+                    namedProgress
+                        ? `Name every sample (${namedProgress}).`
+                        : 'Name every sample before Send to analysts.',
+                    printed
+                        ? 'JO print opened this session.'
+                        : 'You can print JO copies while encoding.',
+                ],
+                primaryLabel: 'Encode samples',
+                primaryHref: encodeHref ?? `/receiving/${order.id}/samples`,
+                secondaryLabel: 'Open JO',
+                secondaryHref: `/receiving/${order.id}`,
+                printHref,
+                printLabel,
+                emphasize: true,
+            };
+        }
+
         return {
             title: 'Print & send',
             steps: [

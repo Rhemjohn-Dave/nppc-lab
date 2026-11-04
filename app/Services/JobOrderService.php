@@ -701,11 +701,152 @@ class JobOrderService
         return $orders->count();
     }
 
+    /**
+     * Multi-sample (bulk) JOs may fill sample names/details until Send to analysts.
+     */
+    public function canEncodeSampleDetails(JobOrder $jobOrder): bool
+    {
+        if ($jobOrder->is_bulk_draft) {
+            return false;
+        }
+
+        $jobOrder->loadMissing('samples');
+
+        if ($jobOrder->samples->count() < 2) {
+            return false;
+        }
+
+        return in_array($jobOrder->status, [
+            JobOrderStatus::DraftSubmitted,
+            JobOrderStatus::PendingJoApproval,
+            JobOrderStatus::Priced,
+            JobOrderStatus::JoApproved,
+        ], true);
+    }
+
+    public function samplesNamedCount(JobOrder $jobOrder): int
+    {
+        $jobOrder->loadMissing('samples');
+
+        return $jobOrder->samples
+            ->filter(fn ($sample) => filled(trim((string) ($sample->description ?? ''))))
+            ->count();
+    }
+
+    public function samplesEncodeComplete(JobOrder $jobOrder): bool
+    {
+        $jobOrder->loadMissing('samples');
+        $count = $jobOrder->samples->count();
+        if ($count < 2) {
+            return true;
+        }
+
+        return $this->samplesNamedCount($jobOrder) === $count;
+    }
+
+    /**
+     * Update sample metadata only (no add/remove, no test changes).
+     *
+     * @param  list<array{id: int, sample_code?: mixed, description?: mixed, matrix?: mixed, quantity?: mixed, unit?: mixed, location?: mixed, sample_point?: mixed, collected_time?: mixed, remarks?: mixed}>  $rows
+     */
+    public function updateBulkSampleDetails(JobOrder $jobOrder, array $rows): JobOrder
+    {
+        if (! $this->canEncodeSampleDetails($jobOrder)) {
+            throw ValidationException::withMessages([
+                'job_order' => 'Sample details can only be encoded on multi-sample job orders before Send to analysts.',
+            ]);
+        }
+
+        $jobOrder->loadMissing('samples');
+        $byId = $jobOrder->samples->keyBy(fn ($sample) => (int) $sample->id);
+
+        if (count($rows) !== $byId->count()) {
+            throw ValidationException::withMessages([
+                'samples' => 'Submit every sample on this job order. Sample count cannot change after create.',
+            ]);
+        }
+
+        $seen = [];
+        foreach ($rows as $index => $row) {
+            $id = (int) ($row['id'] ?? 0);
+            if ($id < 1 || ! $byId->has($id)) {
+                throw ValidationException::withMessages([
+                    "samples.{$index}.id" => 'Unknown sample on this job order.',
+                ]);
+            }
+            if (isset($seen[$id])) {
+                throw ValidationException::withMessages([
+                    "samples.{$index}.id" => 'Duplicate sample id.',
+                ]);
+            }
+            $seen[$id] = true;
+        }
+
+        return DB::transaction(function () use ($jobOrder, $rows, $byId) {
+            foreach ($rows as $row) {
+                $sample = $byId->get((int) $row['id']);
+                $description = trim((string) ($row['description'] ?? ''));
+                $code = trim((string) ($row['sample_code'] ?? ''));
+                $matrix = trim((string) ($row['matrix'] ?? ''));
+                $unit = trim((string) ($row['unit'] ?? ''));
+                $quantity = $row['quantity'] ?? null;
+
+                $sample->update([
+                    'sample_code' => $code !== '' ? $code : null,
+                    'description' => $description !== '' ? $description : null,
+                    'matrix' => $matrix !== '' ? $matrix : $sample->matrix,
+                    'quantity' => $quantity !== null && $quantity !== ''
+                        ? $quantity
+                        : $sample->quantity,
+                    'unit' => $unit !== '' ? $unit : $sample->unit,
+                    'remarks' => $this->composeBulkSampleRemarks($row),
+                ]);
+            }
+
+            LabQueueUpdated::notify([LabQueueUpdated::SCOPE_RECEIVING], $jobOrder->id);
+
+            return $jobOrder->fresh(['samples', 'analyses']) ?? $jobOrder;
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function composeBulkSampleRemarks(array $row): ?string
+    {
+        $parts = [];
+        $location = trim((string) ($row['location'] ?? ''));
+        $point = trim((string) ($row['sample_point'] ?? ''));
+        $time = trim((string) ($row['collected_time'] ?? ''));
+
+        if ($location !== '') {
+            $parts[] = 'Location: '.$location;
+        }
+        if ($point !== '') {
+            $parts[] = 'Sample point: '.$point;
+        }
+        if ($time !== '') {
+            $parts[] = 'Collected: '.$time;
+        }
+
+        return $parts === [] ? null : implode(' | ', $parts);
+    }
+
     public function receive(JobOrder $jobOrder, User $receiver): JobOrder
     {
         if (! $jobOrder->status->canReceiveSamples()) {
             throw ValidationException::withMessages([
                 'job_order' => 'Head must approve this Job Order before it can be sent to analysts.',
+            ]);
+        }
+
+        $jobOrder->loadMissing('samples');
+        if ($jobOrder->samples->count() >= 2 && ! $this->samplesEncodeComplete($jobOrder)) {
+            $missing = $jobOrder->samples
+                ->filter(fn ($sample) => blank(trim((string) ($sample->description ?? ''))))
+                ->count();
+            throw ValidationException::withMessages([
+                'samples' => "Encode a Name for every sample before Send to analysts ({$missing} still blank).",
             ]);
         }
 

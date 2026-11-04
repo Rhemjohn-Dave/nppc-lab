@@ -574,8 +574,8 @@ export default function ReceivingBulkCreate({
                     title="Bulk job order"
                     description={
                         draftRef
-                            ? `Draft ${draftRef} — save anytime, finish when tests are ready.`
-                            : 'One JO for many samples — same tests on every sample. Save a draft to continue later.'
+                            ? `Draft ${draftRef} — finish to price for the cashier; encode sample names later from the Job Order.`
+                            : 'Set sample count and shared tests, finish to price now, then encode sample names later from the Job Order.'
                     }
                     actions={
                         <Button asChild variant="outline" size="sm">
@@ -881,28 +881,80 @@ export default function ReceivingBulkCreate({
 
                 {step === 1 && (
                     <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
+                        <div className="flex flex-wrap items-end justify-between gap-3">
+                            <div className="space-y-1">
                                 <h2 className="text-sm font-semibold text-nppc-900">
                                     Samples ({samples.length})
                                 </h2>
                                 <p className="text-xs text-slate-500">
-                                    Control numbers will be A, B, C… then AA after
-                                    Z. Encode names/locations from the paper list.
+                                    Set how many samples to bill. Names are
+                                    optional now — finish to price for the
+                                    cashier, then encode names later (until Send
+                                    to analysts). Control #s are A, B, C… then AA
+                                    after Z.
                                 </p>
                             </div>
-                            <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="gap-1.5"
-                                onClick={() =>
-                                    setSamples((rows) => [...rows, emptySample()])
-                                }
-                            >
-                                <Plus className="size-3.5" />
-                                Add sample
-                            </Button>
+                            <div className="flex flex-wrap items-end gap-2">
+                                <div className="space-y-1">
+                                    <Label
+                                        htmlFor="sample_count"
+                                        className="text-[11px]"
+                                    >
+                                        Sample count
+                                    </Label>
+                                    <Input
+                                        id="sample_count"
+                                        type="number"
+                                        min={2}
+                                        max={200}
+                                        className="h-8 w-24"
+                                        value={samples.length}
+                                        onChange={(e) => {
+                                            const next = Math.min(
+                                                200,
+                                                Math.max(
+                                                    2,
+                                                    Number(e.target.value) || 2,
+                                                ),
+                                            );
+                                            setSamples((rows) => {
+                                                if (next === rows.length) {
+                                                    return rows;
+                                                }
+                                                if (next > rows.length) {
+                                                    return [
+                                                        ...rows,
+                                                        ...Array.from(
+                                                            {
+                                                                length:
+                                                                    next -
+                                                                    rows.length,
+                                                            },
+                                                            () => emptySample(),
+                                                        ),
+                                                    ];
+                                                }
+                                                return rows.slice(0, next);
+                                            });
+                                        }}
+                                    />
+                                </div>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 gap-1.5"
+                                    onClick={() =>
+                                        setSamples((rows) => [
+                                            ...rows,
+                                            emptySample(),
+                                        ])
+                                    }
+                                >
+                                    <Plus className="size-3.5" />
+                                    Add sample
+                                </Button>
+                            </div>
                         </div>
                         {attempted && samples.length < 2 ? (
                             <p className="text-xs text-rose-700">
@@ -1199,8 +1251,9 @@ export default function ReceivingBulkCreate({
                             </div>
                         </dl>
                         <p className="text-xs text-slate-500">
-                            Creates one JO. After create, set pricing on the
-                            Receiving show page, then Head JO approval as usual.
+                            Creates one JO for pricing now (customer can go to
+                            the cashier). Encode sample names anytime until Send
+                            to analysts. Head JO approval stays as usual.
                         </p>
                     </section>
                 )}

@@ -21,11 +21,14 @@ type BulkOrderRow = {
     status: string;
     status_label: string;
     samples_count: number;
+    samples_named_count?: number;
+    samples_encode_complete?: boolean;
     analyses_count: number;
     is_bulk_draft: boolean;
     has_attachment: boolean;
     attachment_original_name: string | null;
     continue_url: string | null;
+    encode_url?: string | null;
     show_url: string | null;
     updated_at: string | null;
     created_at: string | null;
@@ -215,6 +218,10 @@ export default function ReceivingBulkOrders({ orders, counts, filters }: Props) 
                                                 {order.analyses_count === 1
                                                     ? ''
                                                     : 's'}
+                                                {!order.is_bulk_draft &&
+                                                order.samples_count >= 2
+                                                    ? ` · ${order.samples_named_count ?? 0}/${order.samples_count} named`
+                                                    : ''}
                                             </div>
                                         </td>
                                         <td className="px-4 py-3 align-top whitespace-nowrap">
@@ -251,19 +258,44 @@ export default function ReceivingBulkOrders({ orders, counts, filters }: Props) 
                                                         <ArrowRight className="size-3" />
                                                     </Link>
                                                 </Button>
-                                            ) : order.show_url ? (
-                                                <Button
-                                                    asChild
-                                                    size="sm"
-                                                    variant="outline"
-                                                    className="h-8 gap-1.5 text-xs"
-                                                >
-                                                    <Link href={order.show_url}>
-                                                        Open JO
-                                                        <ArrowRight className="size-3" />
-                                                    </Link>
-                                                </Button>
-                                            ) : null}
+                                            ) : (
+                                                <div className="inline-flex flex-col items-end gap-1">
+                                                    {order.encode_url &&
+                                                    !order.samples_encode_complete ? (
+                                                        <Button
+                                                            asChild
+                                                            size="sm"
+                                                            className="h-8 gap-1.5 bg-nppc-900 text-xs hover:bg-nppc-700"
+                                                        >
+                                                            <Link
+                                                                href={
+                                                                    order.encode_url
+                                                                }
+                                                            >
+                                                                Encode
+                                                                <ArrowRight className="size-3" />
+                                                            </Link>
+                                                        </Button>
+                                                    ) : null}
+                                                    {order.show_url ? (
+                                                        <Button
+                                                            asChild
+                                                            size="sm"
+                                                            variant="outline"
+                                                            className="h-8 gap-1.5 text-xs"
+                                                        >
+                                                            <Link
+                                                                href={
+                                                                    order.show_url
+                                                                }
+                                                            >
+                                                                Open JO
+                                                                <ArrowRight className="size-3" />
+                                                            </Link>
+                                                        </Button>
+                                                    ) : null}
+                                                </div>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

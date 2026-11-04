@@ -36,6 +36,11 @@ type Props = {
         has_attachment?: boolean;
         attachment_url?: string | null;
         attachment_original_name?: string | null;
+        samples_count?: number;
+        samples_named_count?: number;
+        can_encode_samples?: boolean;
+        samples_encode_complete?: boolean;
+        samples_encode_url?: string | null;
     };
     emailLogs?: EmailLogSummary[];
 };
@@ -99,7 +104,17 @@ export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
     const [detailsOpen, setDetailsOpen] = useState(false);
     const isReviewed = Boolean(jobOrder.reviewed_at);
     const canPrintRfa = Boolean(jobOrder.can_print_rfa);
-    const canReceive = Boolean(jobOrder.can_receive);
+    const canEncodeSamples = Boolean(jobOrder.can_encode_samples);
+    const samplesEncodeComplete = Boolean(
+        jobOrder.samples_encode_complete ?? true,
+    );
+    const samplesNamedCount = Number(jobOrder.samples_named_count ?? 0);
+    const samplesCount = Number(
+        jobOrder.samples_count ?? jobOrder.samples?.length ?? 0,
+    );
+    const canReceive =
+        Boolean(jobOrder.can_receive) &&
+        (samplesCount < 2 || samplesEncodeComplete);
     const awaitingJoApproval =
         jobOrder.status === 'pending_jo_approval' ||
         jobOrder.status === 'priced';
@@ -605,6 +620,25 @@ export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
                                             </Button>
                                         </div>
                                     ) : null}
+                                    {canEncodeSamples ? (
+                                        <Button
+                                            asChild
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-8 w-full border-nppc-200 bg-nppc-50 text-xs text-nppc-900 shadow-xs hover:bg-nppc-100"
+                                        >
+                                            <Link
+                                                href={
+                                                    jobOrder.samples_encode_url ??
+                                                    `/receiving/${jobOrder.id}/samples`
+                                                }
+                                            >
+                                                Encode samples (
+                                                {samplesNamedCount}/
+                                                {samplesCount} named)
+                                            </Link>
+                                        </Button>
+                                    ) : null}
                                     {!isReviewed ? (
                                         <Button
                                             type="button"
@@ -617,9 +651,14 @@ export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
                                             disabled={!canReceive}
                                             title={
                                                 !canReceive
-                                                    ? awaitingJoApproval
-                                                        ? 'Waiting for Head JO approval'
-                                                        : 'Save pricing and wait for Head approval first'
+                                                    ? !samplesEncodeComplete &&
+                                                      Boolean(
+                                                          jobOrder.can_receive,
+                                                      )
+                                                        ? 'Encode a Name for every sample first'
+                                                        : awaitingJoApproval
+                                                          ? 'Waiting for Head JO approval'
+                                                          : 'Save pricing and wait for Head approval first'
                                                     : undefined
                                             }
                                         >
