@@ -57,6 +57,10 @@ class AnalysisResultReportResolver
      */
     public function reportsForJobOrder(JobOrder $jobOrder, User $user, bool $withValues = true): Collection
     {
+        if ($jobOrder->is_laboratory_services) {
+            return collect();
+        }
+
         $jobOrder->loadMissing(['samples', 'analyses.assignee', 'analyses.analysisType', 'packageLinks.analysisPackage', 'packages']);
 
         // Snapshot full analyses — fromControlledForm temporarily scopes the relation per sample.

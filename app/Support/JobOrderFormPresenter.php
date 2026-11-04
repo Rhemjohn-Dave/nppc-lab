@@ -69,6 +69,16 @@ class JobOrderFormPresenter
                 ? "/receiving/{$jobOrder->id}/attachment"
                 : null,
             'is_bulk' => (bool) $jobOrder->is_receiving_bulk,
+            'is_laboratory_services' => (bool) $jobOrder->is_laboratory_services,
+            'can_edit_lab_services' => (bool) $jobOrder->is_laboratory_services
+                && in_array($jobOrder->status, [
+                    JobOrderStatus::DraftSubmitted,
+                    JobOrderStatus::PendingJoApproval,
+                    JobOrderStatus::Priced,
+                ], true),
+            'can_mark_lab_services_ready' => (bool) $jobOrder->is_laboratory_services
+                && $jobOrder->status === JobOrderStatus::JoApproved
+                && $jobOrder->analyses->isNotEmpty(),
             'status' => $jobOrder->status->value,
             'status_label' => $jobOrder->status->label(),
             'total_cost' => $jobOrder->total_cost,
@@ -88,7 +98,8 @@ class JobOrderFormPresenter
             'receiver_name' => $jobOrder->receiver?->name,
             'reviewer_name' => $jobOrder->reviewer?->name,
             'can_print_rfa' => $jobOrder->status->canPrintRfa(),
-            'can_receive' => $jobOrder->status->canReceiveSamples(),
+            'can_receive' => ! $jobOrder->is_laboratory_services
+                && $jobOrder->status->canReceiveSamples(),
             'needs_jo_approval' => $jobOrder->jo_approved_at === null
                 && in_array($jobOrder->status, [
                     JobOrderStatus::PendingJoApproval,

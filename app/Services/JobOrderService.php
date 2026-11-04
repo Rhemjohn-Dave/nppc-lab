@@ -234,6 +234,8 @@ class JobOrderService
         $jobOrder = DB::transaction(function () use ($data) {
             Customer::rememberFromIntake($data);
 
+            $isLaboratoryServices = (bool) ($data['is_laboratory_services'] ?? false);
+
             $jobOrder = JobOrder::create([
                 'reference_no' => $this->referenceNumbers->next(),
                 'customer_name' => $data['customer_name'],
@@ -242,24 +244,33 @@ class JobOrderService
                 'customer_address' => $data['customer_address'] ?? null,
                 'company_name' => $data['company_name'] ?? null,
                 'ownership_type' => $data['ownership_type'] ?? null,
-                'classification' => $data['classification'] ?? null,
-                'sampling_date' => $data['sampling_date'] ?? null,
-                'sampling_time' => $data['sampling_time'] ?? null,
-                'sample_collected_by' => $data['sample_collected_by'] ?? null,
-                'field_data' => $data['field_data'] ?? null,
-                'sample_storage_temp' => $data['sample_storage_temp'] ?? null,
-                'wastewater_source' => $data['wastewater_source'] ?? null,
-                'sampling_point' => $data['sampling_point'] ?? null,
-                'sampling_site' => $data['sampling_site'] ?? null,
-                'specimen' => $data['specimen'] ?? null,
+                'classification' => $isLaboratoryServices ? null : ($data['classification'] ?? null),
+                'sampling_date' => $isLaboratoryServices ? null : ($data['sampling_date'] ?? null),
+                'sampling_time' => $isLaboratoryServices ? null : ($data['sampling_time'] ?? null),
+                'sample_collected_by' => $isLaboratoryServices ? null : ($data['sample_collected_by'] ?? null),
+                'field_data' => $isLaboratoryServices ? null : ($data['field_data'] ?? null),
+                'sample_storage_temp' => $isLaboratoryServices ? null : ($data['sample_storage_temp'] ?? null),
+                'wastewater_source' => $isLaboratoryServices ? null : ($data['wastewater_source'] ?? null),
+                'sampling_point' => $isLaboratoryServices ? null : ($data['sampling_point'] ?? null),
+                'sampling_site' => $isLaboratoryServices ? null : ($data['sampling_site'] ?? null),
+                'specimen' => $isLaboratoryServices ? null : ($data['specimen'] ?? null),
                 'payment_mode' => $data['payment_mode'] ?? null,
                 'payment_terms' => $data['payment_terms'] ?? null,
-                'other_tests' => $data['other_tests'] ?? null,
+                'other_tests' => $isLaboratoryServices ? null : ($data['other_tests'] ?? null),
                 'see_attached_file' => (bool) ($data['see_attached_file'] ?? false),
                 'is_receiving_bulk' => (bool) ($data['is_receiving_bulk'] ?? false),
+                'is_laboratory_services' => $isLaboratoryServices,
                 'status' => JobOrderStatus::DraftSubmitted,
                 'total_cost' => 0,
             ]);
+
+            if ($isLaboratoryServices) {
+                User::role(['receiving', 'admin'])->get()->each(
+                    fn (User $user) => $user->notify(new JobOrderSubmitted($jobOrder))
+                );
+
+                return $jobOrder->fresh(['samples', 'analyses']) ?? $jobOrder;
+            }
 
             /** @var array<int, array<string, mixed>> $samples */
             $samples = $data['samples'];
@@ -538,6 +549,15 @@ class JobOrderService
         User $actor,
         float|int|string|null $discountPercent = null,
     ): array {
+        if ($jobOrder->is_laboratory_services) {
+            $jobOrder->loadMissing('analyses');
+            if ($jobOrder->analyses->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'lines' => 'Add at least one laboratory service before saving pricing.',
+                ]);
+            }
+        }
+
         $previousStatus = $jobOrder->status;
         $queuedForApproval = false;
         $resolvedPercent = $discountPercent !== null
@@ -602,6 +622,159 @@ class JobOrderService
         };
 
         return ['job' => $jobOrder, 'outcome' => $outcome];
+    }
+
+    /**
+     * Replace laboratory-service billing lines (free-text, no sample / analysis type).
+     *
+     * @param  list<array{id?: int|null, name: string, quantity?: int|float|string|null, unit_price?: int|float|string|null}>  $lines
+     */
+    public function syncLaboratoryServices(JobOrder $jobOrder, array $lines): JobOrder
+    {
+        abort_unless($jobOrder->is_laboratory_services, 404);
+
+        if (in_array($jobOrder->status, [
+            JobOrderStatus::JoApproved,
+            JobOrderStatus::InAnalysis,
+            JobOrderStatus::PendingReview,
+            JobOrderStatus::ReadyForPickup,
+        ], true)) {
+            throw ValidationException::withMessages([
+                'services' => 'Laboratory services are locked after JO approval.',
+            ]);
+        }
+
+        $normalized = [];
+        foreach ($lines as $index => $line) {
+            $name = trim((string) ($line['name'] ?? ''));
+            if ($name === '') {
+                throw ValidationException::withMessages([
+                    "services.{$index}.name" => 'Enter a service name.',
+                ]);
+            }
+
+            $quantity = max(1, (int) ($line['quantity'] ?? 1));
+            $unitPrice = max(0, (float) ($line['unit_price'] ?? 0));
+
+            $normalized[] = [
+                'id' => isset($line['id']) ? (int) $line['id'] : null,
+                'name' => $name,
+                'quantity' => $quantity,
+                'unit_price' => $unitPrice,
+                'total_cost' => $quantity * $unitPrice,
+            ];
+        }
+
+        if ($normalized === []) {
+            throw ValidationException::withMessages([
+                'services' => 'Add at least one laboratory service.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($jobOrder, $normalized) {
+            $keepIds = [];
+
+            foreach ($normalized as $line) {
+                $attributes = [
+                    'sample_id' => null,
+                    'analysis_type_id' => null,
+                    'name' => $line['name'],
+                    'category' => JobOrderAnalysis::LABORATORY_SERVICES_CATEGORY,
+                    'category_label' => 'Laboratory services',
+                    'quantity' => $line['quantity'],
+                    'unit_price' => $line['unit_price'],
+                    'total_cost' => $line['total_cost'],
+                    'status' => JobOrderAnalysisStatus::Pending,
+                ];
+
+                if ($line['id']) {
+                    $existing = $jobOrder->analyses()->whereKey($line['id'])->first();
+                    if ($existing !== null) {
+                        $existing->update($attributes);
+                        $keepIds[] = $existing->id;
+
+                        continue;
+                    }
+                }
+
+                $created = $jobOrder->analyses()->create($attributes);
+                $keepIds[] = $created->id;
+            }
+
+            $jobOrder->analyses()
+                ->whereNotIn('id', $keepIds)
+                ->delete();
+
+            $jobOrder->recalculateTotal();
+
+            LabQueueUpdated::notify([LabQueueUpdated::SCOPE_RECEIVING], $jobOrder->id);
+
+            return $jobOrder->fresh(['samples', 'analyses.analysisType', 'analyses.assignee']) ?? $jobOrder;
+        });
+    }
+
+    public function canEditLaboratoryServices(JobOrder $jobOrder): bool
+    {
+        return $jobOrder->is_laboratory_services
+            && in_array($jobOrder->status, [
+                JobOrderStatus::DraftSubmitted,
+                JobOrderStatus::PendingJoApproval,
+                JobOrderStatus::Priced,
+            ], true);
+    }
+
+    /**
+     * Fee-only laboratory services: after JO approval, complete lines and mark ready (no analysts).
+     */
+    public function markLaboratoryServicesReady(JobOrder $jobOrder, User $actor): JobOrder
+    {
+        abort_unless($jobOrder->is_laboratory_services, 404);
+
+        if ($jobOrder->status !== JobOrderStatus::JoApproved) {
+            throw ValidationException::withMessages([
+                'job_order' => 'Head must approve this Job Order before it can be marked ready.',
+            ]);
+        }
+
+        $jobOrder->loadMissing('analyses');
+        if ($jobOrder->analyses->isEmpty()) {
+            throw ValidationException::withMessages([
+                'services' => 'Add and price laboratory services before marking ready.',
+            ]);
+        }
+
+        $jobOrder = DB::transaction(function () use ($jobOrder, $actor) {
+            $now = now();
+            foreach ($jobOrder->analyses as $line) {
+                $line->update([
+                    'status' => JobOrderAnalysisStatus::Completed,
+                    'completed_at' => $line->completed_at ?? $now,
+                    'assigned_to' => $line->assigned_to ?? $actor->id,
+                ]);
+            }
+
+            $attributes = [
+                'status' => JobOrderStatus::ReadyForPickup,
+                'reviewed_at' => $jobOrder->reviewed_at ?? $now,
+                'reviewed_by' => $jobOrder->reviewed_by ?? $actor->id,
+            ];
+
+            if ($jobOrder->received_at === null) {
+                $attributes['received_at'] = $now;
+                $attributes['received_by'] = $actor->id;
+            }
+
+            $jobOrder->update($attributes);
+
+            return $jobOrder->fresh(['samples', 'analyses.analysisType', 'analyses.assignee', 'receiver', 'reviewer']) ?? $jobOrder;
+        });
+
+        LabQueueUpdated::notify([
+            LabQueueUpdated::SCOPE_RECEIVING,
+            LabQueueUpdated::SCOPE_HEAD,
+        ], $jobOrder->id);
+
+        return $jobOrder;
     }
 
     /**
@@ -710,7 +883,7 @@ class JobOrderService
      */
     public function canEncodeSampleDetails(JobOrder $jobOrder): bool
     {
-        if ($jobOrder->is_bulk_draft || ! $jobOrder->is_receiving_bulk) {
+        if ($jobOrder->is_bulk_draft || $jobOrder->is_laboratory_services || ! $jobOrder->is_receiving_bulk) {
             return false;
         }
 
@@ -842,6 +1015,12 @@ class JobOrderService
 
     public function receive(JobOrder $jobOrder, User $receiver): JobOrder
     {
+        if ($jobOrder->is_laboratory_services) {
+            throw ValidationException::withMessages([
+                'job_order' => 'Laboratory services JOs are not sent to analysts. Use Mark ready for pickup after JO approval.',
+            ]);
+        }
+
         if (! $jobOrder->status->canReceiveSamples()) {
             throw ValidationException::withMessages([
                 'job_order' => 'Head must approve this Job Order before it can be sent to analysts.',

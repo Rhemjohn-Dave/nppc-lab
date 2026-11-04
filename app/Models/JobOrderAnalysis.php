@@ -82,10 +82,17 @@ class JobOrderAnalysis extends Model
         ];
     }
 
+    public const LABORATORY_SERVICES_CATEGORY = 'laboratory_services';
+
     public function isSamplePreparation(): bool
     {
         return $this->analysisType?->isSamplePreparation()
             ?? AnalysisType::isSamplePreparationName($this->name);
+    }
+
+    public function isLaboratoryServiceLine(): bool
+    {
+        return ($this->category ?? '') === self::LABORATORY_SERVICES_CATEGORY;
     }
 
     public function resolvedCategoryLabel(): string

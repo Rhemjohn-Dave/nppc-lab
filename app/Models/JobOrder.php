@@ -51,6 +51,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $attachment_original_name
  * @property bool $is_bulk_draft
  * @property bool $is_receiving_bulk
+ * @property bool $is_laboratory_services
  * @property bool $see_attached_file
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -87,6 +88,7 @@ class JobOrder extends Model
         'attachment_original_name',
         'is_bulk_draft',
         'is_receiving_bulk',
+        'is_laboratory_services',
         'see_attached_file',
         'status',
         'total_cost',
@@ -120,6 +122,7 @@ class JobOrder extends Model
             'result_footer' => 'array',
             'is_bulk_draft' => 'boolean',
             'is_receiving_bulk' => 'boolean',
+            'is_laboratory_services' => 'boolean',
             'see_attached_file' => 'boolean',
         ];
     }

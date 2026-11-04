@@ -538,6 +538,10 @@ export default function IntakeWizard({
         errors?: Record<string, string>;
     };
     const [step, setStep] = useState(0);
+    const [requestKind, setRequestKind] = useState<
+        'analysis' | 'laboratory_services' | ''
+    >('');
+    const isLaboratoryServices = requestKind === 'laboratory_services';
     const [submitting, setSubmitting] = useState(false);
     const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
     const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
@@ -1419,7 +1423,14 @@ export default function IntakeWizard({
 
     function canContinue() {
         if (step === 0) {
-            return customer.customer_name.trim().length > 0;
+            return (
+                requestKind !== '' &&
+                customer.customer_name.trim().length > 0
+            );
+        }
+
+        if (isLaboratoryServices) {
+            return true;
         }
 
         if (step === 1) {
@@ -1483,7 +1494,15 @@ export default function IntakeWizard({
         }
 
         if (step === 0 && !canContinue()) {
+            if (!requestKind) {
+                return 'Choose Sample analysis or Laboratory services.';
+            }
+
             return 'Add your full name to continue.';
+        }
+
+        if (isLaboratoryServices) {
+            return null;
         }
 
         if (step === 1 && !canContinue()) {
@@ -1555,7 +1574,19 @@ export default function IntakeWizard({
             return;
         }
         setAttemptedContinue(false);
+        if (step === 0 && isLaboratoryServices) {
+            setStep(4);
+            return;
+        }
         setStep((s) => s + 1);
+    }
+
+    function goBack() {
+        if (step === 4 && isLaboratoryServices) {
+            setStep(0);
+            return;
+        }
+        setStep((s) => Math.max(0, s - 1));
     }
 
     const requestIsDirty =
@@ -1599,39 +1630,54 @@ export default function IntakeWizard({
         setSubmitting(true);
         router.post(
             '/intake/job-orders',
-            {
-                ...customer,
-                ownership_type: ownershipType || null,
-                classification: resolvedClassification || null,
-                sampling_date: samplingDate || null,
-                sampling_time: samplingTime || null,
-                sample_collected_by: sampleCollectedBy || null,
-                sampling_site: samplingSite.trim() || null,
-                specimen: needsSpecimen ? specimen.trim() || null : null,
-                payment_mode: paymentMode || null,
-                payment_terms:
-                    paymentMode === 'billing_partial'
-                        ? paymentTerms || null
-                        : null,
-                field_data: sterileBottle
-                    ? fieldData.trim()
-                        ? `Water in sterile bottle. ${fieldData.trim()}`
-                        : 'Water in sterile bottle'
-                    : fieldData || null,
-                sample_storage_temp: sampleStorageTemp || null,
-                wastewater_source: resolvedSampleSource || null,
-                other_tests: otherTests || null,
-                samples: samples.map((sample) => ({
-                    sample_code: sample.sample_code,
-                    description: sample.description,
-                    matrix: sample.matrix,
-                    quantity: sample.quantity || null,
-                    unit: sample.unit,
-                    remarks: sample.remarks,
-                    package_ids: sample.package_ids,
-                    analysis_type_ids: sample.analysis_type_ids,
-                })),
-            },
+            isLaboratoryServices
+                ? {
+                      ...customer,
+                      ownership_type: ownershipType || null,
+                      is_laboratory_services: true,
+                      payment_mode: paymentMode || null,
+                      payment_terms:
+                          paymentMode === 'billing_partial'
+                              ? paymentTerms || null
+                              : null,
+                      samples: [],
+                  }
+                : {
+                      ...customer,
+                      ownership_type: ownershipType || null,
+                      is_laboratory_services: false,
+                      classification: resolvedClassification || null,
+                      sampling_date: samplingDate || null,
+                      sampling_time: samplingTime || null,
+                      sample_collected_by: sampleCollectedBy || null,
+                      sampling_site: samplingSite.trim() || null,
+                      specimen: needsSpecimen
+                          ? specimen.trim() || null
+                          : null,
+                      payment_mode: paymentMode || null,
+                      payment_terms:
+                          paymentMode === 'billing_partial'
+                              ? paymentTerms || null
+                              : null,
+                      field_data: sterileBottle
+                          ? fieldData.trim()
+                              ? `Water in sterile bottle. ${fieldData.trim()}`
+                              : 'Water in sterile bottle'
+                          : fieldData || null,
+                      sample_storage_temp: sampleStorageTemp || null,
+                      wastewater_source: resolvedSampleSource || null,
+                      other_tests: otherTests || null,
+                      samples: samples.map((sample) => ({
+                          sample_code: sample.sample_code,
+                          description: sample.description,
+                          matrix: sample.matrix,
+                          quantity: sample.quantity || null,
+                          unit: sample.unit,
+                          remarks: sample.remarks,
+                          package_ids: sample.package_ids,
+                          analysis_type_ids: sample.analysis_type_ids,
+                      })),
+                  },
             {
                 onFinish: () => {
                     setSubmitting(false);
@@ -1650,7 +1696,16 @@ export default function IntakeWizard({
                 wizard={{
                     steps,
                     step,
-                    onStepSelect: setStep,
+                    onStepSelect: (next) => {
+                        if (
+                            isLaboratoryServices &&
+                            next > 0 &&
+                            next < 4
+                        ) {
+                            return;
+                        }
+                        setStep(next);
+                    },
                 }}
                 onExit={requestExit}
             >
@@ -1685,6 +1740,46 @@ export default function IntakeWizard({
                                     }
                                 >
                                     <div className="flex h-full min-h-0 flex-col gap-3 md:gap-3.5">
+                                        <IntakeField
+                                            label="What do you need?"
+                                            required
+                                            description="Sample analysis uses packages and tests. Laboratory services are priced by Receiving (no samples)."
+                                            error={
+                                                !requestKind &&
+                                                attemptedContinue
+                                                    ? 'Choose Sample analysis or Laboratory services.'
+                                                    : null
+                                            }
+                                        >
+                                            <div className="flex flex-wrap gap-2">
+                                                <ChoiceChip
+                                                    active={
+                                                        requestKind ===
+                                                        'analysis'
+                                                    }
+                                                    onClick={() =>
+                                                        setRequestKind(
+                                                            'analysis',
+                                                        )
+                                                    }
+                                                >
+                                                    Sample analysis
+                                                </ChoiceChip>
+                                                <ChoiceChip
+                                                    active={
+                                                        requestKind ===
+                                                        'laboratory_services'
+                                                    }
+                                                    onClick={() =>
+                                                        setRequestKind(
+                                                            'laboratory_services',
+                                                        )
+                                                    }
+                                                >
+                                                    Laboratory services
+                                                </ChoiceChip>
+                                            </div>
+                                        </IntakeField>
                                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-x-4">
                                             <IntakeField
                                                 label="Full Name"
@@ -3423,6 +3518,21 @@ export default function IntakeWizard({
                                             </div>
                                         </ReviewCard>
 
+                                        {isLaboratoryServices ? (
+                                            <ReviewCard
+                                                title="Laboratory services"
+                                                icon={FlaskConical}
+                                                onEdit={() => setStep(0)}
+                                            >
+                                                <p className="text-sm text-slate-600">
+                                                    No samples or tests at
+                                                    intake. Receiving will add
+                                                    the specific laboratory
+                                                    services and prices on the
+                                                    Job Order.
+                                                </p>
+                                            </ReviewCard>
+                                        ) : (
                                         <ReviewCard
                                             title="Job & Sampling Specifications"
                                             icon={FlaskConical}
@@ -3516,7 +3626,9 @@ export default function IntakeWizard({
                                                 />
                                             </div>
                                         </ReviewCard>
+                                        )}
 
+                                        {!isLaboratoryServices ? (
                                         <ReviewCard
                                             title="Registered Samples & Tests"
                                             icon={TestTube2}
@@ -3720,22 +3832,40 @@ export default function IntakeWizard({
                                                 </p>
                                             ) : null}
                                         </ReviewCard>
+                                        ) : null}
                                     </div>
 
                                     <aside className="space-y-2 lg:sticky lg:top-0">
-                                        <TestsRequestSummary
-                                            packages={scopedPackages}
-                                            samples={sampleSelectionSummaries}
-                                            catalogItems={
-                                                catalogItemsForSummary
-                                            }
-                                            otherTests={otherTests}
-                                            estimatedTotal={estimatedTotal}
-                                            customerName={
-                                                customer.customer_name
-                                            }
-                                            variant="sidebar"
-                                        />
+                                        {isLaboratoryServices ? (
+                                            <IntakeAlert
+                                                variant="info"
+                                                title="Laboratory services"
+                                                className="px-2.5 py-2 text-xs"
+                                            >
+                                                <p className="mt-1 text-slate-700">
+                                                    Receiving will list and
+                                                    price the services on your
+                                                    Job Order. No sample tests
+                                                    are selected at intake.
+                                                </p>
+                                            </IntakeAlert>
+                                        ) : (
+                                            <TestsRequestSummary
+                                                packages={scopedPackages}
+                                                samples={
+                                                    sampleSelectionSummaries
+                                                }
+                                                catalogItems={
+                                                    catalogItemsForSummary
+                                                }
+                                                otherTests={otherTests}
+                                                estimatedTotal={estimatedTotal}
+                                                customerName={
+                                                    customer.customer_name
+                                                }
+                                                variant="sidebar"
+                                            />
+                                        )}
                                         <IntakeAlert
                                             variant="info"
                                             title="What happens next"
@@ -3802,38 +3932,42 @@ export default function IntakeWizard({
                                         variant="outline"
                                         className="h-9 gap-1.5 border-slate-200 px-4 text-sm"
                                         disabled={submitting}
-                                        onClick={() =>
-                                            setStep((s) => Math.max(0, s - 1))
-                                        }
+                                        onClick={goBack}
                                     >
                                         <ArrowLeft
                                             className="size-3.5"
                                             aria-hidden
                                         />
-                                        {step === 1
+                                        {isLaboratoryServices && step === 4
                                             ? 'Back to Customer'
-                                            : step === 2
-                                              ? 'Back to Details'
-                                              : step === 3
-                                                ? 'Back to Samples'
-                                                : 'Back to Tests'}
+                                            : step === 1
+                                              ? 'Back to Customer'
+                                              : step === 2
+                                                ? 'Back to Details'
+                                                : step === 3
+                                                  ? 'Back to Samples'
+                                                  : 'Back to Tests'}
                                     </Button>
                                 )}
                             </div>
                             <p className="order-first col-span-2 text-center text-xs text-slate-500 sm:order-none sm:col-span-1 sm:whitespace-nowrap">
-                                {step === 0 && !stepError(step)
-                                    ? 'Step 1 of 5 · Enter contact details'
-                                    : step === 0
-                                      ? 'Step 1 of 5'
-                                      : step === 1 && !stepError(step)
-                                        ? 'Step 2 of 5 · Complete sampling specs to continue'
-                                        : step === 1
-                                          ? 'Step 2 of 5'
-                                          : step === 2
-                                            ? `${samples.length} sample${samples.length === 1 ? '' : 's'} listed`
-                                            : step === 3
-                                              ? 'Step 4 of 5 · Select tests and packages'
-                                              : 'Step 5 of 5 · Review and confirm'}
+                                {isLaboratoryServices
+                                    ? step === 0
+                                        ? 'Laboratory services · Customer details'
+                                        : 'Laboratory services · Review and confirm'
+                                    : step === 0 && !stepError(step)
+                                      ? 'Step 1 of 5 · Enter contact details'
+                                      : step === 0
+                                        ? 'Step 1 of 5'
+                                        : step === 1 && !stepError(step)
+                                          ? 'Step 2 of 5 · Complete sampling specs to continue'
+                                          : step === 1
+                                            ? 'Step 2 of 5'
+                                            : step === 2
+                                              ? `${samples.length} sample${samples.length === 1 ? '' : 's'} listed`
+                                              : step === 3
+                                                ? 'Step 4 of 5 · Select tests and packages'
+                                                : 'Step 5 of 5 · Review and confirm'}
                             </p>
                             <div className="justify-self-end">
                                 {step < steps.length - 1 ? (
@@ -3842,13 +3976,15 @@ export default function IntakeWizard({
                                         className="h-9 gap-2 bg-[#1d3b91] px-5 text-sm font-semibold hover:bg-[#112747] sm:min-w-40"
                                         onClick={goNext}
                                     >
-                                        {step === 0
-                                            ? 'Continue to Step 2: Details'
-                                            : step === 1
-                                              ? 'Continue to Samples'
-                                              : step === 2
-                                                ? 'Continue to Test Selection'
-                                                : 'Continue to Review'}
+                                        {step === 0 && isLaboratoryServices
+                                            ? 'Continue to Review'
+                                            : step === 0
+                                              ? 'Continue to Step 2: Details'
+                                              : step === 1
+                                                ? 'Continue to Samples'
+                                                : step === 2
+                                                  ? 'Continue to Test Selection'
+                                                  : 'Continue to Review'}
                                         <ArrowRight className="size-4" />
                                     </Button>
                                 ) : (
@@ -3860,7 +3996,9 @@ export default function IntakeWizard({
                                     >
                                         {submitting
                                             ? 'Submitting…'
-                                            : 'Submit Request for Analysis'}
+                                            : isLaboratoryServices
+                                              ? 'Submit Laboratory Services Request'
+                                              : 'Submit Request for Analysis'}
                                         {!submitting ? (
                                             <ArrowRight className="size-4" />
                                         ) : null}

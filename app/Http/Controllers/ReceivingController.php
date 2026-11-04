@@ -174,6 +174,7 @@ class ReceivingController extends Controller
                         : null,
                     'is_bulk' => $isReceivingBulk || (bool) $order->is_bulk_draft,
                     'is_bulk_draft' => (bool) $order->is_bulk_draft,
+                    'is_laboratory_services' => (bool) $order->is_laboratory_services,
                     'bulk_continue_url' => $order->is_bulk_draft
                         ? "/receiving/bulk-orders/{$order->id}/edit"
                         : null,
@@ -309,6 +310,57 @@ class ReceivingController extends Controller
         };
 
         return back()->with('success', $message);
+    }
+
+    public function updateLabServices(Request $request, JobOrder $jobOrder): RedirectResponse
+    {
+        abort_unless($this->jobOrders->canEditLaboratoryServices($jobOrder), 404);
+
+        $data = $request->validate([
+            'services' => ['required', 'array', 'min:1'],
+            'services.*.id' => ['nullable', 'integer', 'exists:job_order_analyses,id'],
+            'services.*.name' => ['required', 'string', 'max:255'],
+            'services.*.quantity' => ['nullable', 'integer', 'min:1'],
+            'services.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+            'save_pricing' => ['sometimes', 'boolean'],
+            'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+        ]);
+
+        $jobOrder = $this->jobOrders->syncLaboratoryServices($jobOrder, $data['services']);
+
+        if ((bool) ($data['save_pricing'] ?? false)) {
+            $lines = $jobOrder->analyses->map(fn ($line) => [
+                'id' => $line->id,
+                'unit_price' => (float) $line->unit_price,
+                'quantity' => (int) $line->quantity,
+            ])->all();
+
+            $result = $this->jobOrders->updatePricing(
+                $jobOrder,
+                $lines,
+                $request->user(),
+                $data['discount_percent'] ?? null,
+            );
+
+            $message = match ($result['outcome']) {
+                'queued_for_approval' => 'Laboratory services saved and sent to Head for Job Order approval.',
+                'awaiting_approval' => 'Laboratory services updated (still awaiting Head JO approval).',
+                default => 'Laboratory services and pricing updated.',
+            };
+
+            return back()->with('success', $message);
+        }
+
+        return back()->with('success', 'Laboratory services saved.');
+    }
+
+    public function markLabServicesReady(Request $request, JobOrder $jobOrder): RedirectResponse
+    {
+        $updated = $this->jobOrders->markLaboratoryServicesReady($jobOrder, $request->user());
+
+        return redirect()
+            ->route('receiving.show', $updated)
+            ->with('success', "Job order {$updated->reference_no} marked ready for pickup.");
     }
 
     public function receive(Request $request, JobOrder $jobOrder): RedirectResponse

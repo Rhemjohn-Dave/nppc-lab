@@ -44,6 +44,7 @@ type Order = {
     samples_encode_url?: string | null;
     is_bulk?: boolean;
     is_bulk_draft?: boolean;
+    is_laboratory_services?: boolean;
     bulk_continue_url?: string | null;
     created_at: string | null;
 };
@@ -527,6 +528,13 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                                                     className="h-5 border-sky-200 bg-sky-50 px-1.5 text-[10px] font-semibold text-sky-900"
                                                 >
                                                     Bulk
+                                                </Badge>
+                                            ) : order.is_laboratory_services ? (
+                                                <Badge
+                                                    variant="outline"
+                                                    className="h-5 border-violet-200 bg-violet-50 px-1.5 text-[10px] font-semibold text-violet-900"
+                                                >
+                                                    Lab services
                                                 </Badge>
                                             ) : null}
                                             <span>

@@ -5,6 +5,7 @@ import ConfirmDialog from '@/components/confirm-dialog';
 import CustomerEmailLog from '@/components/email/customer-email-log';
 import type { EmailLogSummary } from '@/components/email/customer-email-log';
 import LimsWorkspace from '@/components/lims/lims-workspace';
+import ReceivingLabServicesEditor from '@/components/receiving/receiving-lab-services-editor';
 import ReceivingPricingKpis from '@/components/receiving/receiving-pricing-kpis';
 import ReceivingQuotationAudit from '@/components/receiving/receiving-quotation-audit';
 import ReceivingSampleMatrix from '@/components/receiving/receiving-sample-matrix';
@@ -33,6 +34,9 @@ type Props = {
         discount_percent?: string | number | null;
         subtotal?: string | number | null;
         is_bulk?: boolean;
+        is_laboratory_services?: boolean;
+        can_edit_lab_services?: boolean;
+        can_mark_lab_services_ready?: boolean;
         has_attachment?: boolean;
         attachment_url?: string | null;
         attachment_original_name?: string | null;
@@ -99,12 +103,19 @@ function redistributePackagePrice(
 
 export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
     const [confirmReceive, setConfirmReceive] = useState(false);
+    const [confirmLabReady, setConfirmLabReady] = useState(false);
     const [receiving, setReceiving] = useState(false);
+    const [markingLabReady, setMarkingLabReady] = useState(false);
     const [printedThisSession, setPrintedThisSession] = useState(false);
     const [detailsOpen, setDetailsOpen] = useState(false);
+    const isLaboratoryServices = Boolean(jobOrder.is_laboratory_services);
     const isReviewed = Boolean(jobOrder.reviewed_at);
     const canPrintRfa = Boolean(jobOrder.can_print_rfa);
     const canEncodeSamples = Boolean(jobOrder.can_encode_samples);
+    const canEditLabServices = Boolean(jobOrder.can_edit_lab_services);
+    const canMarkLabServicesReady = Boolean(
+        jobOrder.can_mark_lab_services_ready,
+    );
     const samplesEncodeComplete = Boolean(
         jobOrder.samples_encode_complete ?? true,
     );
@@ -426,6 +437,9 @@ export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
                                             {jobOrder.is_bulk
                                                 ? ' · bulk'
                                                 : ''}
+                                            {isLaboratoryServices
+                                                ? ' · lab services'
+                                                : ''}
                                         </dd>
                                     </div>
                                     {jobOrder.has_attachment &&
@@ -516,13 +530,87 @@ export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
                     ) : null}
                 </div>
 
-                <ReceivingPricingKpis
-                    samplesCount={samples.length}
-                    analysesCount={jobOrder.analyses.length}
-                    packagesCount={packagesCount}
-                    individualsCount={individualsCount}
-                />
+                {!isLaboratoryServices ? (
+                    <ReceivingPricingKpis
+                        samplesCount={samples.length}
+                        analysesCount={jobOrder.analyses.length}
+                        packagesCount={packagesCount}
+                        individualsCount={individualsCount}
+                    />
+                ) : null}
 
+                {isLaboratoryServices ? (
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:items-start">
+                        <ReceivingLabServicesEditor
+                            jobOrderId={jobOrder.id}
+                            initialServices={jobOrder.analyses.map((line) => ({
+                                id: line.id,
+                                name: line.name,
+                                quantity: Number(line.quantity) || 1,
+                                unit_price: Number(line.unit_price) || 0,
+                            }))}
+                            discountPercent={Number(
+                                jobOrder.discount_percent ?? 0,
+                            )}
+                            canEdit={canEditLabServices}
+                        />
+                        <aside className="space-y-3 lg:sticky lg:top-3">
+                            {canPrintRfa ? (
+                                <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xs">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <label className="flex items-center gap-2 text-xs text-slate-600">
+                                            Copies
+                                            <Input
+                                                type="number"
+                                                min={1}
+                                                max={20}
+                                                className="h-8 w-14"
+                                                value={copies}
+                                                onChange={(event) =>
+                                                    setCopies(
+                                                        Math.min(
+                                                            20,
+                                                            Math.max(
+                                                                1,
+                                                                Number(
+                                                                    event.target
+                                                                        .value,
+                                                                ) || 1,
+                                                            ),
+                                                        ),
+                                                    )
+                                                }
+                                            />
+                                        </label>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            className="h-8"
+                                            asChild
+                                        >
+                                            <Link
+                                                href={`/receiving/${jobOrder.id}/print?copies=${copies}`}
+                                            >
+                                                Print JO
+                                            </Link>
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : null}
+                            {canMarkLabServicesReady ? (
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    className="h-8 w-full bg-[#1d3b91] text-xs hover:bg-[#112747]"
+                                    onClick={() => setConfirmLabReady(true)}
+                                    disabled={markingLabReady}
+                                >
+                                    Mark ready for pickup
+                                </Button>
+                            ) : null}
+                        </aside>
+                    </div>
+                ) : (
                 <form
                     className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:items-start"
                     onSubmit={(e) => {
@@ -675,6 +763,7 @@ export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
                         />
                     </aside>
                 </form>
+                )}
             </LimsWorkspace>
 
             <ConfirmDialog
@@ -703,6 +792,48 @@ export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
                     <p>
                         <span className="text-muted-foreground">Tests: </span>
                         {jobOrder.analyses.length}
+                    </p>
+                </div>
+            </ConfirmDialog>
+
+            <ConfirmDialog
+                open={confirmLabReady}
+                onOpenChange={setConfirmLabReady}
+                title={`Mark ${jobOrder.reference_no} ready for pickup?`}
+                description="Laboratory services have no analyst workflow. This completes the fee lines and marks the job ready for pickup."
+                confirmLabel="Mark ready"
+                processingLabel="Saving…"
+                processing={markingLabReady}
+                onConfirm={() => {
+                    setMarkingLabReady(true);
+                    router.post(
+                        `/receiving/${jobOrder.id}/lab-services/ready`,
+                        {},
+                        {
+                            onFinish: () => {
+                                setMarkingLabReady(false);
+                                setConfirmLabReady(false);
+                            },
+                        },
+                    );
+                }}
+            >
+                <div className="rounded-lg border bg-nppc-page px-3 py-2 text-sm">
+                    <p>
+                        <span className="text-muted-foreground">
+                            Customer:{' '}
+                        </span>
+                        {jobOrder.customer_name}
+                    </p>
+                    <p>
+                        <span className="text-muted-foreground">
+                            Services:{' '}
+                        </span>
+                        {jobOrder.analyses.length}
+                    </p>
+                    <p>
+                        <span className="text-muted-foreground">Total: </span>
+                        {money(Number(jobOrder.total_cost || 0))}
                     </p>
                 </div>
             </ConfirmDialog>

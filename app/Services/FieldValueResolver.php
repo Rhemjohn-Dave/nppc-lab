@@ -1023,9 +1023,26 @@ class FieldValueResolver
 
         /** @var array<string, array{name: string, unit_price: float, quantity: int, line_total: float, result_value: string|null, result_unit: string|null}> $groups */
         $groups = [];
+        $labServicesTotal = 0.0;
+        $hasLabServices = false;
 
         foreach ($analyses as $line) {
             if (isset($packagedLineIds[$line->id])) {
+                continue;
+            }
+
+            // JO prints a single short billing label; Receiving keeps the long free-text detail.
+            if ($line->isLaboratoryServiceLine()) {
+                $hasLabServices = true;
+                $amount = round((float) $line->total_cost, 2);
+                if ($amount <= 0) {
+                    $amount = round(
+                        (float) $line->unit_price * max(1, (int) $line->quantity),
+                        2,
+                    );
+                }
+                $labServicesTotal += $amount;
+
                 continue;
             }
 
@@ -1051,7 +1068,21 @@ class FieldValueResolver
             $groups[$key]['line_total'] = $groups[$key]['unit_price'] * $groups[$key]['quantity'];
         }
 
-        return [...array_values($packageGroups), ...array_values($groups)];
+        $rows = [...array_values($packageGroups), ...array_values($groups)];
+
+        if ($hasLabServices) {
+            $total = round($labServicesTotal, 2);
+            $rows[] = [
+                'name' => 'Laboratory Services',
+                'unit_price' => $total,
+                'quantity' => 1,
+                'line_total' => $total,
+                'result_value' => null,
+                'result_unit' => null,
+            ];
+        }
+
+        return $rows;
     }
 
     /**

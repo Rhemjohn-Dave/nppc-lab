@@ -371,6 +371,7 @@ class IntakeController extends Controller
             'customer_address' => ['nullable', 'string', 'max:500'],
             'company_name' => ['nullable', 'string', 'max:255'],
             'ownership_type' => ['nullable', 'string', 'max:50'],
+            'is_laboratory_services' => ['sometimes', 'boolean'],
             'classification' => ['nullable', 'string', 'max:255'],
             'sampling_date' => ['nullable', 'date'],
             'sampling_time' => ['nullable', 'string', 'max:50'],
@@ -383,7 +384,7 @@ class IntakeController extends Controller
             'payment_mode' => ['nullable', 'string', Rule::in(PaymentMode::values())],
             'payment_terms' => ['nullable', 'string', Rule::in(PaymentTerms::values())],
             'other_tests' => ['nullable', 'string', 'max:500'],
-            'samples' => ['required', 'array', 'min:1'],
+            'samples' => ['nullable', 'array'],
             'samples.*.sample_code' => ['nullable', 'string', 'max:100'],
             'samples.*.description' => ['nullable', 'string', 'max:255'],
             'samples.*.matrix' => ['nullable', 'string', 'max:100'],
@@ -400,6 +401,8 @@ class IntakeController extends Controller
             'package_ids.*' => ['integer', 'exists:analysis_packages,id'],
         ]);
 
+        $data['is_laboratory_services'] = (bool) ($data['is_laboratory_services'] ?? false);
+
         if (($data['payment_mode'] ?? null) === PaymentMode::BillingPartial->value
             && empty($data['payment_terms'])
         ) {
@@ -412,37 +415,52 @@ class IntakeController extends Controller
             $data['payment_terms'] = null;
         }
 
-        $usesLegacyJoLevelSelection = array_key_exists('analysis_type_ids', $data)
-            || array_key_exists('package_ids', $data);
-
-        if ($usesLegacyJoLevelSelection) {
-            if (empty($data['analysis_type_ids']) && empty($data['package_ids']) && empty($data['other_tests'])) {
+        if ($data['is_laboratory_services']) {
+            $data['samples'] = [];
+            $data['other_tests'] = null;
+            $data['classification'] = null;
+            unset($data['analysis_type_ids'], $data['package_ids']);
+        } else {
+            $samples = $data['samples'] ?? [];
+            if (! is_array($samples) || $samples === []) {
                 return back()->withErrors([
-                    'analysis_type_ids' => 'Select at least one analysis, package, or describe other tests.',
+                    'samples' => 'Add at least one sample.',
                 ])->withInput();
             }
-        } else {
-            foreach ($data['samples'] as $index => $sample) {
-                $hasSelection = ! empty($sample['analysis_type_ids'])
-                    || ! empty($sample['package_ids']);
-                $hasOtherOnFirst = $index === 0 && ! empty($data['other_tests']);
+            $data['samples'] = $samples;
 
-                if (! $hasSelection && ! $hasOtherOnFirst) {
+            $usesLegacyJoLevelSelection = array_key_exists('analysis_type_ids', $data)
+                || array_key_exists('package_ids', $data);
+
+            if ($usesLegacyJoLevelSelection) {
+                if (empty($data['analysis_type_ids']) && empty($data['package_ids']) && empty($data['other_tests'])) {
                     return back()->withErrors([
-                        "samples.{$index}.analysis_type_ids" => 'Select at least one analysis or package for sample '.($index + 1).'.',
+                        'analysis_type_ids' => 'Select at least one analysis, package, or describe other tests.',
                     ])->withInput();
                 }
-            }
-        }
+            } else {
+                foreach ($data['samples'] as $index => $sample) {
+                    $hasSelection = ! empty($sample['analysis_type_ids'])
+                        || ! empty($sample['package_ids']);
+                    $hasOtherOnFirst = $index === 0 && ! empty($data['other_tests']);
 
-        if (($data['classification'] ?? null) === 'Wastewater') {
-            $kinds = OfficialAnalysisCatalog::wastewaterKinds();
-            foreach ($data['samples'] as $index => $sample) {
-                $description = trim((string) ($sample['description'] ?? ''));
-                if (! in_array($description, $kinds, true)) {
-                    return back()->withErrors([
-                        "samples.{$index}.description" => 'Choose Wastewater, River water, or Abstracted water for sample '.($index + 1).'.',
-                    ])->withInput();
+                    if (! $hasSelection && ! $hasOtherOnFirst) {
+                        return back()->withErrors([
+                            "samples.{$index}.analysis_type_ids" => 'Select at least one analysis or package for sample '.($index + 1).'.',
+                        ])->withInput();
+                    }
+                }
+            }
+
+            if (($data['classification'] ?? null) === 'Wastewater') {
+                $kinds = OfficialAnalysisCatalog::wastewaterKinds();
+                foreach ($data['samples'] as $index => $sample) {
+                    $description = trim((string) ($sample['description'] ?? ''));
+                    if (! in_array($description, $kinds, true)) {
+                        return back()->withErrors([
+                            "samples.{$index}.description" => 'Choose Wastewater, River water, or Abstracted water for sample '.($index + 1).'.',
+                        ])->withInput();
+                    }
                 }
             }
         }

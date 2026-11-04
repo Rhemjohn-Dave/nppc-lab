@@ -119,11 +119,14 @@ Customer requests begin here.
 
 The intake area captures:
 - customer details (lookup from saved unique customers or a previous job)
-- **sample classification first** (Aqua vs Potability / Wastewater / Agriculture / Academic / Others) — this chooses General vs Aqua Job Order and **strictly filters** packages/tests
+- **request kind first:** **Sample analysis** (normal path) or **Laboratory services** (fee-only services — not a classification)
+- for Sample analysis: **sample classification** (Aqua vs Potability / Wastewater / Agriculture / Academic / Others) — this chooses General vs Aqua Job Order and **strictly filters** packages/tests
 - sample information (**Sample type** = water/soil/food/prawn; not the PDF dynamic test matrix)
 - requested analyses from the **NPPC price-list catalog**, including **analysis packages** — chosen **per sample** (not once for the whole JO)
 - optional **standalone tests** that are not part of a package
 - for **Wastewater**, a required **Sample description** kind (**Wastewater** / **River water** / **Abstracted water**) chosen **per sample** (not once for the whole JO) and printed on that sample’s result sheet **Sample Description**. One JO may mix kinds (e.g. Abstracted + River). Selecting the **Physico-chem panel** (intake preset still `LSP-7.8-FO2`) defaults to the **full** panel for Wastewater and River water, or **pH / DO / BOD / TSS** only for Abstracted water (members remain editable individual-pay lines, not a package). Kind also selects which result form prints: **FO2** (WW/River, 4 signatories + 6 notes) vs **FO2A** (Abstracted, 3 signatories + 4 notes). Signatories are stored **per form code** so FO2 and FO2A role slots do not cross-wire. Lab **temperature**, **humidity**, and **Test Report #** stay JO-wide on `job_orders.result_footer` (FO2/FO2A may also edit references/notes). Those four sheets also print a centered bottom page stamp (`- page 1/1 -`)
+
+**Laboratory services:** separate lab offer (`is_laboratory_services`). Customer data only at intake — **no samples, no tests, no classification**. JO lands on the Receiving queue; Receiving adds free-text service lines with qty/unit price. Those lines print on JO/RFA **billing parameters**. Fee-only: no Send to analysts, no result sheets. After Head JO approval and print, Receiving **Mark ready for pickup** completes the lines.
 
 **Multi-sample (same classification):** one JO keeps reference `YY-NNNN`; printed control numbers are `YY-NNNNA`, `YY-NNNNB`, … `YY-NNNNZ`, then `YY-NNNNAA`, `YY-NNNNAB`, … when there are 2+ samples. Each sample picks its own packages/tests and (for Wastewater) its own Sample description; billing is the **sum of each sample’s lines** (four samples with the same package = 4×). Different classifications (e.g. food + water) stay **separate JOs** for now.
 
@@ -145,11 +148,12 @@ Used to process new jobs: price → await Head JO approval → print JO ×3 → 
 
 It handles:
 - **Bulk order** create via sidebar **Receiving → Bulk order** (many samples, one JO; same tests on every sample; **Save for later** draft; price first, encode sample Names later)
+- **Laboratory services** JOs: add/edit free-text priced service lines, then Head JO approval; **Mark ready for pickup** (no analysts)
 - queue: needs pricing / awaiting Head JO / ready for analysts / **Sent to analysts** (`in_analysis` + `pending_review`) / results released; intake-day picker (Today / Yesterday / date) on `created_at` (lab timezone) — with a day selected, sent jobs for that day also appear under All for Open / reprint
 - pricing (status `pending_jo_approval`)
 - **Encode samples** on receiving-bulk JOs until Send to analysts (Names required before send; intake multi-sample names come from intake)
 - print JO/RFA after `jo_approved` (default 3 copies: customer, accounting, Head file; max 20)
-- send to analysts only when status is `jo_approved` (and every receiving-bulk sample Name is filled)
+- send to analysts only when status is `jo_approved` (and every receiving-bulk sample Name is filled; not used for laboratory services)
 - **Sent to analysts** list: history of jobs already handed to the lab (Open / reprint JO)
 - **Results released** list: reprint JO copies after Head result release
 
