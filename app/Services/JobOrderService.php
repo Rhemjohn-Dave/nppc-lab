@@ -72,6 +72,7 @@ class JobOrderService
                     'other_tests' => $data['other_tests'] ?? null,
                     'see_attached_file' => (bool) ($data['see_attached_file'] ?? false),
                     'is_bulk_draft' => true,
+                    'is_receiving_bulk' => true,
                 ]);
 
                 $existing->analyses()->delete();
@@ -119,6 +120,7 @@ class JobOrderService
                 'see_attached_file' => (bool) ($data['see_attached_file'] ?? false),
                 'status' => JobOrderStatus::DraftSubmitted,
                 'is_bulk_draft' => true,
+                'is_receiving_bulk' => true,
                 'total_cost' => 0,
             ]);
 
@@ -175,6 +177,7 @@ class JobOrderService
                 'other_tests' => $data['other_tests'] ?? null,
                 'see_attached_file' => (bool) ($data['see_attached_file'] ?? false),
                 'is_bulk_draft' => false,
+                'is_receiving_bulk' => true,
             ]);
 
             $jobOrder->analyses()->delete();
@@ -253,6 +256,7 @@ class JobOrderService
                 'payment_terms' => $data['payment_terms'] ?? null,
                 'other_tests' => $data['other_tests'] ?? null,
                 'see_attached_file' => (bool) ($data['see_attached_file'] ?? false),
+                'is_receiving_bulk' => (bool) ($data['is_receiving_bulk'] ?? false),
                 'status' => JobOrderStatus::DraftSubmitted,
                 'total_cost' => 0,
             ]);
@@ -702,11 +706,11 @@ class JobOrderService
     }
 
     /**
-     * Multi-sample (bulk) JOs may fill sample names/details until Send to analysts.
+     * Receiving-bulk JOs may fill sample names/details until Send to analysts.
      */
     public function canEncodeSampleDetails(JobOrder $jobOrder): bool
     {
-        if ($jobOrder->is_bulk_draft) {
+        if ($jobOrder->is_bulk_draft || ! $jobOrder->is_receiving_bulk) {
             return false;
         }
 
@@ -735,6 +739,10 @@ class JobOrderService
 
     public function samplesEncodeComplete(JobOrder $jobOrder): bool
     {
+        if (! $jobOrder->is_receiving_bulk) {
+            return true;
+        }
+
         $jobOrder->loadMissing('samples');
         $count = $jobOrder->samples->count();
         if ($count < 2) {
@@ -841,7 +849,7 @@ class JobOrderService
         }
 
         $jobOrder->loadMissing('samples');
-        if ($jobOrder->samples->count() >= 2 && ! $this->samplesEncodeComplete($jobOrder)) {
+        if ($jobOrder->is_receiving_bulk && ! $this->samplesEncodeComplete($jobOrder)) {
             $missing = $jobOrder->samples
                 ->filter(fn ($sample) => blank(trim((string) ($sample->description ?? ''))))
                 ->count();

@@ -521,8 +521,7 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                                                 >
                                                     Bulk draft
                                                 </Badge>
-                                            ) : order.is_bulk ||
-                                              order.samples_count >= 2 ? (
+                                            ) : order.is_bulk ? (
                                                 <Badge
                                                     variant="outline"
                                                     className="h-5 border-sky-200 bg-sky-50 px-1.5 text-[10px] font-semibold text-sky-900"

@@ -65,6 +65,8 @@ class ReceivingBulkOrderTest extends TestCase
         $response->assertRedirect(route('receiving.show', $job));
 
         $job->load(['samples', 'analyses']);
+        $this->assertTrue($job->is_receiving_bulk);
+        $this->assertFalse((bool) $job->is_bulk_draft);
         $this->assertCount(3, $job->samples);
         $this->assertCount(3, $job->analyses);
         $this->assertTrue($job->see_attached_file);
@@ -192,6 +194,7 @@ class ReceivingBulkOrderTest extends TestCase
         $draft = JobOrder::query()->latest('id')->firstOrFail();
         $save->assertRedirect(route('receiving.bulk-orders.edit', $draft));
         $this->assertTrue($draft->is_bulk_draft);
+        $this->assertTrue($draft->is_receiving_bulk);
         $this->assertCount(1, $draft->samples);
         $this->assertCount(0, $draft->analyses);
 
@@ -241,8 +244,73 @@ class ReceivingBulkOrderTest extends TestCase
         $job = $draft->fresh(['samples', 'analyses']);
         $finish->assertRedirect(route('receiving.show', $job));
         $this->assertFalse((bool) $job->is_bulk_draft);
+        $this->assertTrue($job->is_receiving_bulk);
         $this->assertCount(2, $job->samples);
         $this->assertCount(2, $job->analyses);
+    }
+
+    public function test_intake_multi_sample_is_not_receiving_bulk(): void
+    {
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $type = AnalysisType::query()->where('is_active', true)->where('show_on_kiosk', true)->firstOrFail();
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'Intake Person',
+            'company_name' => 'Intake Company LLC',
+            'customer_email' => 'intake-multi@example.com',
+            'classification' => 'Potability',
+            'samples' => [
+                [
+                    'description' => 'Sample One',
+                    'matrix' => 'Water',
+                    'analysis_type_ids' => [$type->id],
+                ],
+                [
+                    'description' => 'Sample Two',
+                    'matrix' => 'Water',
+                    'analysis_type_ids' => [$type->id],
+                ],
+            ],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail()->load('samples');
+        $this->assertFalse((bool) $job->is_receiving_bulk);
+        $this->assertFalse((bool) $job->is_bulk_draft);
+        $this->assertCount(2, $job->samples);
+
+        $this->actingAs($receiving)
+            ->get('/receiving/bulk-orders?tab=submitted')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('receiving/bulk-orders')
+                ->where('counts.submitted', 0)
+                ->has('orders.data', 0));
+
+        $this->actingAs($receiving)
+            ->get("/receiving/{$job->id}/samples")
+            ->assertNotFound();
+
+        $this->actingAs($receiving)
+            ->get("/receiving?q=".urlencode((string) $job->reference_no))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('orders.data.0.id', $job->id)
+                ->where('orders.data.0.is_bulk', false)
+                ->where('orders.data.0.can_encode_samples', false));
+
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO5')->firstOrFail();
+        $revision = $form->activeRevision() ?? $form->revisions()->firstOrFail();
+        $revision->setRelation('fields', collect());
+        $resolver = app(FieldValueResolver::class);
+        $jobForResult = $job->fresh(['analyses', 'packages', 'samples']);
+
+        $bagA = $resolver->forResult($revision, $jobForResult, null, $form, $jobForResult->samples[0]);
+        $this->assertSame('Intake Company LLC', $bagA['results.customer']);
+
+        $bagB = $resolver->forResult($revision, $jobForResult, null, $form, $jobForResult->samples[1]);
+        $this->assertSame('Intake Company LLC', $bagB['results.customer']);
     }
 
     public function test_bulk_can_price_with_blank_names_then_encode_before_send(): void

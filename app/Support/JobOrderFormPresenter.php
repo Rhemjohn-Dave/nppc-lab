@@ -68,7 +68,7 @@ class JobOrderFormPresenter
             'attachment_url' => filled($jobOrder->attachment_path)
                 ? "/receiving/{$jobOrder->id}/attachment"
                 : null,
-            'is_bulk' => $jobOrder->samples->count() >= 2,
+            'is_bulk' => (bool) $jobOrder->is_receiving_bulk,
             'status' => $jobOrder->status->value,
             'status_label' => $jobOrder->status->label(),
             'total_cost' => $jobOrder->total_cost,
@@ -98,7 +98,8 @@ class JobOrderFormPresenter
             'samples_named_count' => $jobOrder->samples
                 ->filter(fn ($sample) => filled(trim((string) ($sample->description ?? ''))))
                 ->count(),
-            'can_encode_samples' => ! $jobOrder->is_bulk_draft
+            'can_encode_samples' => (bool) $jobOrder->is_receiving_bulk
+                && ! $jobOrder->is_bulk_draft
                 && $jobOrder->samples->count() >= 2
                 && in_array($jobOrder->status, [
                     JobOrderStatus::DraftSubmitted,
@@ -106,11 +107,16 @@ class JobOrderFormPresenter
                     JobOrderStatus::Priced,
                     JobOrderStatus::JoApproved,
                 ], true),
-            'samples_encode_complete' => $jobOrder->samples->count() < 2
+            'samples_encode_complete' => ! $jobOrder->is_receiving_bulk
+                || $jobOrder->samples->count() < 2
                 || $jobOrder->samples->every(
                     fn ($sample) => filled(trim((string) ($sample->description ?? ''))),
                 ),
-            'samples_encode_url' => (! $jobOrder->is_bulk_draft && $jobOrder->samples->count() >= 2)
+            'samples_encode_url' => (
+                $jobOrder->is_receiving_bulk
+                && ! $jobOrder->is_bulk_draft
+                && $jobOrder->samples->count() >= 2
+            )
                 ? "/receiving/{$jobOrder->id}/samples"
                 : null,
             'samples' => $jobOrder->samples->values()->map(function ($sample, int $index) use ($jobOrder) {

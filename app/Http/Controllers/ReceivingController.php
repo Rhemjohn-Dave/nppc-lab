@@ -137,7 +137,9 @@ class ReceivingController extends Controller
                 $namedCount = $order->samples
                     ->filter(fn ($sample) => filled(trim((string) ($sample->description ?? ''))))
                     ->count();
-                $canEncode = ! $order->is_bulk_draft
+                $isReceivingBulk = (bool) $order->is_receiving_bulk;
+                $canEncode = $isReceivingBulk
+                    && ! $order->is_bulk_draft
                     && $samplesCount >= 2
                     && in_array($order->status, [
                         JobOrderStatus::DraftSubmitted,
@@ -163,12 +165,14 @@ class ReceivingController extends Controller
                     'analyses_count' => $order->analyses_count,
                     'samples_count' => $samplesCount,
                     'samples_named_count' => $namedCount,
-                    'samples_encode_complete' => $samplesCount < 2 || $namedCount === $samplesCount,
+                    'samples_encode_complete' => ! $isReceivingBulk
+                        || $samplesCount < 2
+                        || $namedCount === $samplesCount,
                     'can_encode_samples' => $canEncode,
-                    'samples_encode_url' => $samplesCount >= 2 && ! $order->is_bulk_draft
+                    'samples_encode_url' => $canEncode
                         ? "/receiving/{$order->id}/samples"
                         : null,
-                    'is_bulk' => $samplesCount >= 2 || (bool) $order->is_bulk_draft,
+                    'is_bulk' => $isReceivingBulk || (bool) $order->is_bulk_draft,
                     'is_bulk_draft' => (bool) $order->is_bulk_draft,
                     'bulk_continue_url' => $order->is_bulk_draft
                         ? "/receiving/bulk-orders/{$order->id}/edit"

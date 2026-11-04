@@ -628,4 +628,48 @@ class ResultSheetHeaderFieldsTest extends TestCase
         $bagJob = $resolver->forResult($revision, $job, null, $formFresh);
         $this->assertSame('Bayawan Water District', $bagJob['results.customer']);
     }
+
+    public function test_intake_multi_sample_result_customer_stays_jo_client(): void
+    {
+        $this->seed();
+
+        $type = \App\Models\AnalysisType::query()
+            ->where('is_active', true)
+            ->where('show_on_kiosk', true)
+            ->firstOrFail();
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO5')->firstOrFail();
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'Juan Requestor',
+            'company_name' => 'Coastal Farms Inc',
+            'customer_email' => 'intake-result@example.com',
+            'classification' => 'Potability',
+            'samples' => [
+                [
+                    'description' => 'SOURCE A',
+                    'matrix' => 'Water',
+                    'analysis_type_ids' => [$type->id],
+                ],
+                [
+                    'description' => 'SOURCE B',
+                    'matrix' => 'Water',
+                    'analysis_type_ids' => [$type->id],
+                ],
+            ],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail()->fresh(['analyses', 'packages', 'samples']);
+        $this->assertFalse((bool) $job->is_receiving_bulk);
+
+        $revision = $form->fresh()->revisions()->firstOrFail();
+        $revision->setRelation('fields', collect());
+        $resolver = app(FieldValueResolver::class);
+        $formFresh = $form->fresh(['analysisPackage']);
+
+        $bagA = $resolver->forResult($revision, $job, null, $formFresh, $job->samples[0]);
+        $this->assertSame('Coastal Farms Inc', $bagA['results.customer']);
+
+        $bagB = $resolver->forResult($revision, $job, null, $formFresh, $job->samples[1]);
+        $this->assertSame('Coastal Farms Inc', $bagB['results.customer']);
+    }
 }

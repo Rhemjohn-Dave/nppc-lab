@@ -53,8 +53,8 @@ class ReceivingBulkOrderController extends Controller
 
         $draftsCount = JobOrder::query()->where('is_bulk_draft', true)->count();
         $submittedCount = JobOrder::query()
+            ->where('is_receiving_bulk', true)
             ->where('is_bulk_draft', false)
-            ->has('samples', '>=', 2)
             ->count();
 
         $orders = JobOrder::query()
@@ -62,7 +62,7 @@ class ReceivingBulkOrderController extends Controller
             ->with(['samples:id,job_order_id,description'])
             ->when($tab === 'drafts', fn ($query) => $query->where('is_bulk_draft', true))
             ->when($tab === 'submitted', function ($query) {
-                $query->where('is_bulk_draft', false)->has('samples', '>=', 2);
+                $query->where('is_receiving_bulk', true)->where('is_bulk_draft', false);
             })
             ->when($search !== '', function ($query) use ($search) {
                 $query->where(function ($inner) use ($search) {
@@ -178,6 +178,7 @@ class ReceivingBulkOrderController extends Controller
         } else {
             $jobOrder = $this->jobOrders->createFromIntake([
                 ...$header,
+                'is_receiving_bulk' => true,
                 'samples' => $samples,
             ]);
         }

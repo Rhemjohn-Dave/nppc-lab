@@ -112,8 +112,9 @@ class FieldValueResolver
             $bag['results.control_no'] = $resolvedControl;
             $bag['results.sample_code'] = $this->rfaSampleCodeOnly($focusSample);
             $desc = trim((string) ($focusSample->description ?? ''));
-            // Bulk-encoded sample Name prints as Customer on that sample's result sheet.
-            if ($desc !== '') {
+            // Receiving-bulk: encoded sample Name prints as Customer on that sample's result sheet.
+            // Intake multi-sample keeps the JO client display name on every result sheet.
+            if ($desc !== '' && $jobOrder->is_receiving_bulk) {
                 $bag['results.customer'] = $desc;
             }
             if (($form?->form_code ?? null) !== 'LSP-7.8-FO4') {
