@@ -369,7 +369,7 @@ class DatabaseSeeder extends Seeder
                 ],
             );
 
-            if (in_array($meta['form_code'] ?? null, ['LSP-7.8-FO37', 'LSP-7.8-FO3', 'LSP-7.8-F016-PROX'], true)) {
+            if (in_array($meta['form_code'] ?? null, ['LSP-7.8-FO37', 'LSP-7.8-FO3', 'LSP-7.8-F016-PROX', 'LSP-7.8-FO28'], true)) {
                 $form->fill([
                     'analyst_signatory_slots' => 2,
                     'analyst_require_prc' => true,
@@ -432,6 +432,25 @@ class DatabaseSeeder extends Seeder
                     $form->update(['analysis_package_id' => null]);
                     $forms->syncBindings($form, $orderedIds, null);
                 }
+            }
+
+            if (($meta['form_code'] ?? null) === 'LSP-7.8-FO28') {
+                if ($admin && ! $form->revisions()->exists()) {
+                    $form->revisions()->create([
+                        'revision' => '1',
+                        'status' => \App\Enums\ControlledFormRevisionStatus::Draft,
+                        'created_by' => $admin->id,
+                        'fill_mode' => \App\Models\ControlledFormRevision::FILL_MODE_OVERLAY,
+                        'notes' => 'Upload the blank one-page metals PDF, then align the plotted fields.',
+                    ]);
+                }
+
+                $fo28Revision = $form->revisions()->first();
+                if ($admin && $fo28Revision && ! $fo28Revision->fields()->exists() && $forms->hasBlueprint($form)) {
+                    $forms->importBlueprint($fo28Revision);
+                }
+
+                continue;
             }
 
             if (! $admin || ! $forms->hasBlueprint($form)) {
