@@ -22,6 +22,27 @@ class ControlledPdfFiller
         $pdf = $this->newPdf($revision);
         $pageCount = $this->openSource($pdf, $source);
 
+        $continuation = $this->matrixContinuation($revision, $values);
+        if ($continuation !== null) {
+            $templateId = $pdf->importPage(1);
+            $size = $pdf->getTemplateSize($templateId);
+            $orientation = $size['width'] > $size['height'] ? 'L' : 'P';
+            $pageFields = $revision->fields
+                ->filter(fn ($field) => (int) $field->page_number === 1)
+                ->values();
+            $total = count($continuation['chunks']);
+
+            foreach ($continuation['chunks'] as $index => $chunkRows) {
+                $pageValues = $values;
+                $pageValues[$continuation['name']] = $chunkRows;
+                $pdf->AddPage($orientation, [$size['width'], $size['height']]);
+                $pdf->useTemplate($templateId);
+                $this->drawOverlayPage($pdf, $revision, $pageFields, $pageValues, $index + 1, $total);
+            }
+
+            return $pdf->Output('', 'S');
+        }
+
         for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
             $templateId = $pdf->importPage($pageNo);
             $size = $pdf->getTemplateSize($templateId);
@@ -34,99 +55,156 @@ class ControlledPdfFiller
                 ->filter(fn ($field) => (int) $field->page_number === $pageNo)
                 ->values();
 
-            /** @var array<string, float> $matrixBottomY */
-            $matrixBottomY = [];
-
-            // Pass 1: draw matrices and record content bottom Y for anchors.
-            foreach ($pageFields as $field) {
-                if ($field->field_type !== ControlledFormFieldType::DynamicTestMatrix) {
-                    continue;
-                }
-
-                $name = $field->name;
-                if (! array_key_exists($name, $values) || ! is_array($values[$name])) {
-                    continue;
-                }
-
-                $overlay = $field->toOverlayArray();
-                $matrixBottomY[$name] = $this->writeDynamicTestMatrix(
-                    $pdf,
-                    $overlay,
-                    $values[$name],
-                    $values,
-                );
-            }
-
-            $pageHeight = (float) $pdf->getPageHeight();
-
-            /** @var array<string, float> $absoluteFieldY */
-            $absoluteFieldY = [];
-            foreach ($pageFields as $field) {
-                if ($field->field_type === ControlledFormFieldType::DynamicTestMatrix) {
-                    continue;
-                }
-                $absoluteFieldY[$field->name] = (float) $field->y;
-            }
-
-            // Test Report form-meta: follow matrix when tall, else park above page stamp.
-            // Signatories clamp to this resolved Y via anchor.above.
-            $formMetaStampY = null;
-            foreach ($pageFields as $field) {
-                if (! $this->isFixedFormMetaField($field->name)) {
-                    continue;
-                }
-                $overlayMeta = $field->toOverlayArray();
-                $metaY = $this->resolveFormMetaY(
-                    $overlayMeta,
-                    $matrixBottomY,
-                    $pageHeight,
-                );
-                $absoluteFieldY[$field->name] = $metaY;
-                $formMetaStampY = $this->pageStampYBelowFormMeta(
-                    $metaY,
-                    (float) ($overlayMeta['h'] ?? $field->height),
-                    (float) ($overlayMeta['font_size'] ?? $field->font_size ?? 7.0),
-                    $pageHeight,
-                );
-            }
-
-            // Pass 2: all other fields (resolve y when options.anchor.below / above is set).
-            $activeFooterVariant = trim((string) ($values['fo2_footer_variant'] ?? ''));
-            foreach ($pageFields as $field) {
-                if ($field->field_type === ControlledFormFieldType::DynamicTestMatrix) {
-                    continue;
-                }
-
-                $name = $field->name;
-                $overlay = $field->toOverlayArray();
-                $options = is_array($overlay['options'] ?? null) ? $overlay['options'] : [];
-                $fieldFooterVariant = trim((string) ($options['footer_variant'] ?? ''));
-                if (
-                    $fieldFooterVariant !== ''
-                    && $activeFooterVariant !== ''
-                    && $fieldFooterVariant !== $activeFooterVariant
-                ) {
-                    continue;
-                }
-                $staticText = trim((string) ($options['static_text'] ?? ''));
-                $hasValue = array_key_exists($name, $values);
-                if (! $hasValue && $staticText === '') {
-                    continue;
-                }
-
-                $value = $hasValue ? $values[$name] : null;
-                if ($this->isFixedFormMetaField($name)) {
-                    $overlay['y'] = $absoluteFieldY[$name];
-                } else {
-                    $overlay = $this->applyAnchorBelow($overlay, $matrixBottomY, $absoluteFieldY);
-                }
-                $this->writeField($pdf, $overlay, $value, $values);
-            }
-
-            $this->writeCenteredPageStamp($pdf, $revision, $pageNo, $pageCount, $formMetaStampY);
+            $this->drawOverlayPage($pdf, $revision, $pageFields, $values, $pageNo, $pageCount);
         }
 
         return $pdf->Output('', 'S');
+    }
+
+    /**
+     * Split a page-1 dynamic matrix into chunks when it sets max_rows_per_page
+     * (FO28 defaults to 10 even if the designer leaves the option blank).
+     *
+     * @param  array<string, mixed>  $values
+     * @return array{name: string, chunks: list<list<array<string, mixed>>>}|null
+     */
+    private function matrixContinuation(ControlledFormRevision $revision, array $values): ?array
+    {
+        $revision->loadMissing(['fields', 'form']);
+        $defaultMax = $revision->form?->form_code === 'LSP-7.8-FO28' ? 10 : 0;
+
+        foreach ($revision->fields as $field) {
+            if ($field->field_type !== ControlledFormFieldType::DynamicTestMatrix) {
+                continue;
+            }
+            if ((int) $field->page_number !== 1) {
+                continue;
+            }
+
+            $config = is_array($field->table_config) ? $field->table_config : [];
+            $max = (int) ($config['max_rows_per_page'] ?? $defaultMax);
+            if ($max < 1) {
+                continue;
+            }
+
+            $rows = $values[$field->name] ?? null;
+            if (! is_array($rows)) {
+                continue;
+            }
+
+            $rows = array_values(array_filter($rows, 'is_array'));
+            if (count($rows) <= $max) {
+                continue;
+            }
+
+            return [
+                'name' => $field->name,
+                'chunks' => array_chunk($rows, $max),
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, \App\Models\ControlledFormField>  $pageFields
+     * @param  array<string, mixed>  $values
+     */
+    private function drawOverlayPage(
+        Fpdi $pdf,
+        ControlledFormRevision $revision,
+        $pageFields,
+        array $values,
+        int $pageNo,
+        int $pageCount,
+    ): void {
+        /** @var array<string, float> $matrixBottomY */
+        $matrixBottomY = [];
+
+        foreach ($pageFields as $field) {
+            if ($field->field_type !== ControlledFormFieldType::DynamicTestMatrix) {
+                continue;
+            }
+
+            $name = $field->name;
+            if (! array_key_exists($name, $values) || ! is_array($values[$name])) {
+                continue;
+            }
+
+            $overlay = $field->toOverlayArray();
+            $matrixBottomY[$name] = $this->writeDynamicTestMatrix(
+                $pdf,
+                $overlay,
+                $values[$name],
+                $values,
+            );
+        }
+
+        $pageHeight = (float) $pdf->getPageHeight();
+
+        /** @var array<string, float> $absoluteFieldY */
+        $absoluteFieldY = [];
+        foreach ($pageFields as $field) {
+            if ($field->field_type === ControlledFormFieldType::DynamicTestMatrix) {
+                continue;
+            }
+            $absoluteFieldY[$field->name] = (float) $field->y;
+        }
+
+        $formMetaStampY = null;
+        foreach ($pageFields as $field) {
+            if (! $this->isFixedFormMetaField($field->name)) {
+                continue;
+            }
+            $overlayMeta = $field->toOverlayArray();
+            $metaY = $this->resolveFormMetaY(
+                $overlayMeta,
+                $matrixBottomY,
+                $pageHeight,
+            );
+            $absoluteFieldY[$field->name] = $metaY;
+            $formMetaStampY = $this->pageStampYBelowFormMeta(
+                $metaY,
+                (float) ($overlayMeta['h'] ?? $field->height),
+                (float) ($overlayMeta['font_size'] ?? $field->font_size ?? 7.0),
+                $pageHeight,
+            );
+        }
+
+        $activeFooterVariant = trim((string) ($values['fo2_footer_variant'] ?? ''));
+        foreach ($pageFields as $field) {
+            if ($field->field_type === ControlledFormFieldType::DynamicTestMatrix) {
+                continue;
+            }
+
+            $name = $field->name;
+            $overlay = $field->toOverlayArray();
+            $options = is_array($overlay['options'] ?? null) ? $overlay['options'] : [];
+            $fieldFooterVariant = trim((string) ($options['footer_variant'] ?? ''));
+            if (
+                $fieldFooterVariant !== ''
+                && $activeFooterVariant !== ''
+                && $fieldFooterVariant !== $activeFooterVariant
+            ) {
+                continue;
+            }
+            $staticText = trim((string) ($options['static_text'] ?? ''));
+            $hasValue = array_key_exists($name, $values);
+            if (! $hasValue && $staticText === '') {
+                continue;
+            }
+
+            $value = $hasValue ? $values[$name] : null;
+            if ($this->isFixedFormMetaField($name)) {
+                $overlay['y'] = $absoluteFieldY[$name];
+            } else {
+                $overlay = $this->clampFo28SignatoriesAboveFormMeta($overlay, $pageFields);
+                $overlay = $this->applyAnchorBelow($overlay, $matrixBottomY, $absoluteFieldY);
+            }
+            $this->writeField($pdf, $overlay, $value, $values);
+        }
+
+        $this->writeCenteredPageStamp($pdf, $revision, $pageNo, $pageCount, $formMetaStampY);
     }
 
     public function calibrationOverlay(ControlledFormRevision $revision): string
@@ -305,8 +383,13 @@ class ControlledPdfFiller
         $pageHeight = (float) $pdf->getPageHeight();
         $pageWidth = (float) $pdf->getPageWidth();
         $fontSize = 7.5;
-        // Nudge applies on both pinned and follow-meta paths (BOTTOM_MM alone often no-ops).
-        $y = max(4.0, ($yOverride ?? $this->pageStampY($pageHeight)) - self::PAGE_STAMP_NUDGE_UP_MM);
+        // FO28 page mark sits in the bottom margin, under the plotted footer.
+        // Other stamped sheets keep the raised position used with Test Report.
+        if ($revision->form?->form_code === 'LSP-7.8-FO28') {
+            $y = max(4.0, $pageHeight - 10.0);
+        } else {
+            $y = max(4.0, ($yOverride ?? $this->pageStampY($pageHeight)) - self::PAGE_STAMP_NUDGE_UP_MM);
+        }
 
         $pdf->SetTextColor(0, 0, 0);
         $pdf->SetFont('times', '', $fontSize);
@@ -990,6 +1073,12 @@ class ControlledPdfFiller
 
         $availableBody = max(0.0, $h - $headerHeight);
         $naturalHeights = array_column($bodyPlan, 'natural');
+        // FO28 keeps the plotted box for 10 rows. A shorter list ends after the
+        // last test so the unused rows stay open and the signatory block can
+        // drop into that space instead of stretching empty cells.
+        if ((string) ($field['name'] ?? '') === 'metals_fo28_matrix') {
+            $config['stretch_body'] = false;
+        }
         $stretchBody = ($config['stretch_body'] ?? true) !== false;
         $stretchHeights = $stretchBody
             ? DynamicTestMatrix::stretchBodyRowHeights($naturalHeights, $availableBody)
@@ -1091,7 +1180,70 @@ class ControlledPdfFiller
 
     private function isFixedFormMetaField(string $name): bool
     {
-        return in_array($name, ['fo2_form_meta', 'fo3_form_meta', 'fo37_form_meta'], true);
+        return in_array($name, ['fo2_form_meta', 'fo3_form_meta', 'fo37_form_meta', 'fo28_form_meta'], true);
+    }
+
+    /**
+     * Signatory chrome that drops into the open rows under a short FO28 matrix.
+     *
+     * @var list<string>
+     */
+    private const FO28_SIGNATORY_FIELDS = [
+        'fo28_label_analyzed_by',
+        'fo28_label_approved_by',
+        'results.analyst_name',
+        'results.analyst_name_2',
+        'fo28_role_analyzed',
+        'fo28_role_approved',
+        'fo28_prc_label',
+        'results.analyst_prc',
+        'fo28_prc_label_2',
+        'results.analyst_prc_2',
+    ];
+
+    /**
+     * Give FO28 signatories the same above-form-meta clamp FO2 and FO3 use,
+     * measured from the plotted gap between each line and the form block.
+     *
+     * @param  array<string, mixed>  $field
+     * @param  \Illuminate\Support\Collection<int, \App\Models\ControlledFormField>  $pageFields
+     * @return array<string, mixed>
+     */
+    private function clampFo28SignatoriesAboveFormMeta(array $field, $pageFields): array
+    {
+        $name = (string) ($field['name'] ?? '');
+        if (! in_array($name, self::FO28_SIGNATORY_FIELDS, true)) {
+            return $field;
+        }
+
+        $options = is_array($field['options'] ?? null) ? $field['options'] : [];
+        $anchor = is_array($options['anchor'] ?? null) ? $options['anchor'] : null;
+        if ($anchor === null || trim((string) ($anchor['below'] ?? '')) !== 'metals_fo28_matrix') {
+            return $field;
+        }
+
+        $fieldOffset = is_numeric($anchor['offset_mm'] ?? null) ? (float) $anchor['offset_mm'] : 0.0;
+        $metaOffset = null;
+        foreach ($pageFields as $pageField) {
+            if ($pageField->name !== 'fo28_form_meta') {
+                continue;
+            }
+            $metaAnchor = is_array($pageField->options['anchor'] ?? null) ? $pageField->options['anchor'] : [];
+            if (is_numeric($metaAnchor['offset_mm'] ?? null)) {
+                $metaOffset = (float) $metaAnchor['offset_mm'];
+            }
+            break;
+        }
+        if ($metaOffset === null || $metaOffset <= $fieldOffset) {
+            return $field;
+        }
+
+        $anchor['above'] = 'fo28_form_meta';
+        $anchor['above_offset_mm'] = $metaOffset - $fieldOffset;
+        $options['anchor'] = $anchor;
+        $field['options'] = $options;
+
+        return $field;
     }
 
     /**
@@ -1147,10 +1299,16 @@ class ControlledPdfFiller
         if ($fromBelow !== null && $fromAbove !== null) {
             // Nudge only on short sheets with clear spare room; long matrices stay normal.
             $spare = $fromAbove - $fromBelow;
-            $nudge = $spare >= self::SIGNATORY_NUDGE_MIN_SPARE_MM
-                ? self::SIGNATORY_NUDGE_MM
-                : 0.0;
-            $field['y'] = min($fromBelow + $nudge, $fromAbove);
+            // FO28 short sheets park the signatory stack in the open space above
+            // the form block. A full sheet has no spare, so the plotted gaps stay.
+            if ($above === 'fo28_form_meta' && $spare >= self::SIGNATORY_NUDGE_MIN_SPARE_MM) {
+                $field['y'] = $fromAbove;
+            } else {
+                $nudge = $spare >= self::SIGNATORY_NUDGE_MIN_SPARE_MM
+                    ? self::SIGNATORY_NUDGE_MM
+                    : 0.0;
+                $field['y'] = min($fromBelow + $nudge, $fromAbove);
+            }
         } elseif ($fromBelow !== null) {
             $field['y'] = $fromBelow;
         } else {
@@ -1403,7 +1561,16 @@ class ControlledPdfFiller
             $innerWidth = max(1.0, $colWidth - 1.6);
             [$padding, $gap] = $this->matrixTestCellSpacing($detail);
             $detailFontSize = $this->matrixDetailFontSize($methodFontSize);
+            $centerName = $this->matrixColumnValign($column, $key) === 'M' && $detail === '' && $method === '';
             $textY = $y + $padding;
+
+            if ($name !== '' && $centerName) {
+                $this->applyTcpdfFont($pdf, $requestedFamily, $testNameBold ? 'B' : '', $colFontSize);
+                $blockHeight = $this->matrixTextOverflows($pdf, $pdf->GetStringWidth($name), $innerWidth)
+                    ? $pdf->getStringHeight($innerWidth, $name)
+                    : $this->matrixLineHeight($colFontSize);
+                $textY = $y + max(0.2, ($rowHeight - $blockHeight) / 2);
+            }
 
             if ($name !== '') {
                 $this->applyTcpdfFont($pdf, $requestedFamily, $testNameBold ? 'B' : '', $colFontSize);
@@ -1494,7 +1661,7 @@ class ControlledPdfFiller
         $textWidth = $scientific !== null
             ? $this->scientificValueWidth($pdf, $scientific, $requestedFamily, $colFontSize)
             : $pdf->GetStringWidth($text);
-        $topAligned = in_array($key, ['method', 'acceptable_values'], true);
+        $topAligned = $this->matrixColumnValign($column, $key) === 'T';
         $wrap = $topAligned
             || strlen($text) > 40
             || $this->matrixTextOverflows($pdf, $textWidth, $innerWidth);
@@ -2032,6 +2199,29 @@ class ControlledPdfFiller
     }
 
     /**
+     * Body vertical alignment. Method and acceptable-value columns stay top-aligned
+     * unless the column sets valign to M (FO28 test and method).
+     *
+     * @param  array<string, mixed>  $column
+     */
+    private function matrixColumnValign(array $column, string $key): string
+    {
+        $valign = strtoupper((string) ($column['valign'] ?? ''));
+        if (in_array($valign, ['M', 'MIDDLE', 'C'], true)) {
+            return 'M';
+        }
+        if (in_array($valign, ['T', 'TOP'], true)) {
+            return 'T';
+        }
+
+        if (in_array($key, ['method', 'acceptable_values', 'test'], true)) {
+            return 'T';
+        }
+
+        return 'M';
+    }
+
+    /**
      * Rows with a Time/Date line (FO2) use tighter spacing so a full list fits the box.
      *
      * @return array{0: float, 1: float}
@@ -2168,6 +2358,9 @@ class ControlledPdfFiller
         $pdf->SetMargins(0, 0, 0);
         $pdf->SetAutoPageBreak(false, 0);
         $pdf->setFontSubsetting(false);
+        if (app()->runningUnitTests()) {
+            $pdf->setCompression(false);
+        }
 
         return $pdf;
     }

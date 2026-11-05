@@ -13,6 +13,8 @@ export type MatrixColumnConfig = {
     font_size?: number;
     /** Header cell font size (pt) for this column */
     header_font_size?: number;
+    /** Body vertical alignment. M centers the text in the row. */
+    valign?: 'T' | 'M';
 };
 
 export type MatrixTableConfig = {
@@ -31,8 +33,8 @@ export type MatrixTableConfig = {
     preview_rows?: number;
     /** Designer-only sample row text (not printed — runtime uses job data) */
     preview_data?: Array<Record<string, string>>;
-    /** When false, body rows keep natural height (no stretch-to-fill). */
-    stretch_body?: boolean;
+    /** When set (>0), extra matrix rows continue on a copy of page 1. FO28 uses 10. */
+    max_rows_per_page?: number;
     method_font_size?: number;
     test_name_bold?: boolean;
     header_bold?: boolean;

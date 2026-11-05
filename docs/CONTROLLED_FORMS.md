@@ -268,6 +268,15 @@ Physico-chemical:
 - `PC OLD Drinking Water Test Result Form Issue 11 blank.pdf` → `LSP-7.8-FO3` types-only (flowing footer: remove notes/signature chrome below the table on the blank; overlays use `options.anchor` + `static_text` — see `docs/DYNAMIC_CONTROLLED_FORMS.md`)
 - `micro food test result form issue4 07152026.pdf` → `LSP-7.8-FO26` types-only dynamic matrix (Tests | Control No.; selected tests only); Methods/References via `results.test_methods_references`
 - `FOOD MICRO SUGAR Test Result form Issue4 07152026.pdf` → `LSP-7.8-FO27` types-only dynamic matrix (distinct `SM-*` codes; Tests | Control No.); Methods/References via `results.test_methods_references`
+- `LSP-7.8-FO28` Metal Test Results — types-only for `MT-01`–`MT-16`. The saved local plot is `config/result_fo28_form_fields.php` plus `resources/forms/official/lsp-7.8-fo28-metal-test-results.pdf`. On the server, run only `php artisan migrate --path=database/migrations/2026_11_05_120000_deploy_metals_fo28_local_plot.php --force`. It stays out of `ExportControlledFormBlueprintsCommand::TARGETS` and `ControlledFormDefaultsSeeder`, so that command does not replace other forms or a PDF already on the server.
+
+FO28 designer plot (one blank page; the filler clones that page when the matrix has more than 10 rows):
+- Header: `results.customer`, `results.address`, `results.sample_description`, `results.sample_received_at`, `results.collection_datetime`, `results.issued_date`, `results.ref_no`, `results.control_no`
+- One dynamic test matrix, columns Test / Method / Result (`test`, `method`, `result`). The test cell is the bold name only, such as `Arsenic (ppm)`. The method stays in the Method column. Set **Rows per page** to `10` (`table_config.max_rows_per_page`). Selected metals only.
+- `results.metals_mdl` under the matrix (selected metals that have a limit, catalog order)
+- Static reference `Reference: SMEWW, 24th Edition 2023 – (Method Reference)` and the two standard notes
+- Two signatory pairs anchored under the matrix: `results.analyst_name` + `results.analyst_prc` (Analyzed by) and `results.analyst_name_2` + `results.analyst_prc_2` (Approved by). Defaults are Lanaca / Tayson until edited on the job.
+- Leave the page-number area blank. The app stamps `- page n/m -` on every page, including continuation pages that repeat the same header, footer, and signatories.
 
 FO4 overlay mapping (Form Designer):
 - **Coliform result cells** → `test_N_result` (measured MPN; analyst does **not** encode Pass/Fail on FO4)

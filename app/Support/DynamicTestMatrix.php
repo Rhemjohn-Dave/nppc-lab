@@ -281,6 +281,10 @@ class DynamicTestMatrix
      */
     public static function previewRowsForForm(?ControlledForm $form): array
     {
+        if ($form?->form_code === 'LSP-7.8-FO28') {
+            return self::metalsFo28SampleRows();
+        }
+
         if ($form === null) {
             return self::sampleRows();
         }
@@ -450,6 +454,10 @@ class DynamicTestMatrix
         }
 
         $testName = (string) $type->name;
+        $code = (string) ($type->code ?? '');
+        if (str_starts_with($code, 'MT-') && $code !== 'MT-17' && ! str_contains($testName, '(ppm)')) {
+            $testName .= ' (ppm)';
+        }
         if (OfficialAnalysisCatalog::isWastewaterPhysicoPanelCode($type->code)) {
             $testName = OfficialAnalysisCatalog::wastewaterTestLabelWithFootnote(
                 $testName,
@@ -1022,6 +1030,9 @@ class DynamicTestMatrix
 
         $code = $line->analysisType?->code;
         $testName = (string) $line->name;
+        if (is_string($code) && str_starts_with($code, 'MT-') && $code !== 'MT-17' && ! str_contains($testName, '(ppm)')) {
+            $testName .= ' (ppm)';
+        }
         if (OfficialAnalysisCatalog::isWastewaterPhysicoPanelCode($code)) {
             $testName = OfficialAnalysisCatalog::wastewaterTestLabelWithFootnote(
                 $testName,
@@ -1760,6 +1771,34 @@ class DynamicTestMatrix
             'method_font_size' => 7,
             'header_font_size' => 8,
         ];
+    }
+
+    /**
+     * Official LSP 7.8 FO28 sample: test name only, method in its own column.
+     *
+     * @return list<array{test: string, test_method: string, method: string, result: string}>
+     */
+    public static function metalsFo28SampleRows(): array
+    {
+        $rows = [
+            ['Arsenic (ppm)', 'HVG-Flame – AAS Method', '0.0008'],
+            ['Lead (ppm)', 'Flame – AAS Method', '<0.003'],
+            ['Cadmium (ppm)', 'Flame – AAS Method', '<0.002'],
+            ['Mercury (ppm)', 'Cold Vapor HVG AAS Method', '<2.0 x 10-4'],
+            ['Copper (ppm)', 'Flame – AAS Method', '<0.01'],
+            ['Magnesium (ppm)', 'Flame – AAS Method', '15.033'],
+            ['Manganese (ppm)', 'Flame – AAS Method', '0.223'],
+            ['Chromium (ppm)', 'Flame – AAS Method', '<0.01'],
+            ['Nickel (ppm)', 'Flame – AAS Method', '<0.02'],
+            ['Iron (ppm)', 'Flame – AAS Method', '0.05'],
+        ];
+
+        return array_map(static fn (array $row): array => [
+            'test' => $row[0],
+            'test_method' => $row[1],
+            'method' => $row[1],
+            'result' => $row[2],
+        ], $rows);
     }
 
     /**

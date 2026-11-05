@@ -346,6 +346,9 @@ class OfficialAnalysisCatalog
             'SM-05', 'SM-06' => 'Multiple Tube Fermentation Technique',
             'SM-07' => '3M Petrifilm Salmonella Express (AOAC Certified)',
             'SM-08', 'SM-09' => 'ICUMSA (Method GS2/3-47, 1994), ICUMSA and BAM',
+            'MT-02' => 'HVG-Flame – AAS Method',
+            'MT-11' => 'Cold Vapor HVG AAS Method',
+            'MT-01', 'MT-03', 'MT-04', 'MT-05', 'MT-06', 'MT-07', 'MT-08', 'MT-09', 'MT-10', 'MT-12', 'MT-13', 'MT-14', 'MT-15', 'MT-16' => 'Flame – AAS Method',
             default => null,
         };
     }
@@ -356,6 +359,71 @@ class OfficialAnalysisCatalog
     public static function usesRawFinishResults(?string $code): bool
     {
         return in_array($code, ['DW-02', 'DW-03'], true);
+    }
+
+    /**
+     * Metals result rows (Sample Preparation MT-17 is billable only).
+     *
+     * @return list<string>
+     */
+    public static function metalsResultTypeCodes(): array
+    {
+        return [
+            'MT-01', 'MT-02', 'MT-03', 'MT-04', 'MT-05', 'MT-06', 'MT-07', 'MT-08',
+            'MT-09', 'MT-10', 'MT-11', 'MT-12', 'MT-13', 'MT-14', 'MT-15', 'MT-16',
+        ];
+    }
+
+    public static function metalsDetectionLimitPpm(?string $code): ?string
+    {
+        return match ($code) {
+            'MT-02' => '6.0 x 10-5',
+            'MT-03' => '0.002',
+            'MT-05' => '0.01',
+            'MT-06' => '0.01',
+            'MT-07' => '0.02',
+            'MT-08' => '0.003',
+            'MT-09' => '0.02',
+            'MT-10' => '0.01',
+            'MT-11' => '2.0 x 10-4',
+            'MT-12' => '0.02',
+            default => null,
+        };
+    }
+
+    /**
+     * MDL line for the metals that were actually selected, in catalog order.
+     *
+     * @param  iterable<int, string|null>  $codes
+     */
+    public static function metalsDetectionLimitText(iterable $codes): ?string
+    {
+        $wanted = [];
+        foreach ($codes as $code) {
+            $code = trim((string) $code);
+            if ($code !== '') {
+                $wanted[$code] = true;
+            }
+        }
+
+        $parts = [];
+        foreach (self::definitions()[AnalysisCategory::Metals->value] ?? [] as $row) {
+            $code = (string) ($row[0] ?? '');
+            if (! isset($wanted[$code])) {
+                continue;
+            }
+            $limit = self::metalsDetectionLimitPpm($code);
+            if ($limit === null) {
+                continue;
+            }
+            $parts[] = (string) ($row[1] ?? $code).' = '.$limit.' ppm';
+        }
+
+        if ($parts === []) {
+            return null;
+        }
+
+        return 'Method Detection Limit: '.implode('; ', $parts);
     }
 
     /**
@@ -1042,6 +1110,14 @@ TXT;
                 'effective' => '09/01/2026',
                 'package_code' => 'PKG-DW-PHYSICO',
                 'source_pdf' => 'PC Drinking Water Test Result Form Issue 7 09012026.pdf',
+            ],
+            'metals' => [
+                'form_code' => 'LSP-7.8-FO28',
+                'name' => 'Metal Test Results',
+                'official' => 'LSP 7.8 FO28',
+                'revision' => '00/Issue 1',
+                'effective' => '06/01/2024',
+                'type_codes' => self::metalsResultTypeCodes(),
             ],
             'dw_physico_old' => [
                 'form_code' => 'LSP-7.8-FO3',

@@ -132,6 +132,9 @@ class FieldValueResolver
         $this->putResultAnalystBag($bag, $jobOrder, $form, $ordered);
         $bag['results.test_requested'] = $this->testRequestedNames($jobOrder, $form);
         $bag['results.test_methods_references'] = $this->testMethodsReferencesBlock($ordered);
+        $bag['results.metals_mdl'] = OfficialAnalysisCatalog::metalsDetectionLimitText(
+            $ordered->map(fn (JobOrderAnalysis $line) => $line->analysisType?->code),
+        );
         $bag['issued_date'] = $bag['results.issued_date'];
         $bag['analyst_name'] = $bag['results.analyst_name'];
 

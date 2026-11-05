@@ -20,4 +20,5 @@ return [
     'LSP-7.8-F016-WA' => 'result_water_activity_form_fields',
     'LSP-7.8-F016-CAP' => 'result_chloramphenicol_form_fields',
     'LSP-7.8-F016-NO2' => 'result_nitrite_form_fields',
+    'LSP-7.8-FO28' => 'result_fo28_form_fields',
 ];

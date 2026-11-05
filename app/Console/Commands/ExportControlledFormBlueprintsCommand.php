@@ -84,9 +84,24 @@ class ExportControlledFormBlueprintsCommand extends Command
     public function handle(): int
     {
         $requested = array_values(array_filter($this->option('form')));
-        $targets = $requested === []
-            ? self::TARGETS
-            : array_intersect_key(self::TARGETS, array_flip($requested));
+        if ($requested === []) {
+            $targets = self::TARGETS;
+        } else {
+            $targets = [];
+            $blueprintMap = config('controlled_form_blueprints', []);
+            foreach ($requested as $formCode) {
+                if (isset(self::TARGETS[$formCode])) {
+                    $targets[$formCode] = self::TARGETS[$formCode];
+
+                    continue;
+                }
+
+                $configKey = is_array($blueprintMap) ? ($blueprintMap[$formCode] ?? null) : null;
+                if (is_string($configKey) && $configKey !== '') {
+                    $targets[$formCode] = ['config' => $configKey];
+                }
+            }
+        }
 
         if ($targets === []) {
             $this->error('No matching form codes in the deploy default set.');

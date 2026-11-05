@@ -905,10 +905,12 @@ function MatrixBodyCell({
             part: 'test_method',
         };
 
+        const valignMiddle = column.valign === 'M' && detail === '' && method === '';
+
         return (
             <div
-                className={`absolute box-border overflow-hidden ${align}`}
-                style={{ ...cellStyle, paddingTop: scale.mm(padding) }}
+                className={`absolute box-border overflow-hidden ${align} ${valignMiddle ? 'flex flex-col justify-center' : ''}`}
+                style={{ ...cellStyle, paddingTop: valignMiddle ? 0 : scale.mm(padding) }}
             >
                 <InlineEditable
                     value={name}
@@ -955,7 +957,9 @@ function MatrixBodyCell({
     const text = matrixPrintedCellValue(row, column.key);
     const scientific = splitMatrixScientific(text);
     const valueFontPt = scientific ? matrixScientificFontSizePt(scientific, Math.max(1, widthMm - 1.6), fontSizePt, measure) : fontSizePt;
-    const topAligned = column.key === 'method' || column.key === 'acceptable_values';
+    const topAligned =
+        column.valign === 'T' ||
+        (column.valign !== 'M' && (column.key === 'method' || column.key === 'acceptable_values'));
     const wrap = !scientific && (topAligned || text.length > 40 || !fitsOneLine(text, fontSizePt, false));
     const lineMm = wrap ? matrixWrappedLineHeightMm(fontSizePt) : matrixLineHeightMm(valueFontPt);
     const linePx = scale.mm(lineMm);

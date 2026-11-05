@@ -210,6 +210,13 @@ class ResultSignatories
             ], 0, $slots);
         }
 
+        if ($form?->form_code === 'LSP-7.8-FO28') {
+            return array_slice([
+                'Analyzed by',
+                'Approved by',
+            ], 0, $slots);
+        }
+
         return array_map(
             fn (int $index): string => 'Analyst '.($index + 1),
             range(0, $slots - 1),
@@ -228,6 +235,13 @@ class ResultSignatories
     public static function defaults(JobOrder $jobOrder, ?ControlledForm $form = null, ?Collection $orderedAnalyses = null): array
     {
         $slots = self::slotsFor($form, $jobOrder);
+        if ($form?->form_code === 'LSP-7.8-FO28') {
+            return array_slice([
+                ['name' => 'Ma. Antoniela C. Lanaca, RChT', 'prc_id' => '0000761'],
+                ['name' => 'Wendy A. Tayson, RCh, MEnE', 'prc_id' => '15131'],
+            ], 0, $slots);
+        }
+
         $names = self::candidateNames($jobOrder, $orderedAnalyses);
         $defaults = [];
 

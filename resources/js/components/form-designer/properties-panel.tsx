@@ -271,6 +271,7 @@ export default function PropertiesPanel({
         columns?: string[] | Array<{ key: string; label: string; width_pct: number }>;
         header_row?: boolean;
         border?: boolean;
+        max_rows_per_page?: number;
     };
     const tableColumns = tableConfig.columns ?? [];
     const availableColumns =
@@ -978,6 +979,30 @@ export default function PropertiesPanel({
                                                 table_config: {
                                                     ...tableConfig,
                                                     row_height_mm: Number(event.target.value),
+                                                },
+                                            })
+                                        }
+                                        onBlur={() => onUpdate({}, true)}
+                                    />
+                                </div>
+                                <div>
+                                    <Label htmlFor="prop-matrix-rows-per-page">Rows per page</Label>
+                                    <Input
+                                        id="prop-matrix-rows-per-page"
+                                        type="number"
+                                        min={0}
+                                        step={1}
+                                        disabled={!canEdit}
+                                        placeholder="10 on FO28"
+                                        value={tableConfig.max_rows_per_page ?? ''}
+                                        onChange={(event) =>
+                                            onUpdate({
+                                                table_config: {
+                                                    ...tableConfig,
+                                                    max_rows_per_page:
+                                                        event.target.value === ''
+                                                            ? undefined
+                                                            : Number(event.target.value),
                                                 },
                                             })
                                         }

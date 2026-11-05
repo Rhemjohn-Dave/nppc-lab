@@ -19,6 +19,7 @@ class ResultFooter
         'LSP-7.8-FO2A',
         'LSP-7.8-FO3',
         'LSP-7.8-FO37',
+        'LSP-7.8-FO28',
     ];
 
     public const TEST_REPORT_PREFIX_WW = 'CHE WW –';
