@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\ControlledFormCategory;
 use App\Enums\ControlledFormRevisionStatus;
 use App\Enums\JobOrderAnalysisStatus;
+use App\Models\AnalysisType;
 use App\Models\ControlledForm;
 use App\Models\ControlledFormRevision;
 use App\Models\JobOrder;
@@ -23,6 +24,9 @@ use RuntimeException;
 
 class AnalysisResultReportResolver
 {
+    /** @var array<int, true>|null */
+    private ?array $samplePreparationTypeIds = null;
+
     public function forAnalysis(JobOrderAnalysis $analysis, User $user, bool $withValues = true): AnalysisResultReport
     {
         $analysis->loadMissing(['jobOrder.samples', 'jobOrder.analyses.assignee', 'jobOrder.analyses.analysisType', 'analysisType', 'assignee']);
@@ -489,7 +493,7 @@ class AnalysisResultReportResolver
             return null;
         }
 
-        $contained = static function (ControlledForm $form) use ($jobTypeIds): bool {
+        $contained = function (ControlledForm $form) use ($jobTypeIds): bool {
             $revision = $form->activeRevision() ?? $form->currentRevision;
             if (! DynamicTestMatrix::revisionUsesMatrix($revision)) {
                 return false;
@@ -498,13 +502,21 @@ class AnalysisResultReportResolver
             if ($allowed === []) {
                 return false;
             }
+            $matched = 0;
             foreach ($jobTypeIds as $typeId) {
-                if (! isset($allowed[$typeId])) {
-                    return false;
+                if (isset($allowed[$typeId])) {
+                    $matched++;
+
+                    continue;
                 }
+                if ($this->typeIsIgnorableSamplePreparation((int) $typeId, $allowed)) {
+                    continue;
+                }
+
+                return false;
             }
 
-            return true;
+            return $matched > 0;
         };
 
         $fo2 = $candidates->get('LSP-7.8-FO2');
@@ -560,20 +572,60 @@ class AnalysisResultReportResolver
             }
 
             $allowed = array_fill_keys($formTypeIds, true);
+            $matched = 0;
             $allContained = true;
             foreach ($jobTypeIds as $typeId) {
-                if (! isset($allowed[$typeId])) {
-                    $allContained = false;
-                    break;
+                if (isset($allowed[$typeId])) {
+                    $matched++;
+
+                    continue;
                 }
+                if ($this->typeIsIgnorableSamplePreparation((int) $typeId, $allowed)) {
+                    continue;
+                }
+                $allContained = false;
+                break;
             }
 
-            if ($allContained) {
+            if ($allContained && $matched > 0) {
                 return $form;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Sample Preparation is billed on the job order and kept off result sheets.
+     * An extra prep line must not hide the form that covers the real tests.
+     *
+     * @param  array<int, true>  $allowed
+     */
+    private function typeIsIgnorableSamplePreparation(int $typeId, array $allowed): bool
+    {
+        if (isset($allowed[$typeId])) {
+            return false;
+        }
+
+        return isset($this->samplePreparationTypeIds()[$typeId]);
+    }
+
+    /**
+     * @return array<int, true>
+     */
+    private function samplePreparationTypeIds(): array
+    {
+        if ($this->samplePreparationTypeIds !== null) {
+            return $this->samplePreparationTypeIds;
+        }
+
+        $this->samplePreparationTypeIds = AnalysisType::query()
+            ->where('name', 'Sample Preparation')
+            ->pluck('id')
+            ->mapWithKeys(fn ($id): array => [(int) $id => true])
+            ->all();
+
+        return $this->samplePreparationTypeIds;
     }
 
     private function matchingPackageControlledForm(JobOrder $jobOrder): ?ControlledForm
