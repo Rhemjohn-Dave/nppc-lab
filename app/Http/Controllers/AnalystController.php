@@ -7,6 +7,7 @@ use App\Enums\JobOrderStatus;
 use App\Models\ControlledFormRevision;
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
+use App\Models\Sample;
 use App\Models\User;
 use App\Services\AnalysisResultReportResolver;
 use App\Services\JobOrderService;
@@ -22,6 +23,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -236,14 +238,22 @@ class AnalystController extends Controller
             }
         }
 
-        $tasks = $tasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin, $qualifiedTypeIds, $reportByJobSample) {
+        $editableSampleIds = [];
+        foreach ($tasks as $line) {
+            if ($line->sample_id === null || ! $this->userCanWorkLine($user, $line, $qualifiedTypeIds)) {
+                continue;
+            }
+            $owned = $line->jobOrder->samples->first(
+                fn ($row) => (int) $row->id === (int) $line->sample_id,
+            );
+            if ($owned && $owned->released_at === null) {
+                $editableSampleIds[(int) $owned->id] = true;
+            }
+        }
+
+        $tasks = $tasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin, $qualifiedTypeIds, $reportByJobSample, $editableSampleIds) {
             $isMine = $isAdmin || (int) $task->assigned_to === (int) $user->id;
-            $canWork = $isAdmin
-                || $isMine
-                || (
-                    $task->analysis_type_id
-                    && in_array((int) $task->analysis_type_id, $qualifiedTypeIds, true)
-                );
+            $canWork = $this->userCanWorkLine($user, $task, $qualifiedTypeIds);
 
             $samples = $task->jobOrder->samples->values();
             $sampleCount = $samples->count();
@@ -335,7 +345,7 @@ class AnalystController extends Controller
                     'received_at' => $task->jobOrder->received_at?->toIso8601String(),
                     'reviewed_at' => $task->jobOrder->reviewed_at?->toIso8601String(),
                     'review_notes' => $task->jobOrder->review_notes,
-                    'samples' => $samples->map(function ($sample, int $index) use ($task, $sampleCount) {
+                    'samples' => $samples->map(function ($sample, int $index) use ($task, $sampleCount, $editableSampleIds) {
                         return [
                             'id' => $sample->id,
                             'sample_code' => $sample->sample_code,
@@ -348,6 +358,8 @@ class AnalystController extends Controller
                             ),
                             'submitted_for_review' => $sample->submitted_for_review_at !== null,
                             'released' => $sample->released_at !== null,
+                            'can_edit_description' => isset($editableSampleIds[(int) $sample->id]),
+                            'description_choices' => $this->sampleDescriptionChoices($sample->description),
                         ];
                     })->values()->all(),
                 ],
@@ -372,6 +384,30 @@ class AnalystController extends Controller
                 'day' => $day,
             ],
         ]);
+    }
+
+    public function updateSampleDescription(Request $request, JobOrder $jobOrder, Sample $sample): RedirectResponse
+    {
+        $user = $request->user();
+        abort_unless($user !== null, 403);
+        abort_unless((int) $sample->job_order_id === (int) $jobOrder->id, 404);
+
+        $sample->loadMissing('analyses');
+        abort_unless($this->userCanEditSampleDescription($user, $sample), 403);
+
+        $choices = $this->sampleDescriptionChoices($sample->description);
+        $data = $request->validate([
+            'description' => $choices === null
+                ? ['nullable', 'string', 'max:255']
+                : ['required', 'string', Rule::in($choices)],
+        ]);
+
+        $description = trim((string) ($data['description'] ?? ''));
+        $sample->update([
+            'description' => $description !== '' ? $description : null,
+        ]);
+
+        return $this->redirectToAnalystReferer($request);
     }
 
     public function saveDraft(Request $request, JobOrderAnalysis $analysis): RedirectResponse
@@ -1029,5 +1065,80 @@ class AnalystController extends Controller
         }
 
         return $extra;
+    }
+
+    /**
+     * Same rule as the queue `can_work` flag: suggested assignee, or qualified for the type.
+     *
+     * @param  list<int>|null  $qualifiedTypeIds
+     */
+    private function userCanWorkLine(User $user, JobOrderAnalysis $line, ?array $qualifiedTypeIds = null): bool
+    {
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
+        if ((int) $line->assigned_to === (int) $user->id) {
+            return true;
+        }
+
+        if (! $line->analysis_type_id) {
+            return false;
+        }
+
+        if ($qualifiedTypeIds !== null) {
+            return in_array((int) $line->analysis_type_id, $qualifiedTypeIds, true);
+        }
+
+        return $user->analysisTypes()->whereKey($line->analysis_type_id)->exists();
+    }
+
+    /**
+     * Stay on the open workbench. ?job= is client state, so a plain back()
+     * returns to the queue and closes the sample the analyst was editing.
+     */
+    private function redirectToAnalystReferer(Request $request): RedirectResponse
+    {
+        $referer = $request->headers->get('referer');
+        $parts = is_string($referer) ? parse_url($referer) : false;
+        $path = is_array($parts) ? (string) ($parts['path'] ?? '') : '';
+
+        if (
+            is_array($parts)
+            && ($parts['host'] ?? '') === $request->getHost()
+            && ($path === '/analyst' || str_starts_with($path, '/analyst/'))
+        ) {
+            $query = isset($parts['query']) ? '?'.$parts['query'] : '';
+
+            return redirect($path.$query);
+        }
+
+        return back();
+    }
+
+    private function userCanEditSampleDescription(User $user, Sample $sample): bool
+    {
+        if ($sample->released_at !== null) {
+            return false;
+        }
+
+        $sample->loadMissing('analyses');
+
+        return $sample->analyses->contains(
+            fn (JobOrderAnalysis $line): bool => $this->userCanWorkLine($user, $line),
+        );
+    }
+
+    /**
+     * Wastewater kinds stay a fixed choice so FO2 vs FO2A still follows the description.
+     *
+     * @return list<string>|null
+     */
+    private function sampleDescriptionChoices(?string $description): ?array
+    {
+        $current = trim((string) $description);
+        $kinds = OfficialAnalysisCatalog::wastewaterKinds();
+
+        return in_array($current, $kinds, true) ? $kinds : null;
     }
 }

@@ -251,7 +251,7 @@ Assignment uses Admin → Assignments. Among people checked for that test type, 
 `assigned_to` is a soft suggestion for shared lab PCs: any analyst qualified for that analysis type may open and encode the line. The first person who saves a draft or completes it takes ownership (`assigned_to` updates to them). Unqualified analysts stay blocked.
 
 ### Step 5. Analysts encode results
-Each analyst sees lines suggested to them **and** other open lines for types they are qualified for. Drafts and completes. Completing a line does **not** email the customer and does **not** send the job to Head.
+Each analyst sees lines suggested to them **and** other open lines for types they are qualified for. Drafts and completes. Completing a line does **not** email the customer and does **not** send the job to Head. An analyst who can work a line on a sample may correct that sample’s description until Head releases the sample; the saved text is what the result sheet prints. Wastewater, River water, and Abstracted water stay those three choices.
 
 Encode fields:
 - **Result value** is always required.

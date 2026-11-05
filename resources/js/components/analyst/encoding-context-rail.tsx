@@ -1,3 +1,4 @@
+import SampleDescriptionEditor from '@/components/analyst/sample-description-editor';
 import type { AnalystTask, SampleSummary } from '@/components/analyst/types';
 import { hasEncodedResult } from '@/components/analyst/types';
 import { cn } from '@/lib/utils';
@@ -100,10 +101,23 @@ export default function EncodingContextRail({
                     </h3>
                     <div className="space-y-1.5 rounded-md border border-slate-200 bg-slate-50 p-2">
                         <Field label="Control code" value={controlCode} />
-                        <Field
-                            label="Sample"
-                            value={sampleLabel || sample?.description}
-                        />
+                        {sample?.can_edit_description ? (
+                            <div className="min-w-0">
+                                <span className="block text-[10px] text-slate-400">
+                                    Sample description
+                                </span>
+                                <SampleDescriptionEditor
+                                    jobId={job.id}
+                                    sample={sample}
+                                    fallback={sample.description?.trim() || 'Sample'}
+                                />
+                            </div>
+                        ) : (
+                            <Field
+                                label="Sample"
+                                value={sampleLabel || sample?.description}
+                            />
+                        )}
                         <Field label="Matrix" value={matrix} />
                         <Field
                             label="Customer / facility"

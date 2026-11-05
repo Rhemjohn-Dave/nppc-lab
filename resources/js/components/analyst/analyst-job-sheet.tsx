@@ -1,5 +1,6 @@
 import AnalystStatusBadge from '@/components/analyst/analyst-status-badge';
 import AnalystWorkflowStepper from '@/components/analyst/analyst-workflow-stepper';
+import SampleDescriptionEditor from '@/components/analyst/sample-description-editor';
 import { Button } from '@/components/ui/button';
 import {
     Sheet,
@@ -151,14 +152,21 @@ export default function AnalystJobSheet({
                         <ul className="space-y-1 rounded-lg border px-3 py-2 text-sm text-slate-700">
                             {job.samples.map((sample, index) => (
                                 <li key={sample.id ?? index}>
-                                    {sample.sample_code
-                                        ? `${sample.sample_code} — `
-                                        : ''}
-                                    {sample.description ||
-                                        `Sample ${index + 1}`}
-                                    {sample.matrix
-                                        ? ` (${sample.matrix})`
-                                        : ''}
+                                    <SampleDescriptionEditor
+                                        jobId={job.id}
+                                        sample={sample}
+                                        fallback={`Sample ${index + 1}`}
+                                        prefix={
+                                            sample.sample_code
+                                                ? `${sample.sample_code} — `
+                                                : ''
+                                        }
+                                        suffix={
+                                            sample.matrix
+                                                ? ` (${sample.matrix})`
+                                                : ''
+                                        }
+                                    />
                                 </li>
                             ))}
                             {job.samples.length === 0 && (

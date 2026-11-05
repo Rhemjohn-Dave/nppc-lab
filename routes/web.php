@@ -82,6 +82,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/tasks/{analysis}/complete', [AnalystController::class, 'complete'])->name('complete');
         Route::post('/job-orders/{jobOrder}/complete-sample', [AnalystController::class, 'completeSample'])->name('complete-sample');
         Route::post('/job-orders/{jobOrder}/submit-for-review', [AnalystController::class, 'submitForReview'])->name('submit-for-review');
+        Route::patch('/job-orders/{jobOrder}/samples/{sample}', [AnalystController::class, 'updateSampleDescription'])->name('samples.update-description');
         Route::put('/job-orders/{jobOrder}/result-signatories', [AnalystController::class, 'updateResultSignatories'])->name('result-signatories');
         Route::put('/job-orders/{jobOrder}/result-footer', [AnalystController::class, 'updateResultFooter'])->name('result-footer');
         Route::get('/job-orders/{jobOrder}/result-report', [AnalystController::class, 'resultReport'])->name('result-report');

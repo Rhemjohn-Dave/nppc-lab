@@ -6,6 +6,9 @@ export type SampleSummary = {
     control_number?: string | null;
     submitted_for_review?: boolean;
     released?: boolean;
+    can_edit_description?: boolean;
+    /** Wastewater / River water / Abstracted water, or omitted for free text. */
+    description_choices?: string[] | null;
 };
 
 export type ReportSummary = {
