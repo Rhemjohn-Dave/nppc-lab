@@ -25,7 +25,7 @@ class ReceivingController extends Controller
         $search = trim($request->string('q')->toString());
         $sort = $request->string('sort')->toString();
         if (! in_array($sort, ['oldest', 'newest'], true)) {
-            $sort = 'oldest';
+            $sort = 'newest';
         }
 
         $day = $request->string('day')->toString();

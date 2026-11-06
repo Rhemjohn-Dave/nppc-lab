@@ -170,7 +170,7 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
     );
     const [receiving, setReceiving] = useState(false);
     const { isRefreshing } = useInertiaNavigation();
-    const sort = filters.sort === 'newest' ? 'newest' : 'oldest';
+    const sort = filters.sort === 'oldest' ? 'oldest' : 'newest';
 
     const confirmOrder = useMemo(
         () =>
@@ -443,8 +443,8 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                                 applyFilters({ sort: value })
                             }
                             sortOptions={[
-                                { value: 'oldest', label: 'Oldest First' },
                                 { value: 'newest', label: 'Newest First' },
+                                { value: 'oldest', label: 'Oldest First' },
                             ]}
                             dayValue={filters.day ?? ''}
                             dayLabel="Intake:"

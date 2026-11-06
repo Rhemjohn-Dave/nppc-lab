@@ -581,7 +581,7 @@ class LabWorkflowTest extends TestCase
             ->assertInertia(fn ($page) => $page
                 ->component('receiving/index')
                 ->where('filters.status', 'draft_submitted')
-                ->where('filters.sort', 'oldest'));
+                ->where('filters.sort', 'newest'));
 
         $this->actingAs($receiving)
             ->get('/receiving?sort=newest')
