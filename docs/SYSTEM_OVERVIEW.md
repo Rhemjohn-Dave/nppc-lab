@@ -120,7 +120,7 @@ Customer requests begin here.
 The intake area captures:
 - customer details (lookup from saved unique customers or a previous job)
 - **request kind first:** **Sample analysis** (normal path) or **Laboratory services** (fee-only services — not a classification)
-- for Sample analysis: **sample classification** (Aqua vs Potability / Wastewater / Agriculture / Academic / Others) — this chooses General vs Aqua Job Order and **strictly filters** packages/tests
+- for Sample analysis: **sample classification** (Aqua vs Potability / Wastewater / Agriculture / Academic / Others), chosen **per sample** — the mix chooses General vs Aqua Job Order and **strictly filters** that sample’s packages/tests
 - sample information (**Sample type** = water/soil/food/prawn; not the PDF dynamic test matrix)
 - requested analyses from the **NPPC price-list catalog**, including **analysis packages** — chosen **per sample** (not once for the whole JO)
 - optional **standalone tests** that are not part of a package
@@ -128,7 +128,7 @@ The intake area captures:
 
 **Laboratory services:** separate lab offer (`is_laboratory_services`). Customer data only at intake — **no samples, no tests, no classification**. JO lands on the Receiving queue; Receiving adds free-text service lines with qty/unit price. Those lines print on JO/RFA **billing parameters**. Fee-only: no Send to analysts, no result sheets. After Head JO approval and print, Receiving **Mark ready for pickup** completes the lines.
 
-**Multi-sample (same classification):** one JO keeps reference `YY-NNNN`; printed control numbers are `YY-NNNNA`, `YY-NNNNB`, … `YY-NNNNZ`, then `YY-NNNNAA`, `YY-NNNNAB`, … when there are 2+ samples. Each sample picks its own packages/tests and (for Wastewater) its own Sample description; billing is the **sum of each sample’s lines** (four samples with the same package = 4×). Different classifications (e.g. food + water) stay **separate JOs** for now.
+**Multi-sample:** one JO keeps reference `YY-NNNN`; printed control numbers are `YY-NNNNA`, `YY-NNNNB`, … `YY-NNNNZ`, then `YY-NNNNAA`, `YY-NNNNAB`, … when there are 2+ samples. Each sample picks its own classification, packages/tests, and (for Wastewater) its own Sample description; billing is the **sum of each sample’s lines** (four samples with the same package = 4×). The printed job order checks every classification used. Potability or Wastewater cannot share that job order with Aqua, because Aqua prints a different job-order form.
 
 **Receiving bulk order:** Only JOs created from **Receiving → Bulk order** are bulk (`is_receiving_bulk`). Intake multi-sample is **not** bulk — it stays on the normal Receiving queue, does not appear under Bulk order → Submitted, and keeps the JO customer/company on every result sheet. Bulk is for an agency/company delivery: customer once (company on the JO), **sample count** (or grid) with shared packages/tests on every sample, optional attachment listing per-sample names. Sample **names may be blank at create** so the JO can be finished and **priced immediately** (customer can go to the cashier). With **see attached file**, the printed JO/RFA shows a single sample line (`see attached file`) and one unsuffixed control number (the JO reference). After create, Receiving uses **Encode samples** (`/receiving/{id}/samples`) to fill names/locations gradually while status is still `draft_submitted` / awaiting Head / `jo_approved`. Encoding locks after **Send to analysts**; every bulk sample must have a non-blank Name before send. Those encoded names print as **Customer** on that sample’s result sheet. Result sheets still use A/B/C control suffixes. **Save for later** parks a pre-tests draft (**Continue**); finishing clears the draft flag and puts a normal JO on the Receiving queue for pricing. N samples still yield N result reports.
 
@@ -158,6 +158,9 @@ It handles:
 - **Results released** list: reprint JO copies after Head result release
 
 JO/RFA print unlocks after Head JO approval (`jo_approved_at` / status). Payment stays outside LMIS.
+
+### Customers
+The sidebar **Customers** item (admin and receiving) is the saved customer directory. Correcting a row updates the next intake suggestion. Existing job orders keep the details they were submitted with.
 
 ### 4. Analyst Module
 Used to encode assigned tests and, for the designated analyst, to send the job to Head.
@@ -251,7 +254,7 @@ Assignment uses Admin → Assignments. Among people checked for that test type, 
 `assigned_to` is a soft suggestion for shared lab PCs: any analyst qualified for that analysis type may open and encode the line. The first person who saves a draft or completes it takes ownership (`assigned_to` updates to them). Unqualified analysts stay blocked.
 
 ### Step 5. Analysts encode results
-Each analyst sees lines suggested to them **and** other open lines for types they are qualified for. Drafts and completes. Completing a line does **not** email the customer and does **not** send the job to Head. An analyst who can work a line on a sample may correct that sample’s description until Head releases the sample; the saved text is what the result sheet prints. Wastewater, River water, and Abstracted water stay those three choices.
+Each analyst sees lines suggested to them **and** other open lines for types they are qualified for. Drafts and completes. Completing a line does **not** email the customer and does **not** send the job to Head. An analyst who can work a line on a sample may correct that sample’s description until Head releases the sample; the saved text is what the result sheet prints. Wastewater, River water, and Abstracted water stay those three choices. The same analyst may correct the intake facts that the open result form prints — specimen, water supply or sampling point, who collected the sample, and the sampling or collection time — until that sample is released. On a normal job those values are shared by every result. On a receiving-bulk job, location, sample point, and collection time stay on the sample being edited.
 
 Encode fields:
 - **Result value** is always required.

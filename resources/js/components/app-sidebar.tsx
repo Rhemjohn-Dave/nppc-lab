@@ -71,6 +71,11 @@ export function AppSidebar({ collapsible = 'icon' }: AppSidebarProps) {
                           },
                       ],
                   } satisfies NavItem,
+                  {
+                      title: 'Customers',
+                      href: '/customers',
+                      icon: Users,
+                  } satisfies NavItem,
               ]
             : []),
         ...(can('accounting')

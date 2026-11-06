@@ -19,6 +19,7 @@ use App\Http\Controllers\IntakeController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ReceivingBulkOrderController;
 use App\Http\Controllers\ReceivingController;
+use App\Http\Controllers\ReceivingCustomerController;
 use App\Http\Controllers\ReviewController;
 use Illuminate\Support\Facades\Route;
 
@@ -52,6 +53,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/{jobOrder}/combined-pdf', [HistoryController::class, 'combinedPdf'])->name('combined-pdf');
     });
 
+    Route::middleware('role:receiving')->prefix('customers')->name('customers.')->group(function () {
+        Route::get('/', [ReceivingCustomerController::class, 'index'])->name('index');
+        Route::patch('/{customer}', [ReceivingCustomerController::class, 'update'])->name('update');
+    });
+
     Route::middleware('role:receiving')->prefix('receiving')->name('receiving.')->group(function () {
         Route::get('/', [ReceivingController::class, 'index'])->name('index');
         Route::get('/bulk-orders', [ReceivingBulkOrderController::class, 'index'])->name('bulk-orders.index');
@@ -83,6 +89,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/job-orders/{jobOrder}/complete-sample', [AnalystController::class, 'completeSample'])->name('complete-sample');
         Route::post('/job-orders/{jobOrder}/submit-for-review', [AnalystController::class, 'submitForReview'])->name('submit-for-review');
         Route::patch('/job-orders/{jobOrder}/samples/{sample}', [AnalystController::class, 'updateSampleDescription'])->name('samples.update-description');
+        Route::patch('/job-orders/{jobOrder}/result-facts', [AnalystController::class, 'updateResultFacts'])->name('result-facts');
         Route::put('/job-orders/{jobOrder}/result-signatories', [AnalystController::class, 'updateResultSignatories'])->name('result-signatories');
         Route::put('/job-orders/{jobOrder}/result-footer', [AnalystController::class, 'updateResultFooter'])->name('result-footer');
         Route::get('/job-orders/{jobOrder}/result-report', [AnalystController::class, 'resultReport'])->name('result-report');
