@@ -1369,11 +1369,31 @@ class DynamicTestMatrix
             $rows[] = [
                 ...$template,
                 'control_no' => SampleControlNumber::forIndex($referenceNo, $i, $count) ?? $referenceNo,
-                'sample_description' => trim((string) ($sample?->description ?? '')),
+                'sample_description' => self::printedSampleDescription($sample) ?? '',
             ];
         }
 
         return $rows;
+    }
+
+    /**
+     * Text for a result-sheet Sample Description: the saved description, or the
+     * sample code when the customer left the description blank.
+     */
+    public static function printedSampleDescription(mixed $sample): ?string
+    {
+        if ($sample === null) {
+            return null;
+        }
+
+        $description = trim((string) ($sample->description ?? ''));
+        if ($description !== '') {
+            return $description;
+        }
+
+        $code = trim((string) ($sample->sample_code ?? ''));
+
+        return $code === '' ? null : $code;
     }
 
     /**

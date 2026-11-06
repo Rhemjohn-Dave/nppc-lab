@@ -9,6 +9,7 @@ use App\Models\ControlledFormField;
 use App\Models\ControlledFormRevision;
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
+use App\Support\BulkSampleRemarks;
 use App\Support\DynamicTestMatrix;
 use App\Support\OfficialAnalysisCatalog;
 use App\Support\ResultFooter;
@@ -56,9 +57,12 @@ class FieldValueResolver
         $form ??= $revision->form;
         $form?->loadMissing('analysisPackage');
 
-        // FO4 Sample Description prints the job classification (e.g. Wastewater), not FO5 sterile-bottle text.
+        // FO4 Sample Description prints that sample's classification (e.g. Wastewater), not FO5 sterile-bottle text.
+        $sampleClassification = trim((string) ($focusSample?->classification ?? ''));
         if (($form?->form_code ?? null) === 'LSP-7.8-FO4') {
-            $bag['results.sample_description'] = $this->listedOrSpecified($jobOrder->classification);
+            $bag['results.sample_description'] = $this->listedOrSpecified(
+                $sampleClassification !== '' ? $sampleClassification : $jobOrder->classification,
+            );
         }
 
         // FO2 / FO2A Sample Description prints the wastewater kind stored on the sample.
@@ -120,10 +124,29 @@ class FieldValueResolver
             if (($form?->form_code ?? null) !== 'LSP-7.8-FO4') {
                 if ($desc !== '') {
                     $bag['results.sample_description'] = $desc;
+                } elseif (trim((string) ($bag['results.sample_description'] ?? '')) === '') {
+                    $printed = DynamicTestMatrix::printedSampleDescription($focusSample);
+                    if ($printed !== null) {
+                        $bag['results.sample_description'] = $printed;
+                    }
                 }
             }
             $bag['samples.sample_code'] = $focusSample->sample_code;
             $bag['samples.description'] = $focusSample->description;
+            if ($sampleClassification !== '') {
+                $bag['results.classification'] = $this->listedOrSpecified($sampleClassification);
+            }
+            if ($jobOrder->is_receiving_bulk) {
+                $details = BulkSampleRemarks::parse($focusSample->remarks);
+                $bag['results.water_supply'] = $details['location'] !== '' ? $details['location'] : null;
+                $bag['results.sampling_point'] = $details['sample_point'] !== '' ? $details['sample_point'] : null;
+                $printedTime = $details['collected_time'] !== '' ? $details['collected_time'] : null;
+                $bag['results.sampling_datetime'] = $this->officialSamplingDateTime(
+                    $jobOrder->sampling_date,
+                    $printedTime,
+                );
+                $bag['results.collection_datetime'] = $bag['results.sampling_datetime'];
+            }
         }
 
         $bag['results.issued_date'] = $this->officialDate($jobOrder->reviewed_at);
@@ -148,7 +171,7 @@ class FieldValueResolver
         for ($i = 1; $i <= $sampleCount; $i++) {
             $sample = $samples->get($i - 1);
             $bag["sample_code_{$i}"] = $this->rfaSampleCodeDescription($sample);
-            $bag["sample_description_{$i}"] = $sample?->description;
+            $bag["sample_description_{$i}"] = DynamicTestMatrix::printedSampleDescription($sample);
             $bag["sample_matrix_{$i}"] = $sample?->matrix;
             $bag["samples.{$i}.sample_code"] = $sample?->sample_code;
             $bag["samples.{$i}.description"] = $sample?->description;
@@ -162,8 +185,8 @@ class FieldValueResolver
             && ($form?->form_code ?? null) !== 'LSP-7.8-FO4'
             && empty($bag['results.sample_description'])
         ) {
-            $firstDescription = trim((string) ($samples->first()?->description ?? ''));
-            if ($firstDescription !== '') {
+            $firstDescription = DynamicTestMatrix::printedSampleDescription($samples->first());
+            if ($firstDescription !== null) {
                 $bag['results.sample_description'] = $firstDescription;
             }
         }

@@ -15,7 +15,9 @@ use App\Support\AnalysisResultPdfExporter;
 use App\Support\AnalysisResultReport;
 use App\Support\DynamicTestMatrix;
 use App\Support\OfficialAnalysisCatalog;
+use App\Support\BulkSampleRemarks;
 use App\Support\ResultFooter;
+use App\Support\ResultSheetFacts;
 use App\Support\ResultSignatories;
 use App\Support\SampleControlNumber;
 use Illuminate\Http\JsonResponse;
@@ -234,7 +236,7 @@ class AnalystController extends Controller
                 $resolved = $task->sample_id !== null
                     ? $this->reports->pickReport($allReports, (int) $task->sample_id, null)
                     : $this->reports->forJobOrder($task->jobOrder, $user, withValues: false);
-                $reportByJobSample[$cacheKey] = $resolved->summary();
+                $reportByJobSample[$cacheKey] = $resolved;
             }
         }
 
@@ -330,9 +332,15 @@ class AnalystController extends Controller
                 'is_mine' => $isMine,
                 'can_work' => $canWork,
                 'report' => $this->taskReportSummary(
-                    $reportByJobSample[(int) $task->job_order_id.':'.($task->sample_id !== null ? (int) $task->sample_id : 0)] ?? null,
+                    ($resolvedReport = $reportByJobSample[(int) $task->job_order_id.':'.($task->sample_id !== null ? (int) $task->sample_id : 0)] ?? null) instanceof AnalysisResultReport
+                        ? $resolvedReport->summary()
+                        : null,
                     $task->jobOrder,
                 ),
+                'result_facts' => $resolvedReport instanceof AnalysisResultReport
+                    ? ResultSheetFacts::forReport($resolvedReport)
+                    : [],
+                'can_edit_result_facts' => $sample !== null && isset($editableSampleIds[(int) $sample->id]),
                 'job_order' => [
                     'id' => $task->jobOrder->id,
                     'reference_no' => $task->jobOrder->reference_no,
@@ -406,6 +414,73 @@ class AnalystController extends Controller
         $sample->update([
             'description' => $description !== '' ? $description : null,
         ]);
+
+        return $this->redirectToAnalystReferer($request);
+    }
+
+    public function updateResultFacts(Request $request, JobOrder $jobOrder): RedirectResponse
+    {
+        $user = $request->user();
+        abort_unless($user !== null, 403);
+
+        $data = $request->validate([
+            'sample_id' => ['required', 'integer'],
+            'wastewater_source' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'specimen' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'sample_collected_by' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'sampling_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+            'sampling_time' => ['sometimes', 'nullable', 'date_format:H:i'],
+            'location' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'sample_point' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'collected_time' => ['sometimes', 'nullable', 'date_format:H:i'],
+        ]);
+
+        $sample = Sample::query()
+            ->where('job_order_id', $jobOrder->id)
+            ->whereKey($data['sample_id'])
+            ->firstOrFail();
+        abort_unless($this->userCanEditSampleDescription($user, $sample), 403);
+
+        $reports = $this->reports->reportsForJobOrder($jobOrder, $user, withValues: false);
+        $resolved = $this->reports->pickReport($reports, (int) $sample->id, null);
+        $allowed = collect(ResultSheetFacts::forReport($resolved))->pluck('key');
+
+        if ($jobOrder->is_receiving_bulk) {
+            $parsed = BulkSampleRemarks::parse($sample->remarks);
+            $touched = false;
+            foreach (['location', 'sample_point', 'collected_time'] as $part) {
+                if (! $allowed->contains($part) || ! array_key_exists($part, $data)) {
+                    continue;
+                }
+                $parsed[$part] = trim((string) ($data[$part] ?? ''));
+                $touched = true;
+            }
+            if ($touched) {
+                $sample->update([
+                    'remarks' => BulkSampleRemarks::compose($parsed),
+                ]);
+            }
+        }
+
+        $updates = [];
+        foreach (['wastewater_source', 'specimen', 'sample_collected_by'] as $column) {
+            if (! $allowed->contains($column) || ! array_key_exists($column, $data)) {
+                continue;
+            }
+            $value = trim((string) ($data[$column] ?? ''));
+            $updates[$column] = $value !== '' ? $value : null;
+        }
+
+        if ($allowed->contains('sampling_datetime') && (array_key_exists('sampling_date', $data) || array_key_exists('sampling_time', $data))) {
+            $date = trim((string) ($data['sampling_date'] ?? ''));
+            $time = trim((string) ($data['sampling_time'] ?? ''));
+            $updates['sampling_date'] = $date !== '' ? $date : null;
+            $updates['sampling_time'] = $date !== '' && $time !== '' ? $time : null;
+        }
+
+        if ($updates !== []) {
+            $jobOrder->update($updates);
+        }
 
         return $this->redirectToAnalystReferer($request);
     }

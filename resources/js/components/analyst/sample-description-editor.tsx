@@ -27,19 +27,22 @@ export default function SampleDescriptionEditor({
     const choices = sample.description_choices ?? null;
     const canEdit = Boolean(sample.can_edit_description && sample.id);
     const [editing, setEditing] = useState(false);
+    const savedDescription = sample.description?.trim() ?? '';
+    const sampleCode = sample.sample_code?.trim() ?? '';
+    const printed = savedDescription || (choices ? '' : sampleCode);
     const form = useForm({
-        description: sample.description ?? '',
+        description: printed,
     });
 
     useEffect(() => {
         setEditing(false);
-        form.setData('description', sample.description ?? '');
+        form.setData('description', printed);
         form.clearErrors();
         // Reset when the saved description changes after a successful save.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sample.id, sample.description]);
+    }, [sample.id, sample.description, sample.sample_code]);
 
-    const shown = sample.description?.trim() || fallback;
+    const shown = printed || fallback;
 
     function save(next?: string) {
         const description = (next ?? form.data.description).trim();
@@ -67,7 +70,7 @@ export default function SampleDescriptionEditor({
                         className="size-7 shrink-0 text-nppc-800"
                         aria-label={`Edit sample description for ${shown}`}
                         onClick={() => {
-                            form.setData('description', sample.description ?? '');
+                            form.setData('description', printed);
                             form.clearErrors();
                             setEditing(true);
                         }}
@@ -140,7 +143,7 @@ export default function SampleDescriptionEditor({
                     variant="outline"
                     disabled={form.processing}
                     onClick={() => {
-                        form.setData('description', sample.description ?? '');
+                        form.setData('description', printed);
                         form.clearErrors();
                         setEditing(false);
                     }}

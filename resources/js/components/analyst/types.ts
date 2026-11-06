@@ -11,6 +11,14 @@ export type SampleSummary = {
     description_choices?: string[] | null;
 };
 
+export type ResultFact = {
+    key: string;
+    label: string;
+    type: 'text' | 'datetime' | 'time';
+    value: string;
+    time: string | null;
+};
+
 export type ReportSummary = {
     kind: 'combined' | 'individual' | 'waiting' | 'unavailable';
     title: string;
@@ -61,6 +69,8 @@ export type AnalystTask = {
     is_mine?: boolean;
     can_work?: boolean;
     report: ReportSummary;
+    result_facts?: ResultFact[];
+    can_edit_result_facts?: boolean;
     job_order: {
         id: number;
         reference_no: string;

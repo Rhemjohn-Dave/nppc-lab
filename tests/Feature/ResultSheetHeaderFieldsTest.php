@@ -557,12 +557,17 @@ class ResultSheetHeaderFieldsTest extends TestCase
             'customer_email' => 'fo4-class@example.com',
             'classification' => 'Wastewater',
             'samples' => [
-                ['description' => 'Plant effluent', 'matrix' => 'Liquid'],
+                [
+                    'sample_code' => 'PLANT-1',
+                    'description' => 'Wastewater',
+                    'matrix' => 'Liquid',
+                ],
             ],
             'package_ids' => [$package->id],
         ])->assertRedirect();
 
         $job = JobOrder::query()->latest('id')->firstOrFail();
+        $job->samples->first()->update(['description' => 'Plant effluent']);
         $revision = $form->fresh()->revisions()->firstOrFail();
         $revision->setRelation('fields', collect());
 
@@ -575,6 +580,55 @@ class ResultSheetHeaderFieldsTest extends TestCase
 
         $this->assertSame('Wastewater', $bag['results.sample_description']);
         $this->assertSame('Wastewater', $bag['results.classification']);
+    }
+
+    public function test_blank_sample_description_prints_the_sample_code(): void
+    {
+        $this->seed();
+
+        $package = AnalysisPackage::query()->where('code', 'PKG-DW-BACT')->firstOrFail();
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO5')->firstOrFail();
+        $revision = $form->revisions()->firstOrFail();
+        $revision->setRelation('fields', collect());
+        $resolver = app(FieldValueResolver::class);
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'Code Only Customer',
+            'customer_email' => 'code-only@example.com',
+            'classification' => 'Potability',
+            'samples' => [
+                ['sample_code' => 'LEAF-1', 'matrix' => 'Liquid'],
+            ],
+            'package_ids' => [$package->id],
+        ])->assertRedirect();
+
+        $codeOnly = JobOrder::query()->latest('id')->firstOrFail()->fresh(['analyses', 'packages', 'samples']);
+        $codeOnlySample = $codeOnly->samples->firstOrFail();
+        $codeOnlyBag = $resolver->forResult($revision, $codeOnly, null, $form, $codeOnlySample);
+
+        $this->assertSame('LEAF-1', $codeOnlyBag['results.sample_description']);
+        $this->assertSame('LEAF-1', $codeOnlyBag['sample_description_1']);
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'Described Customer',
+            'customer_email' => 'described@example.com',
+            'classification' => 'Potability',
+            'samples' => [
+                [
+                    'sample_code' => 'LEAF-2',
+                    'description' => 'Dried leaves',
+                    'matrix' => 'Solid',
+                ],
+            ],
+            'package_ids' => [$package->id],
+        ])->assertRedirect();
+
+        $described = JobOrder::query()->latest('id')->firstOrFail()->fresh(['analyses', 'packages', 'samples']);
+        $describedSample = $described->samples->firstOrFail();
+        $describedBag = $resolver->forResult($revision, $described, null, $form, $describedSample);
+
+        $this->assertSame('Dried leaves', $describedBag['results.sample_description']);
+        $this->assertSame('Dried leaves', $describedBag['sample_description_1']);
     }
 
     public function test_per_sample_result_customer_uses_encoded_sample_name(): void

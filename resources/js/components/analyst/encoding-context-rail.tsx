@@ -1,3 +1,4 @@
+import ResultFactEditor from '@/components/analyst/result-fact-editor';
 import SampleDescriptionEditor from '@/components/analyst/sample-description-editor';
 import type { AnalystTask, SampleSummary } from '@/components/analyst/types';
 import { hasEncodedResult } from '@/components/analyst/types';
@@ -127,6 +128,19 @@ export default function EncodingContextRail({
                             label="Storage"
                             value={job.sample_storage_temp}
                         />
+                        {sample?.id && active?.result_facts?.length
+                            ? active.result_facts.map((fact) => (
+                                  <ResultFactEditor
+                                      key={fact.key}
+                                      jobId={job.id}
+                                      sampleId={sample.id!}
+                                      fact={fact}
+                                      canEdit={Boolean(
+                                          active.can_edit_result_facts,
+                                      )}
+                                  />
+                              ))
+                            : null}
                     </div>
                 </section>
 
