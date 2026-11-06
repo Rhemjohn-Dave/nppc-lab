@@ -1203,6 +1203,85 @@ TXT;
         };
     }
 
+    /**
+     * Aqua uses a different job-order form. Potability and Wastewater stay on the General form.
+     *
+     * @param  list<string>  $labels
+     */
+    public static function classificationsShareJobOrderForm(array $labels): bool
+    {
+        $hasAqua = false;
+        $hasWater = false;
+
+        foreach ($labels as $label) {
+            $value = mb_strtolower(trim($label));
+            if ($value === '') {
+                continue;
+            }
+
+            if (str_contains($value, 'potability') || str_contains($value, 'wastewater')) {
+                $hasWater = true;
+            } elseif (str_contains($value, 'aqua')) {
+                $hasAqua = true;
+            }
+        }
+
+        return ! ($hasAqua && $hasWater);
+    }
+
+    /**
+     * One job-order classification string, in catalog order, so each RFA checkbox can match.
+     *
+     * @param  list<string>  $labels
+     */
+    public static function joinClassifications(array $labels): ?string
+    {
+        $unique = [];
+        foreach ($labels as $label) {
+            $label = trim($label);
+            if ($label !== '' && ! in_array($label, $unique, true)) {
+                $unique[] = $label;
+            }
+        }
+
+        if ($unique === []) {
+            return null;
+        }
+
+        $order = self::classifications();
+        usort($unique, function (string $left, string $right) use ($order): int {
+            $leftKey = self::classificationSortKey($left, $order);
+            $rightKey = self::classificationSortKey($right, $order);
+
+            return $leftKey === $rightKey
+                ? strcmp($left, $right)
+                : $leftKey <=> $rightKey;
+        });
+
+        return implode(', ', $unique);
+    }
+
+    /**
+     * @param  list<string>  $order
+     */
+    private static function classificationSortKey(string $label, array $order): int
+    {
+        $value = mb_strtolower($label);
+
+        foreach ($order as $index => $name) {
+            $needle = mb_strtolower($name);
+            if ($needle === 'others' && str_contains($value, 'other')) {
+                return $index;
+            }
+
+            if ($needle !== 'others' && str_contains($value, $needle)) {
+                return $index;
+            }
+        }
+
+        return count($order);
+    }
+
     /** @return list<string> */
     public static function ownershipTypes(): array
     {

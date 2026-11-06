@@ -385,6 +385,7 @@ class IntakeController extends Controller
             'payment_terms' => ['nullable', 'string', Rule::in(PaymentTerms::values())],
             'other_tests' => ['nullable', 'string', 'max:500'],
             'samples' => ['nullable', 'array'],
+            'samples.*.classification' => ['nullable', 'string', 'max:255'],
             'samples.*.sample_code' => ['nullable', 'string', 'max:100'],
             'samples.*.description' => ['nullable', 'string', 'max:255'],
             'samples.*.matrix' => ['nullable', 'string', 'max:100'],
@@ -452,22 +453,117 @@ class IntakeController extends Controller
                 }
             }
 
-            if (($data['classification'] ?? null) === 'Wastewater') {
-                $kinds = OfficialAnalysisCatalog::wastewaterKinds();
-                foreach ($data['samples'] as $index => $sample) {
-                    $description = trim((string) ($sample['description'] ?? ''));
-                    if (! in_array($description, $kinds, true)) {
-                        return back()->withErrors([
-                            "samples.{$index}.description" => 'Choose Wastewater, River water, or Abstracted water for sample '.($index + 1).'.',
-                        ])->withInput();
-                    }
-                }
+            $sampleErrors = $this->intakeSampleClassificationErrors($data);
+            if ($sampleErrors !== []) {
+                return back()->withErrors($sampleErrors)->withInput();
             }
         }
 
         $jobOrder = $this->jobOrders->createFromIntake($data);
 
         return redirect()->route('intake.success', $jobOrder);
+    }
+
+    /**
+     * Each sample keeps its own classification. A missing sample value inherits the
+     * job-order classification so older intake posts still save. The job order then
+     * stores the joined labels for the RFA checkboxes.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, string>
+     */
+    private function intakeSampleClassificationErrors(array &$data): array
+    {
+        $errors = [];
+        $labels = [];
+        $samples = [];
+
+        foreach ($data['samples'] as $index => $sample) {
+            if (! is_array($sample)) {
+                $samples[] = $sample;
+
+                continue;
+            }
+
+            $label = trim((string) ($sample['classification'] ?? ''));
+            if ($label === '') {
+                $label = trim((string) ($data['classification'] ?? ''));
+            }
+
+            if ($label === '') {
+                $errors["samples.{$index}.classification"] = 'Choose a classification for sample '.($index + 1).'.';
+            } else {
+                $sample['classification'] = $label;
+                $labels[] = $label;
+            }
+
+            $samples[] = $sample;
+        }
+
+        $data['samples'] = $samples;
+
+        if ($labels !== [] && ! OfficialAnalysisCatalog::classificationsShareJobOrderForm($labels)) {
+            $errors['samples'] = 'Potability or Wastewater samples cannot share a job order with Aqua. Submit those as separate requests.';
+        }
+
+        $joined = OfficialAnalysisCatalog::joinClassifications($labels);
+        if ($joined !== null) {
+            $data['classification'] = $joined;
+        }
+
+        $kinds = OfficialAnalysisCatalog::wastewaterKinds();
+        foreach ($data['samples'] as $index => $sample) {
+            if (! is_array($sample) || ($sample['classification'] ?? null) !== 'Wastewater') {
+                continue;
+            }
+
+            $description = trim((string) ($sample['description'] ?? ''));
+            if (! in_array($description, $kinds, true)) {
+                $errors["samples.{$index}.description"] = 'Choose Wastewater, River water, or Abstracted water for sample '.($index + 1).'.';
+            }
+        }
+
+        $packageIds = [];
+        foreach ($data['samples'] as $sample) {
+            if (! is_array($sample)) {
+                continue;
+            }
+
+            foreach ($sample['package_ids'] ?? [] as $packageId) {
+                $packageIds[] = (int) $packageId;
+            }
+        }
+
+        foreach ($data['package_ids'] ?? [] as $packageId) {
+            $packageIds[] = (int) $packageId;
+        }
+
+        $packages = AnalysisPackage::query()
+            ->whereIn('id', array_values(array_unique($packageIds)))
+            ->get()
+            ->keyBy('id');
+
+        foreach ($data['samples'] as $index => $sample) {
+            if (! is_array($sample)) {
+                continue;
+            }
+
+            $label = trim((string) ($sample['classification'] ?? ''));
+            $selectedIds = $sample['package_ids'] ?? [];
+            if ($selectedIds === [] && is_array($data['package_ids'] ?? null)) {
+                $selectedIds = $data['package_ids'];
+            }
+
+            foreach ($selectedIds as $packageId) {
+                $package = $packages->get((int) $packageId);
+                if ($package !== null && $label !== '' && ! $package->matchesClassification($label)) {
+                    $errors["samples.{$index}.package_ids"] = 'Choose tests that match sample '.($index + 1).'’s classification.';
+                    break;
+                }
+            }
+        }
+
+        return $errors;
     }
 
     public function success(JobOrder $jobOrder): Response

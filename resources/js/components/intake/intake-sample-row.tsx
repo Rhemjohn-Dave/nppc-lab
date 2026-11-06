@@ -12,6 +12,13 @@ import IntakeAlert from '@/components/intake/intake-alert';
 import IntakeField from '@/components/intake/intake-field';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
@@ -22,6 +29,9 @@ export type IntakeSampleDraft = {
     quantity: string;
     unit: string;
     remarks: string;
+    classification: string;
+    classification_other: string;
+    classification_other_specify: string;
 };
 
 type Props = {
@@ -38,6 +48,12 @@ type Props = {
     wastewaterKinds?: string[];
     showWastewaterKind?: boolean;
     wastewaterKindError?: boolean;
+    classifications?: string[];
+    otherClassificationOptions?: string[];
+    classificationError?: boolean;
+    onClassificationChange?: (value: string) => void;
+    onClassificationOtherChange?: (value: string) => void;
+    onClassificationOtherSpecifyChange?: (value: string) => void;
 };
 
 const softInput =
@@ -46,6 +62,7 @@ const softInput =
 function summarize(sample: IntakeSampleDraft) {
     return (
         [
+            sample.classification.trim() || null,
             sample.matrix.trim() || null,
             sample.quantity.trim()
                 ? `${sample.quantity.trim()}${sample.unit.trim() ? ` ${sample.unit.trim()}` : ''}`
@@ -71,6 +88,12 @@ export default function IntakeSampleRow({
     wastewaterKinds = [],
     showWastewaterKind = false,
     wastewaterKindError = false,
+    classifications = [],
+    otherClassificationOptions = [],
+    classificationError = false,
+    onClassificationChange,
+    onClassificationOtherChange,
+    onClassificationOtherSpecifyChange,
 }: Props) {
     const fieldsId = `sample-fields-${index}`;
     const code = sample.sample_code.trim();
@@ -154,6 +177,115 @@ export default function IntakeSampleRow({
                     id={fieldsId}
                     className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2 sm:gap-x-3 sm:gap-y-2 sm:p-3.5"
                 >
+                    {classifications.length > 0 ? (
+                        <div className="sm:col-span-2">
+                            <p className="mb-1.5 text-[11px] font-semibold text-slate-700">
+                                Classification{' '}
+                                <span className="text-rose-600">*</span>
+                            </p>
+                            <div
+                                className="flex flex-wrap gap-1.5"
+                                role="group"
+                                aria-label={`Sample ${index + 1} classification`}
+                            >
+                                {classifications.map((item) => {
+                                    const active =
+                                        sample.classification === item;
+
+                                    return (
+                                        <button
+                                            key={item}
+                                            type="button"
+                                            aria-pressed={active}
+                                            onClick={() =>
+                                                onClassificationChange?.(item)
+                                            }
+                                            className={cn(
+                                                'rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition',
+                                                active
+                                                    ? 'border-nppc-900 bg-nppc-900 text-white'
+                                                    : 'border-slate-200 bg-white text-slate-700 hover:border-nppc-500/60',
+                                            )}
+                                        >
+                                            {item}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {classificationError &&
+                            !sample.classification.trim() ? (
+                                <p
+                                    className="mt-1.5 border-l-2 border-rose-300 py-1 pl-2 text-xs font-medium text-rose-700"
+                                    role="alert"
+                                    data-intake-error=""
+                                >
+                                    Choose a classification for this sample.
+                                </p>
+                            ) : null}
+                            {sample.classification === 'Others' ? (
+                                <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                                    <IntakeField
+                                        label="Parameter category"
+                                        htmlFor={`classification_other_${index}`}
+                                        required
+                                    >
+                                        <Select
+                                            value={
+                                                sample.classification_other ||
+                                                undefined
+                                            }
+                                            onValueChange={(value) =>
+                                                onClassificationOtherChange?.(
+                                                    value,
+                                                )
+                                            }
+                                        >
+                                            <SelectTrigger
+                                                id={`classification_other_${index}`}
+                                                className="h-9 w-full rounded-lg border-slate-200 bg-white text-sm shadow-none"
+                                            >
+                                                <SelectValue placeholder="Select category…" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {otherClassificationOptions.map(
+                                                    (option) => (
+                                                        <SelectItem
+                                                            key={option}
+                                                            value={option}
+                                                        >
+                                                            {option}
+                                                        </SelectItem>
+                                                    ),
+                                                )}
+                                            </SelectContent>
+                                        </Select>
+                                    </IntakeField>
+                                    {sample.classification_other
+                                        .trim()
+                                        .toLowerCase() === 'other' ? (
+                                        <IntakeField
+                                            label="Specify"
+                                            htmlFor={`classification_other_specify_${index}`}
+                                            required
+                                        >
+                                            <Input
+                                                id={`classification_other_specify_${index}`}
+                                                className={softInput}
+                                                value={
+                                                    sample.classification_other_specify
+                                                }
+                                                onChange={(e) =>
+                                                    onClassificationOtherSpecifyChange?.(
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
+                                        </IntakeField>
+                                    ) : null}
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
                     <IntakeField
                         label="Sample Code / Label"
                         htmlFor={`sample_code_${index}`}

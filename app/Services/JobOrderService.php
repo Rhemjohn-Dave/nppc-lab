@@ -274,6 +274,24 @@ class JobOrderService
 
             /** @var array<int, array<string, mixed>> $samples */
             $samples = $data['samples'];
+            $classificationLabels = [];
+
+            foreach ($samples as $index => $sample) {
+                $label = trim((string) ($sample['classification'] ?? ''));
+                if ($label === '') {
+                    $label = trim((string) ($data['classification'] ?? ''));
+                }
+
+                $samples[$index]['classification'] = $label !== '' ? $label : null;
+                if ($label !== '') {
+                    $classificationLabels[] = $label;
+                }
+            }
+
+            $joinedClassification = OfficialAnalysisCatalog::joinClassifications($classificationLabels);
+            if ($joinedClassification !== null) {
+                $jobOrder->update(['classification' => $joinedClassification]);
+            }
 
             $createdSamples = [];
 
@@ -281,6 +299,7 @@ class JobOrderService
                 $description = trim((string) ($sample['description'] ?? ''));
 
                 $createdSamples[] = $jobOrder->samples()->create([
+                    'classification' => $sample['classification'] ?? null,
                     'sample_code' => $sample['sample_code'] ?? null,
                     'description' => $description,
                     'matrix' => $sample['matrix'] ?? null,

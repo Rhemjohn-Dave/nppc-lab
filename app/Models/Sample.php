@@ -11,6 +11,7 @@ class Sample extends Model
 {
     protected $fillable = [
         'job_order_id',
+        'classification',
         'sample_code',
         'description',
         'matrix',

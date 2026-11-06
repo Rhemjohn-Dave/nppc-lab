@@ -13,7 +13,6 @@ import {
     Factory,
     Fish,
     FlaskConical,
-    GraduationCap,
     Landmark,
     Layers,
     ListChecks,
@@ -26,7 +25,6 @@ import {
     Phone,
     Plus,
     Sparkles,
-    Sprout,
     Tag,
     TestTube2,
     Thermometer,
@@ -38,7 +36,6 @@ import {
 import { useMemo, useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import ConfirmDialog from '@/components/confirm-dialog';
-import FormSection from '@/components/intake/form-section';
 import IntakeAlert from '@/components/intake/intake-alert';
 import IntakeField from '@/components/intake/intake-field';
 import IntakeIndividualTestCatalog from '@/components/intake/intake-individual-test-catalog';
@@ -175,24 +172,6 @@ const PAYMENT_TERMS_OPTIONS = [
     { value: '30_days', label: '30 days' },
 ] as const;
 
-const CLASSIFICATION_BLURBS: Record<string, string> = {
-    Aqua: 'Aquaculture water and related samples',
-    Potability: 'Drinking-water analysis',
-    Wastewater: 'Wastewater analysis',
-    Agriculture: 'Agricultural samples',
-    'Academic/Research': 'Research-related requests',
-    Others: 'Other laboratory requests',
-};
-
-const CLASSIFICATION_ICONS: Record<string, LucideIcon> = {
-    Aqua: Fish,
-    Potability: Droplets,
-    Wastewater: Waves,
-    Agriculture: Sprout,
-    'Academic/Research': GraduationCap,
-    Others: MoreHorizontal,
-};
-
 const SOURCE_ICONS: Record<string, LucideIcon> = {
     'Surface Water': Waves,
     Groundwater: Droplets,
@@ -211,6 +190,9 @@ type SampleDraft = {
     quantity: string;
     unit: string;
     remarks: string;
+    classification: string;
+    classification_other: string;
+    classification_other_specify: string;
     package_ids: number[];
     analysis_type_ids: number[];
     preset_keys: string[];
@@ -238,6 +220,9 @@ const emptySample = (): SampleDraft => ({
     quantity: '',
     unit: '',
     remarks: '',
+    classification: '',
+    classification_other: '',
+    classification_other_specify: '',
     package_ids: [],
     analysis_type_ids: [],
     preset_keys: [],
@@ -437,6 +422,73 @@ function isAquaClassificationValue(classification: string): boolean {
     return !value.includes('potability') && !value.includes('wastewater');
 }
 
+function resolveSampleClassification(sample: SampleDraft): string {
+    if (sample.classification !== 'Others') {
+        return sample.classification;
+    }
+
+    if (!sample.classification_other.trim()) {
+        return 'Others';
+    }
+
+    if (
+        isGenericOtherCategory(sample.classification_other) &&
+        sample.classification_other_specify.trim()
+    ) {
+        return `Others: Other — ${sample.classification_other_specify.trim()}`;
+    }
+
+    return `Others: ${sample.classification_other.trim()}`;
+}
+
+function sampleClassificationComplete(sample: SampleDraft): boolean {
+    if (!sample.classification.trim()) {
+        return false;
+    }
+
+    if (sample.classification !== 'Others') {
+        return true;
+    }
+
+    if (!sample.classification_other.trim()) {
+        return false;
+    }
+
+    return (
+        !isGenericOtherCategory(sample.classification_other) ||
+        sample.classification_other_specify.trim().length > 0
+    );
+}
+
+function classificationsShareJobOrderForm(samples: SampleDraft[]): boolean {
+    let hasAqua = false;
+    let hasWater = false;
+
+    samples.forEach((sample) => {
+        const value = resolveSampleClassification(sample).toLowerCase();
+        if (value.includes('potability') || value.includes('wastewater')) {
+            hasWater = true;
+        } else if (value.includes('aqua')) {
+            hasAqua = true;
+        }
+    });
+
+    return !(hasAqua && hasWater);
+}
+
+function classificationSortKey(label: string, order: string[]): number {
+    const value = label.toLowerCase();
+    const index = order.findIndex((name) => {
+        const needle = name.toLowerCase();
+
+        return needle === 'others'
+            ? value.includes('other')
+            : value.includes(needle);
+    });
+
+    return index === -1 ? order.length : index;
+}
+
 /** Category slugs shown in the individual-test catalog for a Details classification. */
 const CLASSIFICATION_CATEGORY_SLUGS: Record<string, string[]> = {
     Potability: ['drinking_water', 'microbiological', 'metals'],
@@ -527,6 +579,40 @@ function categorySlugsForClassification(
     return null;
 }
 
+function catalogForSample(
+    sample: SampleDraft,
+    packages: IntakePackage[],
+    categories: CategoryGroup[],
+) {
+    const resolved = resolveSampleClassification(sample);
+    const isAqua = isAquaClassificationValue(resolved);
+    const visiblePackages = packages.filter((pkg) =>
+        isAqua ? pkg.visible_for_aqua : pkg.visible_for_non_aqua,
+    );
+    const allowedSlugs = categorySlugsForClassification(
+        sample.classification,
+        sample.classification_other,
+        categories,
+    );
+    const visibleCategories = categories
+        .map((group) => ({
+            ...group,
+            items: group.items.filter((item) =>
+                scopeVisible(item.catalog_scope || 'non_aqua', isAqua),
+            ),
+        }))
+        .filter((group) => group.items.length > 0)
+        .filter((group) => {
+            if (allowedSlugs === null) {
+                return true;
+            }
+
+            return group.category != null && allowedSlugs.has(group.category);
+        });
+
+    return { resolved, isAqua, visiblePackages, visibleCategories };
+}
+
 export default function IntakeWizard({
     categories,
     packages = [],
@@ -557,10 +643,6 @@ export default function IntakeWizard({
     const [ownershipType, setOwnershipType] = useState(
         prefill.ownership_type ?? '',
     );
-    const [classification, setClassification] = useState('');
-    const [classificationOther, setClassificationOther] = useState('');
-    const [classificationOtherSpecify, setClassificationOtherSpecify] =
-        useState('');
     const [samplingDate, setSamplingDate] = useState('');
     const [samplingTime, setSamplingTime] = useState('');
     const [sampleCollectedBy, setSampleCollectedBy] = useState('');
@@ -695,15 +777,37 @@ export default function IntakeWizard({
         0,
     );
 
-    const resolvedClassification =
-        classification === 'Others'
-            ? classificationOther.trim()
-                ? isGenericOtherCategory(classificationOther) &&
-                  classificationOtherSpecify.trim()
-                    ? `Others: Other — ${classificationOtherSpecify.trim()}`
-                    : `Others: ${classificationOther.trim()}`
-                : 'Others'
-            : classification;
+    const activeCatalog = useMemo(() => {
+        const sample = samples[activeTestSample] ?? samples[0] ?? emptySample();
+
+        return catalogForSample(sample, packages, categories);
+    }, [samples, activeTestSample, packages, categories]);
+
+    const resolvedClassification = activeCatalog.resolved;
+    const isAquaClassification = activeCatalog.isAqua;
+    const scopedPackages = activeCatalog.visiblePackages;
+    const scopedCategories = activeCatalog.visibleCategories;
+
+    const joinedClassification = useMemo(() => {
+        const order = options.classifications;
+        const unique: string[] = [];
+
+        samples.forEach((sample) => {
+            const label = resolveSampleClassification(sample).trim();
+            if (label !== '' && !unique.includes(label)) {
+                unique.push(label);
+            }
+        });
+
+        unique.sort(
+            (left, right) =>
+                classificationSortKey(left, order) -
+                    classificationSortKey(right, order) ||
+                left.localeCompare(right),
+        );
+
+        return unique.join(', ');
+    }, [samples, options.classifications]);
 
     const resolvedSampleSource =
         wastewaterSource === 'Others'
@@ -712,46 +816,23 @@ export default function IntakeWizard({
                 : 'Others'
             : wastewaterSource;
 
-    const isAquaClassification = isAquaClassificationValue(
-        resolvedClassification,
-    );
+    const usesAquaSources =
+        samples.some((sample) =>
+            isAquaClassificationValue(resolveSampleClassification(sample)),
+        ) &&
+        !samples.some((sample) => {
+            const value = resolveSampleClassification(sample).toLowerCase();
 
-    const scopedPackages = useMemo(() => {
-        return packages.filter((pkg) =>
-            isAquaClassification
-                ? pkg.visible_for_aqua
-                : pkg.visible_for_non_aqua,
+            return (
+                value.includes('potability') || value.includes('wastewater')
+            );
+        });
+
+    const hidePotabilityFields =
+        samples.length > 0 &&
+        samples.every(
+            (sample) => resolveSampleClassification(sample) === 'Aqua',
         );
-    }, [packages, isAquaClassification]);
-
-    const scopedCategories = useMemo(() => {
-        const allowedSlugs = categorySlugsForClassification(
-            classification,
-            classificationOther,
-            categories,
-        );
-
-        return categories
-            .map((group) => ({
-                ...group,
-                items: group.items.filter((item) =>
-                    scopeVisible(
-                        item.catalog_scope || 'non_aqua',
-                        isAquaClassification,
-                    ),
-                ),
-            }))
-            .filter((group) => group.items.length > 0)
-            .filter((group) => {
-                if (allowedSlugs === null) {
-                    return true;
-                }
-
-                return (
-                    group.category != null && allowedSlugs.has(group.category)
-                );
-            });
-    }, [categories, isAquaClassification, classification, classificationOther]);
 
     useEffect(() => {
         if (
@@ -763,18 +844,27 @@ export default function IntakeWizard({
     }, [scopedCategories, activeCategory]);
 
     const needsSpecimen = useMemo(() => {
-        if (classification === 'Others') {
-            const otherLabel = classificationOther.trim().toLowerCase();
-            if (
-                otherLabel !== '' &&
-                categories.some(
-                    (group) =>
-                        FOOD_CATEGORY_SLUGS.has(group.category ?? '') &&
-                        group.label.trim().toLowerCase() === otherLabel,
-                )
-            ) {
-                return true;
-            }
+        if (
+            samples.some((sample) => {
+                if (sample.classification !== 'Others') {
+                    return false;
+                }
+
+                const otherLabel = sample.classification_other
+                    .trim()
+                    .toLowerCase();
+
+                return (
+                    otherLabel !== '' &&
+                    categories.some(
+                        (group) =>
+                            FOOD_CATEGORY_SLUGS.has(group.category ?? '') &&
+                            group.label.trim().toLowerCase() === otherLabel,
+                    )
+                );
+            })
+        ) {
+            return true;
         }
 
         const typeCategory = new Map<number, string>();
@@ -810,7 +900,7 @@ export default function IntakeWizard({
         return allTypeIds.some((id) =>
             FOOD_CATEGORY_SLUGS.has(typeCategory.get(id) ?? ''),
         );
-    }, [categories, classification, classificationOther, packages, samples]);
+    }, [categories, packages, samples]);
 
     useEffect(() => {
         if (!needsSpecimen && specimen) {
@@ -870,19 +960,14 @@ export default function IntakeWizard({
         [type_presets, suggestedTypePresets],
     );
 
-    useEffect(() => {
-        const allowedTypeIds = new Set<number>();
-        scopedCategories.forEach((group) =>
-            group.items.forEach((item) => allowedTypeIds.add(item.id)),
-        );
-        scopedPackages.forEach((pkg) =>
-            pkg.analysis_type_ids.forEach((id) => allowedTypeIds.add(id)),
-        );
-        type_presets.forEach((preset) =>
-            preset.analysis_type_ids.forEach((id) => allowedTypeIds.add(id)),
-        );
+    const classificationSignature = samples
+        .map(
+            (sample) =>
+                `${sample.classification}|${sample.classification_other}|${sample.classification_other_specify}`,
+        )
+        .join('\n');
 
-        const allowedPackageIds = new Set(scopedPackages.map((pkg) => pkg.id));
+    useEffect(() => {
         const allowedPresetKeys = new Set(
             type_presets.map((preset) => preset.key),
         );
@@ -890,6 +975,24 @@ export default function IntakeWizard({
         setSamples((current) => {
             let changed = false;
             const next = current.map((sample) => {
+                const catalog = catalogForSample(sample, packages, categories);
+                const allowedTypeIds = new Set<number>();
+                catalog.visibleCategories.forEach((group) =>
+                    group.items.forEach((item) => allowedTypeIds.add(item.id)),
+                );
+                catalog.visiblePackages.forEach((pkg) =>
+                    pkg.analysis_type_ids.forEach((id) =>
+                        allowedTypeIds.add(id),
+                    ),
+                );
+                type_presets.forEach((preset) =>
+                    preset.analysis_type_ids.forEach((id) =>
+                        allowedTypeIds.add(id),
+                    ),
+                );
+                const allowedPackageIds = new Set(
+                    catalog.visiblePackages.map((pkg) => pkg.id),
+                );
                 const package_ids = sample.package_ids.filter((id) =>
                     allowedPackageIds.has(id),
                 );
@@ -920,7 +1023,7 @@ export default function IntakeWizard({
 
             return changed ? next : current;
         });
-    }, [isAquaClassification, scopedCategories, scopedPackages, type_presets]);
+    }, [classificationSignature, packages, categories, type_presets]);
 
     const catalogItemsForSummary = useMemo(() => {
         const seen = new Set<number>();
@@ -1189,7 +1292,10 @@ export default function IntakeWizard({
     function toggleTypePreset(sampleIndex: number, preset: IntakeTypePreset) {
         setActiveTestSample(sampleIndex);
 
-        if (isFo2Preset(preset) && classification === 'Wastewater') {
+        if (
+            isFo2Preset(preset) &&
+            samples[sampleIndex]?.classification === 'Wastewater'
+        ) {
             const selected = samples[sampleIndex]?.preset_keys.includes(
                 preset.key,
             );
@@ -1394,10 +1500,77 @@ export default function IntakeWizard({
         );
     }
 
+    function clearSampleSelections(sample: SampleDraft): SampleDraft {
+        return {
+            ...sample,
+            package_ids: [],
+            analysis_type_ids: [],
+            preset_keys: [],
+        };
+    }
+
+    function setSampleClassification(index: number, value: string) {
+        setSamples((current) =>
+            current.map((sample, i) => {
+                if (i !== index || sample.classification === value) {
+                    return sample;
+                }
+
+                const leavingWastewater =
+                    sample.classification === 'Wastewater' &&
+                    value !== 'Wastewater';
+
+                return clearSampleSelections({
+                    ...sample,
+                    classification: value,
+                    classification_other:
+                        value === 'Others' ? sample.classification_other : '',
+                    classification_other_specify:
+                        value === 'Others'
+                            ? sample.classification_other_specify
+                            : '',
+                    description:
+                        leavingWastewater &&
+                        wastewaterKindSet.has(sample.description)
+                            ? ''
+                            : sample.description,
+                });
+            }),
+        );
+    }
+
+    function setSampleClassificationOther(index: number, value: string) {
+        setSamples((current) =>
+            current.map((sample, i) => {
+                if (i !== index) {
+                    return sample;
+                }
+
+                return clearSampleSelections({
+                    ...sample,
+                    classification_other: value,
+                    classification_other_specify: isGenericOtherCategory(value)
+                        ? sample.classification_other_specify
+                        : '',
+                });
+            }),
+        );
+    }
+
+    function setSampleClassificationOtherSpecify(index: number, value: string) {
+        setSamples((current) =>
+            current.map((sample, i) =>
+                i === index
+                    ? { ...sample, classification_other_specify: value }
+                    : sample,
+            ),
+        );
+    }
+
     function updateSample(index: number, key: SampleFieldKey, value: string) {
         if (
             key === 'description' &&
-            classification === 'Wastewater' &&
+            samples[index]?.classification === 'Wastewater' &&
             (value === '' || wastewaterKindSet.has(value))
         ) {
             if (value !== '') {
@@ -1434,23 +1607,6 @@ export default function IntakeWizard({
         }
 
         if (step === 1) {
-            if (!classification) {
-                return false;
-            }
-
-            if (classification === 'Others') {
-                if (!classificationOther.trim()) {
-                    return false;
-                }
-
-                if (
-                    isGenericOtherCategory(classificationOther) &&
-                    !classificationOtherSpecify.trim()
-                ) {
-                    return false;
-                }
-            }
-
             if (
                 wastewaterSource === 'Others' &&
                 !wastewaterSourceOther.trim()
@@ -1470,13 +1626,19 @@ export default function IntakeWizard({
                 return false;
             }
 
-            if (classification === 'Wastewater') {
-                return samples.every((sample) =>
-                    wastewaterKindSet.has(sample.description.trim()),
-                );
+            if (!samples.every((sample) => sampleClassificationComplete(sample))) {
+                return false;
             }
 
-            return true;
+            if (!classificationsShareJobOrderForm(samples)) {
+                return false;
+            }
+
+            return samples.every(
+                (sample) =>
+                    sample.classification !== 'Wastewater' ||
+                    wastewaterKindSet.has(sample.description.trim()),
+            );
         }
 
         if (step === 3) {
@@ -1506,22 +1668,6 @@ export default function IntakeWizard({
         }
 
         if (step === 1 && !canContinue()) {
-            if (!classification) {
-                return 'Choose a classification before continuing.';
-            }
-
-            if (classification === 'Others' && !classificationOther.trim()) {
-                return 'Select a parameter category for Others.';
-            }
-
-            if (
-                classification === 'Others' &&
-                isGenericOtherCategory(classificationOther) &&
-                !classificationOtherSpecify.trim()
-            ) {
-                return 'Specify the Other classification.';
-            }
-
             if (paymentMode === 'billing_partial' && !paymentTerms) {
                 return 'Select 15 or 30 day terms for Billing / Partial.';
             }
@@ -1531,13 +1677,23 @@ export default function IntakeWizard({
 
         if (step === 2 && !canContinue()) {
             if (
-                classification === 'Wastewater' &&
+                samples.some((sample) => !sampleClassificationComplete(sample))
+            ) {
+                return 'Choose a classification for every sample.';
+            }
+
+            if (!classificationsShareJobOrderForm(samples)) {
+                return 'Potability or Wastewater cannot share this request with Aqua.';
+            }
+
+            if (
                 samples.some(
                     (sample) =>
+                        sample.classification === 'Wastewater' &&
                         !wastewaterKindSet.has(sample.description.trim()),
                 )
             ) {
-                return 'Choose a sample description (Wastewater, River water, or Abstracted water) for every sample.';
+                return 'Choose a sample description (Wastewater, River water, or Abstracted water) for every wastewater sample.';
             }
 
             return 'Add at least one sample before continuing.';
@@ -1593,10 +1749,10 @@ export default function IntakeWizard({
         step > 0 ||
         Object.values(customer).some((value) => value.trim().length > 0) ||
         ownershipType.trim().length > 0 ||
-        classification.trim().length > 0 ||
         paymentMode.trim().length > 0 ||
         samples.some(
             (sample) =>
+                sample.classification.trim() ||
                 sample.sample_code.trim() ||
                 sample.description.trim() ||
                 sample.matrix.trim() ||
@@ -1646,7 +1802,7 @@ export default function IntakeWizard({
                       ...customer,
                       ownership_type: ownershipType || null,
                       is_laboratory_services: false,
-                      classification: resolvedClassification || null,
+                      classification: joinedClassification || null,
                       sampling_date: samplingDate || null,
                       sampling_time: samplingTime || null,
                       sample_collected_by: sampleCollectedBy || null,
@@ -1668,6 +1824,8 @@ export default function IntakeWizard({
                       wastewater_source: resolvedSampleSource || null,
                       other_tests: otherTests || null,
                       samples: samples.map((sample) => ({
+                          classification:
+                              resolveSampleClassification(sample) || null,
                           sample_code: sample.sample_code,
                           description: sample.description,
                           matrix: sample.matrix,
@@ -2115,7 +2273,7 @@ export default function IntakeWizard({
                                     badge="Step 3 of 5 · Specimens"
                                     hint={
                                         samples.length > 1
-                                            ? `${samples.length} samples in this request. Same classification only — other types need a new request.`
+                                            ? `${samples.length} samples in this request. Each sample can use its own classification, except Aqua with Potability or Wastewater.`
                                             : 'Add the samples you are submitting today for laboratory analysis.'
                                     }
                                     action={
@@ -2149,8 +2307,46 @@ export default function IntakeWizard({
                                                         samples.length > 1
                                                     }
                                                     showWastewaterKind={
-                                                        classification ===
+                                                        sample.classification ===
                                                         'Wastewater'
+                                                    }
+                                                    classifications={
+                                                        options.classifications
+                                                    }
+                                                    otherClassificationOptions={
+                                                        options.other_classification_options ??
+                                                        []
+                                                    }
+                                                    classificationError={
+                                                        attemptedContinue &&
+                                                        step === 2 &&
+                                                        !sampleClassificationComplete(
+                                                            sample,
+                                                        )
+                                                    }
+                                                    onClassificationChange={(
+                                                        value,
+                                                    ) =>
+                                                        setSampleClassification(
+                                                            index,
+                                                            value,
+                                                        )
+                                                    }
+                                                    onClassificationOtherChange={(
+                                                        value,
+                                                    ) =>
+                                                        setSampleClassificationOther(
+                                                            index,
+                                                            value,
+                                                        )
+                                                    }
+                                                    onClassificationOtherSpecifyChange={(
+                                                        value,
+                                                    ) =>
+                                                        setSampleClassificationOtherSpecify(
+                                                            index,
+                                                            value,
+                                                        )
                                                     }
                                                     wastewaterKinds={
                                                         wastewaterKinds
@@ -2268,10 +2464,29 @@ export default function IntakeWizard({
                                                     setExpandedSample(
                                                         samples.length,
                                                     );
-                                                    setSamples((current) => [
-                                                        ...current,
-                                                        emptySample(),
-                                                    ]);
+                                                    setSamples((current) => {
+                                                        const previous =
+                                                            current[
+                                                                current.length -
+                                                                    1
+                                                            ];
+
+                                                        return [
+                                                            ...current,
+                                                            {
+                                                                ...emptySample(),
+                                                                classification:
+                                                                    previous?.classification ??
+                                                                    '',
+                                                                classification_other:
+                                                                    previous?.classification_other ??
+                                                                    '',
+                                                                classification_other_specify:
+                                                                    previous?.classification_other_specify ??
+                                                                    '',
+                                                            },
+                                                        ];
+                                                    });
                                                 }}
                                             >
                                                 <Plus className="size-3.5" />
@@ -2351,202 +2566,12 @@ export default function IntakeWizard({
                                 <IntakeStepHeader
                                     title="Request Details"
                                     badge="Step 2 of 5 · Job specs & sampling site"
-                                    hint="Specify sample classification, source, collection timeline, and billing terms."
+                                    hint="Specify source, collection timeline, and billing terms. Classification is chosen on each sample."
                                     className="shrink-0 [&_h2]:text-lg sm:[&_h2]:text-xl [&_p]:mt-0.5"
                                 />
 
                                 <div className="grid gap-2 lg:grid-cols-[minmax(0,1.55fr)_minmax(260px,0.78fr)] lg:items-start">
                                     <div className="min-w-0 space-y-2.5">
-                                        <FormSection
-                                            title="Classification"
-                                            first
-                                        >
-                                            <div
-                                                className="flex flex-wrap gap-1.5"
-                                                role="group"
-                                                aria-label="Sample classification"
-                                            >
-                                                {options.classifications.map(
-                                                    (item) => {
-                                                        const active =
-                                                            classification ===
-                                                            item;
-                                                        const Icon =
-                                                            CLASSIFICATION_ICONS[
-                                                                item
-                                                            ] ?? FlaskConical;
-
-                                                        return (
-                                                            <ChoiceChip
-                                                                key={item}
-                                                                active={active}
-                                                                icon={Icon}
-                                                                title={
-                                                                    CLASSIFICATION_BLURBS[
-                                                                        item
-                                                                    ] ??
-                                                                    'Laboratory analysis request'
-                                                                }
-                                                                onClick={() => {
-                                                                    setClassification(
-                                                                        item,
-                                                                    );
-                                                                    setWastewaterSource(
-                                                                        '',
-                                                                    );
-                                                                    setWastewaterSourceOther(
-                                                                        '',
-                                                                    );
-                                                                    if (
-                                                                        item !==
-                                                                        'Wastewater'
-                                                                    ) {
-                                                                        setFo2NeedsKindSample(
-                                                                            null,
-                                                                        );
-                                                                        setSamples(
-                                                                            (
-                                                                                current,
-                                                                            ) =>
-                                                                                current.map(
-                                                                                    (
-                                                                                        sample,
-                                                                                    ) =>
-                                                                                        wastewaterKindSet.has(
-                                                                                            sample.description,
-                                                                                        )
-                                                                                            ? {
-                                                                                                  ...sample,
-                                                                                                  description:
-                                                                                                      '',
-                                                                                              }
-                                                                                            : sample,
-                                                                                ),
-                                                                        );
-                                                                    }
-                                                                    if (
-                                                                        item !==
-                                                                        'Others'
-                                                                    ) {
-                                                                        setClassificationOther(
-                                                                            '',
-                                                                        );
-                                                                        setClassificationOtherSpecify(
-                                                                            '',
-                                                                        );
-                                                                    }
-                                                                }}
-                                                            >
-                                                                {item}
-                                                            </ChoiceChip>
-                                                        );
-                                                    },
-                                                )}
-                                            </div>
-                                            {attemptedContinue &&
-                                            !classification ? (
-                                                <p
-                                                    className="mt-1.5 border-l-2 border-rose-300 py-1 pl-2 text-xs font-medium text-rose-700"
-                                                    role="alert"
-                                                    data-intake-error=""
-                                                >
-                                                    Please select a
-                                                    classification.
-                                                </p>
-                                            ) : null}
-                                            {classification === 'Others' && (
-                                                <div className="grid grid-cols-1 gap-2 pt-1 md:grid-cols-2">
-                                                    <IntakeField
-                                                        label="Parameter category"
-                                                        htmlFor="classification_other"
-                                                        required
-                                                        error={
-                                                            errors?.classification
-                                                        }
-                                                    >
-                                                        <Select
-                                                            value={
-                                                                classificationOther ||
-                                                                undefined
-                                                            }
-                                                            onValueChange={(
-                                                                value,
-                                                            ) => {
-                                                                setClassificationOther(
-                                                                    value,
-                                                                );
-                                                                if (
-                                                                    !isGenericOtherCategory(
-                                                                        value,
-                                                                    )
-                                                                ) {
-                                                                    setClassificationOtherSpecify(
-                                                                        '',
-                                                                    );
-                                                                }
-                                                            }}
-                                                        >
-                                                            <SelectTrigger
-                                                                id="classification_other"
-                                                                className="h-9 w-full rounded-lg border-slate-200 bg-white text-sm shadow-none focus-visible:border-nppc-900 focus-visible:ring-nppc-900/20"
-                                                            >
-                                                                <SelectValue placeholder="Select category…" />
-                                                            </SelectTrigger>
-                                                            <SelectContent
-                                                                position="popper"
-                                                                align="start"
-                                                                className="max-h-80 w-[var(--radix-select-trigger-width)]"
-                                                            >
-                                                                {(
-                                                                    options.other_classification_options ??
-                                                                    []
-                                                                ).map(
-                                                                    (label) => (
-                                                                        <SelectItem
-                                                                            key={
-                                                                                label
-                                                                            }
-                                                                            value={
-                                                                                label
-                                                                            }
-                                                                        >
-                                                                            {
-                                                                                label
-                                                                            }
-                                                                        </SelectItem>
-                                                                    ),
-                                                                )}
-                                                            </SelectContent>
-                                                        </Select>
-                                                    </IntakeField>
-                                                    {isGenericOtherCategory(
-                                                        classificationOther,
-                                                    ) && (
-                                                        <IntakeField
-                                                            label="Specify"
-                                                            htmlFor="classification_other_specify"
-                                                            required
-                                                        >
-                                                            <Input
-                                                                id="classification_other_specify"
-                                                                className="h-9 text-sm"
-                                                                placeholder="Describe the analysis type"
-                                                                value={
-                                                                    classificationOtherSpecify
-                                                                }
-                                                                onChange={(e) =>
-                                                                    setClassificationOtherSpecify(
-                                                                        e.target
-                                                                            .value,
-                                                                    )
-                                                                }
-                                                            />
-                                                        </IntakeField>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </FormSection>
-
                                         <IntakePanel
                                             title="Sampling Details"
                                             className="[&_[data-intake-panel-body]]:p-2.5 sm:[&_[data-intake-panel-body]]:p-3 [&_[data-intake-panel-head]]:px-3 [&_[data-intake-panel-head]]:py-1.5 sm:[&_[data-intake-panel-head]]:px-3.5"
@@ -2668,7 +2693,7 @@ export default function IntakeWizard({
                                                         }
                                                     />
                                                 </IntakeField>
-                                                {classification !== 'Aqua' && (
+                                                {!hidePotabilityFields && (
                                                     <div className="md:col-span-2">
                                                         {potabilityOpen ? (
                                                             <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50/60 p-2.5">
@@ -2762,7 +2787,7 @@ export default function IntakeWizard({
                                                 role="group"
                                                 aria-label="Sample source"
                                             >
-                                                {(classification === 'Aqua'
+                                                {(usesAquaSources
                                                     ? options.aqua_sources
                                                     : options.wastewater_sources
                                                 ).map((item) => (
@@ -2994,6 +3019,9 @@ export default function IntakeWizard({
                                                 },
                                             );
                                             const sampleMeta = [
+                                                resolveSampleClassification(
+                                                    sample,
+                                                ) || null,
                                                 sample.description.trim() ||
                                                     null,
                                                 sample.quantity.trim()
@@ -3541,9 +3569,7 @@ export default function IntakeWizard({
                                             <div className="grid gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-3">
                                                 <ReviewRow
                                                     label="Classification"
-                                                    value={
-                                                        resolvedClassification
-                                                    }
+                                                    value={joinedClassification}
                                                 />
                                                 <ReviewRow
                                                     label="Sampling Site"
@@ -3725,6 +3751,10 @@ export default function IntakeWizard({
                                                                             </p>
                                                                             <p className="mt-0.5 truncate text-[11px] text-slate-500">
                                                                                 {[
+                                                                                    resolveSampleClassification(
+                                                                                        sample,
+                                                                                    ) ||
+                                                                                        null,
                                                                                     sample.sample_code.trim()
                                                                                         ? `#${sample.sample_code.trim()}`
                                                                                         : null,
