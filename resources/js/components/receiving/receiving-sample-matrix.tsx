@@ -1,10 +1,24 @@
-import { Check, ChevronDown, ChevronRight } from 'lucide-react';
+import { router } from '@inertiajs/react';
+import { Check, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { Fragment } from 'react';
+import ReceivingAddAnalyses, {
+    type AnalysisCatalogPackage,
+    type AnalysisCatalogType,
+} from '@/components/receiving/receiving-add-analyses';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { PricingLine, SamplePricingGroup } from './types';
 
 type Props = {
+    jobOrderId: number;
+    jobClassification?: string | null;
+    isBulk?: boolean;
+    canEditAnalyses?: boolean;
+    analysisCatalog?: {
+        packages: AnalysisCatalogPackage[];
+        analysis_types: AnalysisCatalogType[];
+    };
     sampleGroups: SamplePricingGroup[];
     expandedSampleId: number | null;
     onToggleSample: (sampleId: number | null) => void;
@@ -40,6 +54,11 @@ const thClass =
     'px-3 py-2 text-left text-[11px] font-semibold tracking-wider text-slate-500 uppercase';
 
 export default function ReceivingSampleMatrix({
+    jobOrderId,
+    jobClassification,
+    isBulk = false,
+    canEditAnalyses = false,
+    analysisCatalog,
     sampleGroups,
     expandedSampleId,
     onToggleSample,
@@ -50,10 +69,23 @@ export default function ReceivingSampleMatrix({
     updatePackagePrice,
     needsPricing,
 }: Props) {
+    function removePackage(packageLinkId: number) {
+        router.delete(
+            `/receiving/${jobOrderId}/analyses/packages/${packageLinkId}`,
+            { preserveScroll: true },
+        );
+    }
+
+    function removeAnalysis(analysisId: number) {
+        router.delete(`/receiving/${jobOrderId}/analyses/${analysisId}`, {
+            preserveScroll: true,
+        });
+    }
+
     return (
         <div
             className={cn(
-                'overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs',
+                'rounded-xl border border-slate-200 bg-white shadow-xs',
                 needsPricing && 'border-amber-300/80 ring-1 ring-amber-200/70',
             )}
         >
@@ -69,6 +101,9 @@ export default function ReceivingSampleMatrix({
                 <p className="mt-0.5 text-[11px] text-slate-500">
                     Expand a sample to edit package totals and individual line
                     rates
+                    {canEditAnalyses
+                        ? '. Before JO approval you can also add a forgotten package or test.'
+                        : ''}
                 </p>
             </div>
 
@@ -141,7 +176,7 @@ export default function ReceivingSampleMatrix({
                                 </button>
 
                                 {expanded ? (
-                                    <div className="border-t border-slate-100 bg-slate-50/30">
+                                    <div className="overflow-visible border-t border-slate-100 bg-slate-50/30">
                                         <div className="overflow-x-auto">
                                             <table className="w-full min-w-[640px] border-collapse text-left text-xs">
                                                 <thead className="border-b border-slate-200 bg-slate-50/90">
@@ -161,6 +196,13 @@ export default function ReceivingSampleMatrix({
                                                         <th className={`${thClass} w-28 text-right`}>
                                                             Net
                                                         </th>
+                                                        {canEditAnalyses ? (
+                                                            <th
+                                                                className={`${thClass} w-12 text-right`}
+                                                            >
+                                                                {' '}
+                                                            </th>
+                                                        ) : null}
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-200/80 bg-white">
@@ -249,6 +291,26 @@ export default function ReceivingSampleMatrix({
                                                                                 pkgTotal,
                                                                             )}
                                                                         </td>
+                                                                        {canEditAnalyses ? (
+                                                                            <td className="px-3 py-2 text-right align-top">
+                                                                                <Button
+                                                                                    type="button"
+                                                                                    variant="ghost"
+                                                                                    size="sm"
+                                                                                    className="h-8 w-8 p-0 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                                                                                    aria-label={`Remove package ${pkgGroup.package.name}`}
+                                                                                    onClick={() =>
+                                                                                        removePackage(
+                                                                                            pkgGroup
+                                                                                                .package
+                                                                                                .id,
+                                                                                        )
+                                                                                    }
+                                                                                >
+                                                                                    <Trash2 className="size-3.5" />
+                                                                                </Button>
+                                                                            </td>
+                                                                        ) : null}
                                                                     </tr>
                                                                     {pkgGroup.members.map(
                                                                         (
@@ -263,9 +325,7 @@ export default function ReceivingSampleMatrix({
                                                                                 </td>
                                                                                 <td
                                                                                     className="px-3 py-1.5 align-top text-[11px] text-slate-600"
-                                                                                    colSpan={
-                                                                                        3
-                                                                                    }
+                                                                                    colSpan={3}
                                                                                 >
                                                                                     <span className="inline-flex items-center gap-1.5">
                                                                                         <Check className="size-3 text-emerald-600" />
@@ -277,6 +337,9 @@ export default function ReceivingSampleMatrix({
                                                                                 <td className="px-3 py-1.5 text-right align-top text-[10px] text-slate-400">
                                                                                     Included
                                                                                 </td>
+                                                                                {canEditAnalyses ? (
+                                                                                    <td className="px-3 py-1.5" />
+                                                                                ) : null}
                                                                             </tr>
                                                                         ),
                                                                     )}
@@ -379,6 +442,24 @@ export default function ReceivingSampleMatrix({
                                                                             lineTotal,
                                                                         )}
                                                                     </td>
+                                                                    {canEditAnalyses ? (
+                                                                        <td className="px-3 py-2 text-right align-top">
+                                                                            <Button
+                                                                                type="button"
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                className="h-8 w-8 p-0 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                                                                                aria-label={`Remove test ${meta.name}`}
+                                                                                onClick={() =>
+                                                                                    removeAnalysis(
+                                                                                        meta.id,
+                                                                                    )
+                                                                                }
+                                                                            >
+                                                                                <Trash2 className="size-3.5" />
+                                                                            </Button>
+                                                                        </td>
+                                                                    ) : null}
                                                                 </tr>
                                                             );
                                                         },
@@ -390,7 +471,11 @@ export default function ReceivingSampleMatrix({
                                                         .length === 0 ? (
                                                         <tr>
                                                             <td
-                                                                colSpan={5}
+                                                                colSpan={
+                                                                    canEditAnalyses
+                                                                        ? 6
+                                                                        : 5
+                                                                }
                                                                 className="px-3 py-6 text-center text-sm text-slate-500"
                                                             >
                                                                 No chargeable
@@ -402,6 +487,63 @@ export default function ReceivingSampleMatrix({
                                                 </tbody>
                                             </table>
                                         </div>
+
+                                        {canEditAnalyses &&
+                                        analysisCatalog &&
+                                        group.sample.id != null ? (
+                                            <ReceivingAddAnalyses
+                                                jobOrderId={jobOrderId}
+                                                sampleId={group.sample.id}
+                                                sampleClassification={
+                                                    group.sample.classification
+                                                }
+                                                jobClassification={
+                                                    jobClassification
+                                                }
+                                                isBulk={isBulk}
+                                                existingPackageIds={(isBulk
+                                                    ? sampleGroups
+                                                    : [group]
+                                                ).flatMap((g) =>
+                                                    g.packages.map(
+                                                        (pkgGroup) =>
+                                                            pkgGroup.package
+                                                                .analysis_package_id,
+                                                    ),
+                                                )}
+                                                existingTypeIds={(isBulk
+                                                    ? sampleGroups
+                                                    : [group]
+                                                ).flatMap((g) =>
+                                                    g.individuals
+                                                        .map(
+                                                            (line) =>
+                                                                line.analysis_type_id,
+                                                        )
+                                                        .filter(
+                                                            (
+                                                                id,
+                                                            ): id is number =>
+                                                                id != null,
+                                                        )
+                                                        .concat(
+                                                            g.packages.flatMap(
+                                                                (pkgGroup) =>
+                                                                    pkgGroup
+                                                                        .package
+                                                                        .selected_type_ids ??
+                                                                    [],
+                                                            ),
+                                                        ),
+                                                )}
+                                                packages={
+                                                    analysisCatalog.packages
+                                                }
+                                                analysisTypes={
+                                                    analysisCatalog.analysis_types
+                                                }
+                                            />
+                                        ) : null}
 
                                         <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-emerald-50/40 px-4 py-2.5 text-sm">
                                             <span className="font-semibold text-slate-800">

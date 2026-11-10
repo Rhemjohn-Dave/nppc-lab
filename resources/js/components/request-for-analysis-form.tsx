@@ -6,6 +6,7 @@ export type FormSample = {
     id?: number;
     sample_code?: string | null;
     description: string;
+    classification?: string | null;
     matrix?: string | null;
     quantity?: string | number | null;
     unit?: string | null;

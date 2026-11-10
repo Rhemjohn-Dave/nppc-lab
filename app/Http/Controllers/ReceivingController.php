@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Enums\JobOrderStatus;
 use App\Models\EmailLog;
 use App\Models\JobOrder;
+use App\Models\JobOrderAnalysis;
+use App\Models\JobOrderPackage;
 use App\Services\JobOrderService;
 use App\Support\JobOrderFormPresenter;
 use App\Support\RfaPdfExporter;
@@ -207,7 +209,62 @@ class ReceivingController extends Controller
         return Inertia::render('receiving/show', [
             'jobOrder' => $this->transformJobOrder($jobOrder),
             'emailLogs' => EmailLog::summariesFor($jobOrder),
+            'analysisCatalog' => JobOrderFormPresenter::analysisEditCatalog(),
         ]);
+    }
+
+    public function addPackage(Request $request, JobOrder $jobOrder): RedirectResponse
+    {
+        abort_unless($this->jobOrders->canEditAnalyses($jobOrder), 404);
+
+        $data = $request->validate([
+            'analysis_package_id' => ['required', 'integer', 'exists:analysis_packages,id'],
+            'sample_id' => ['nullable', 'integer', 'exists:samples,id'],
+        ]);
+
+        $this->jobOrders->addPackage(
+            $jobOrder,
+            (int) $data['analysis_package_id'],
+            isset($data['sample_id']) ? (int) $data['sample_id'] : null,
+        );
+
+        return back()->with('success', 'Package added. Review prices before saving.');
+    }
+
+    public function addAnalysisType(Request $request, JobOrder $jobOrder): RedirectResponse
+    {
+        abort_unless($this->jobOrders->canEditAnalyses($jobOrder), 404);
+
+        $data = $request->validate([
+            'analysis_type_id' => ['required', 'integer', 'exists:analysis_types,id'],
+            'sample_id' => ['nullable', 'integer', 'exists:samples,id'],
+        ]);
+
+        $this->jobOrders->addAnalysisType(
+            $jobOrder,
+            (int) $data['analysis_type_id'],
+            isset($data['sample_id']) ? (int) $data['sample_id'] : null,
+        );
+
+        return back()->with('success', 'Test added. Review prices before saving.');
+    }
+
+    public function removePackage(JobOrder $jobOrder, JobOrderPackage $packageLink): RedirectResponse
+    {
+        abort_unless($this->jobOrders->canEditAnalyses($jobOrder), 404);
+
+        $this->jobOrders->removePackageLink($jobOrder, $packageLink);
+
+        return back()->with('success', 'Package removed.');
+    }
+
+    public function removeAnalysis(JobOrder $jobOrder, JobOrderAnalysis $analysis): RedirectResponse
+    {
+        abort_unless($this->jobOrders->canEditAnalyses($jobOrder), 404);
+
+        $this->jobOrders->removeAnalysisLine($jobOrder, $analysis);
+
+        return back()->with('success', 'Test removed.');
     }
 
     public function editSamples(JobOrder $jobOrder): Response

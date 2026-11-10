@@ -5,6 +5,10 @@ import ConfirmDialog from '@/components/confirm-dialog';
 import CustomerEmailLog from '@/components/email/customer-email-log';
 import type { EmailLogSummary } from '@/components/email/customer-email-log';
 import LimsWorkspace from '@/components/lims/lims-workspace';
+import type {
+    AnalysisCatalogPackage,
+    AnalysisCatalogType,
+} from '@/components/receiving/receiving-add-analyses';
 import ReceivingLabServicesEditor from '@/components/receiving/receiving-lab-services-editor';
 import ReceivingPricingKpis from '@/components/receiving/receiving-pricing-kpis';
 import ReceivingQuotationAudit from '@/components/receiving/receiving-quotation-audit';
@@ -36,6 +40,7 @@ type Props = {
         is_bulk?: boolean;
         is_laboratory_services?: boolean;
         can_edit_lab_services?: boolean;
+        can_edit_analyses?: boolean;
         can_mark_lab_services_ready?: boolean;
         has_attachment?: boolean;
         attachment_url?: string | null;
@@ -47,6 +52,10 @@ type Props = {
         samples_encode_url?: string | null;
     };
     emailLogs?: EmailLogSummary[];
+    analysisCatalog?: {
+        packages: AnalysisCatalogPackage[];
+        analysis_types: AnalysisCatalogType[];
+    };
 };
 
 function money(value: number) {
@@ -101,7 +110,11 @@ function redistributePackagePrice(
     );
 }
 
-export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
+export default function ReceivingShow({
+    jobOrder,
+    emailLogs = [],
+    analysisCatalog,
+}: Props) {
     const [confirmReceive, setConfirmReceive] = useState(false);
     const [confirmLabReady, setConfirmLabReady] = useState(false);
     const [receiving, setReceiving] = useState(false);
@@ -113,6 +126,7 @@ export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
     const canPrintRfa = Boolean(jobOrder.can_print_rfa);
     const canEncodeSamples = Boolean(jobOrder.can_encode_samples);
     const canEditLabServices = Boolean(jobOrder.can_edit_lab_services);
+    const canEditAnalyses = Boolean(jobOrder.can_edit_analyses);
     const canMarkLabServicesReady = Boolean(
         jobOrder.can_mark_lab_services_ready,
     );
@@ -158,6 +172,23 @@ export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
         })),
         discount_percent: Number(jobOrder.discount_percent ?? 0),
     });
+
+    const analysisSignature = jobOrder.analyses
+        .map((line) => `${line.id}:${line.quantity}:${line.unit_price}`)
+        .join('|');
+
+    useEffect(() => {
+        form.setData({
+            lines: jobOrder.analyses.map((line) => ({
+                id: line.id,
+                quantity: line.quantity,
+                unit_price: Number(line.unit_price),
+            })),
+            discount_percent: Number(jobOrder.discount_percent ?? 0),
+        });
+        // Keep pricing lines in sync after Receiving adds/removes analyses.
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- form identity is stable; signature tracks server lines
+    }, [analysisSignature, jobOrder.discount_percent]);
 
     const linesById = useMemo(() => {
         const map = new Map<number, PricingLine>();
@@ -619,6 +650,11 @@ export default function ReceivingShow({ jobOrder, emailLogs = [] }: Props) {
                     }}
                 >
                     <ReceivingSampleMatrix
+                        jobOrderId={jobOrder.id}
+                        jobClassification={jobOrder.classification}
+                        isBulk={Boolean(jobOrder.is_bulk)}
+                        canEditAnalyses={canEditAnalyses}
+                        analysisCatalog={analysisCatalog}
                         sampleGroups={sampleGroups}
                         expandedSampleId={expandedSampleId}
                         onToggleSample={setExpandedSampleId}

@@ -12,6 +12,7 @@ use App\Models\Customer;
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
 use App\Models\JobOrderPackage;
+use App\Models\Sample;
 use App\Models\User;
 use App\Notifications\AnalysisReturned;
 use App\Notifications\JobOrderJoApproved;
@@ -740,6 +741,351 @@ class JobOrderService
                 JobOrderStatus::PendingJoApproval,
                 JobOrderStatus::Priced,
             ], true);
+    }
+
+    /**
+     * Receiving may add/remove packages and catalog tests only before Head JO approval.
+     */
+    public function canEditAnalyses(JobOrder $jobOrder): bool
+    {
+        return ! $jobOrder->is_laboratory_services
+            && in_array($jobOrder->status, [
+                JobOrderStatus::DraftSubmitted,
+                JobOrderStatus::PendingJoApproval,
+                JobOrderStatus::Priced,
+            ], true);
+    }
+
+    public function assertCanEditAnalyses(JobOrder $jobOrder): void
+    {
+        if (! $this->canEditAnalyses($jobOrder)) {
+            throw ValidationException::withMessages([
+                'analyses' => 'Packages and tests can only be changed before Head JO approval.',
+            ]);
+        }
+    }
+
+    /**
+     * Add a catalog package to one sample, or to every sample on a receiving bulk JO.
+     */
+    public function addPackage(JobOrder $jobOrder, int $packageId, ?int $sampleId = null): JobOrder
+    {
+        $this->assertCanEditAnalyses($jobOrder);
+
+        $package = AnalysisPackage::query()
+            ->whereKey($packageId)
+            ->where('is_active', true)
+            ->with('analysisTypes.category')
+            ->first();
+
+        if ($package === null) {
+            throw ValidationException::withMessages([
+                'analysis_package_id' => 'That package was not found or is inactive.',
+            ]);
+        }
+
+        $memberIds = $package->orderedTypeIds();
+        if ($memberIds === []) {
+            throw ValidationException::withMessages([
+                'analysis_package_id' => 'That package has no tests to add.',
+            ]);
+        }
+
+        $targets = $this->targetSamplesForAnalysisEdit($jobOrder, $sampleId);
+
+        return DB::transaction(function () use ($jobOrder, $package, $memberIds, $targets) {
+            $types = AnalysisType::query()
+                ->whereIn('id', $memberIds)
+                ->where('is_active', true)
+                ->with('category')
+                ->get()
+                ->keyBy('id');
+
+            foreach ($targets as $sample) {
+                $classification = filled(trim((string) ($sample->classification ?? '')))
+                    ? (string) $sample->classification
+                    : $jobOrder->classification;
+
+                if (! $package->matchesClassification($classification)) {
+                    throw ValidationException::withMessages([
+                        'analysis_package_id' => "Package \"{$package->name}\" does not match the classification for sample {$sample->sample_code}.",
+                    ]);
+                }
+
+                $exists = JobOrderPackage::query()
+                    ->where('job_order_id', $jobOrder->id)
+                    ->where('sample_id', $sample->id)
+                    ->where('analysis_package_id', $package->id)
+                    ->exists();
+
+                if ($exists) {
+                    throw ValidationException::withMessages([
+                        'analysis_package_id' => "Package \"{$package->name}\" is already on sample {$sample->sample_code}.",
+                    ]);
+                }
+
+                $existingTypeIds = $jobOrder->analyses()
+                    ->where('sample_id', $sample->id)
+                    ->whereIn('analysis_type_id', $memberIds)
+                    ->pluck('analysis_type_id')
+                    ->map(fn ($id): int => (int) $id)
+                    ->all();
+
+                $missingIds = array_values(array_filter(
+                    $memberIds,
+                    fn (int $id): bool => ! in_array($id, $existingTypeIds, true) && $types->has($id),
+                ));
+
+                JobOrderPackage::query()->create([
+                    'job_order_id' => $jobOrder->id,
+                    'sample_id' => $sample->id,
+                    'analysis_package_id' => $package->id,
+                    'selected_type_ids' => $memberIds,
+                    'waived_type_ids' => [],
+                ]);
+
+                if ($missingIds === []) {
+                    continue;
+                }
+
+                // Split the package list price across all members; apply shares only to new lines.
+                $packagePrices = $this->packageLinePrices([
+                    [
+                        'price' => (float) $package->default_price,
+                        'type_ids' => $memberIds,
+                    ],
+                ], $types);
+
+                foreach ($missingIds as $typeId) {
+                    $type = $types->get($typeId);
+                    if ($type === null) {
+                        continue;
+                    }
+
+                    $price = $packagePrices[(int) $type->id] ?? (float) $type->default_price;
+
+                    $jobOrder->analyses()->create([
+                        'sample_id' => $sample->id,
+                        'analysis_type_id' => $type->id,
+                        'name' => $type->name,
+                        'category' => $type->category?->slug,
+                        'category_label' => $type->category?->name,
+                        'quantity' => 1,
+                        'unit_price' => $price,
+                        'total_cost' => $price,
+                        'status' => JobOrderAnalysisStatus::Pending,
+                        'accreditation_footnote' => OfficialAnalysisCatalog::wastewaterAccreditationFootnoteTier(
+                            $type->code,
+                        ),
+                    ]);
+                }
+            }
+
+            $jobOrder->recalculateTotal();
+            LabQueueUpdated::notify([LabQueueUpdated::SCOPE_RECEIVING], $jobOrder->id);
+
+            return $jobOrder->fresh([
+                'samples',
+                'analyses.analysisType',
+                'analyses.assignee',
+                'packageLinks.analysisPackage.analysisTypes',
+            ]) ?? $jobOrder;
+        });
+    }
+
+    /**
+     * Add a catalog analysis type to one sample, or to every sample on a receiving bulk JO.
+     */
+    public function addAnalysisType(JobOrder $jobOrder, int $analysisTypeId, ?int $sampleId = null): JobOrder
+    {
+        $this->assertCanEditAnalyses($jobOrder);
+
+        $type = AnalysisType::query()
+            ->whereKey($analysisTypeId)
+            ->where('is_active', true)
+            ->with('category')
+            ->first();
+
+        if ($type === null) {
+            throw ValidationException::withMessages([
+                'analysis_type_id' => 'That test was not found or is inactive.',
+            ]);
+        }
+
+        $targets = $this->targetSamplesForAnalysisEdit($jobOrder, $sampleId);
+
+        return DB::transaction(function () use ($jobOrder, $type, $targets) {
+            foreach ($targets as $sample) {
+                $exists = $jobOrder->analyses()
+                    ->where('sample_id', $sample->id)
+                    ->where('analysis_type_id', $type->id)
+                    ->exists();
+
+                if ($exists) {
+                    throw ValidationException::withMessages([
+                        'analysis_type_id' => "Test \"{$type->name}\" is already on sample {$sample->sample_code}.",
+                    ]);
+                }
+
+                $price = (float) $type->default_price;
+
+                $jobOrder->analyses()->create([
+                    'sample_id' => $sample->id,
+                    'analysis_type_id' => $type->id,
+                    'name' => $type->name,
+                    'category' => $type->category?->slug,
+                    'category_label' => $type->category?->name,
+                    'quantity' => 1,
+                    'unit_price' => $price,
+                    'total_cost' => $price,
+                    'status' => JobOrderAnalysisStatus::Pending,
+                    'accreditation_footnote' => OfficialAnalysisCatalog::wastewaterAccreditationFootnoteTier(
+                        $type->code,
+                    ),
+                ]);
+            }
+
+            $jobOrder->recalculateTotal();
+            LabQueueUpdated::notify([LabQueueUpdated::SCOPE_RECEIVING], $jobOrder->id);
+
+            return $jobOrder->fresh([
+                'samples',
+                'analyses.analysisType',
+                'analyses.assignee',
+                'packageLinks.analysisPackage.analysisTypes',
+            ]) ?? $jobOrder;
+        });
+    }
+
+    public function removePackageLink(JobOrder $jobOrder, JobOrderPackage $packageLink): JobOrder
+    {
+        $this->assertCanEditAnalyses($jobOrder);
+        abort_unless((int) $packageLink->job_order_id === (int) $jobOrder->id, 404);
+
+        $selectedIds = array_values(array_map('intval', $packageLink->selected_type_ids ?? []));
+        $sampleId = $packageLink->sample_id !== null ? (int) $packageLink->sample_id : null;
+
+        return DB::transaction(function () use ($jobOrder, $packageLink, $selectedIds, $sampleId) {
+            $packageLink->delete();
+
+            if ($selectedIds !== [] && $sampleId !== null) {
+                $stillCovered = JobOrderPackage::query()
+                    ->where('job_order_id', $jobOrder->id)
+                    ->where('sample_id', $sampleId)
+                    ->get()
+                    ->flatMap(fn (JobOrderPackage $link) => array_map('intval', $link->selected_type_ids ?? []))
+                    ->unique()
+                    ->all();
+
+                $exclusiveIds = array_values(array_filter(
+                    $selectedIds,
+                    fn (int $id): bool => ! in_array($id, $stillCovered, true),
+                ));
+
+                if ($exclusiveIds !== []) {
+                    $jobOrder->analyses()
+                        ->where('sample_id', $sampleId)
+                        ->whereIn('analysis_type_id', $exclusiveIds)
+                        ->delete();
+                }
+            }
+
+            $this->assertJobKeepsAnalyses($jobOrder);
+            $jobOrder->recalculateTotal();
+            LabQueueUpdated::notify([LabQueueUpdated::SCOPE_RECEIVING], $jobOrder->id);
+
+            return $jobOrder->fresh([
+                'samples',
+                'analyses.analysisType',
+                'analyses.assignee',
+                'packageLinks.analysisPackage.analysisTypes',
+            ]) ?? $jobOrder;
+        });
+    }
+
+    public function removeAnalysisLine(JobOrder $jobOrder, JobOrderAnalysis $analysis): JobOrder
+    {
+        $this->assertCanEditAnalyses($jobOrder);
+        abort_unless((int) $analysis->job_order_id === (int) $jobOrder->id, 404);
+
+        $typeId = $analysis->analysis_type_id !== null ? (int) $analysis->analysis_type_id : null;
+        $sampleId = $analysis->sample_id !== null ? (int) $analysis->sample_id : null;
+
+        if ($typeId !== null && $sampleId !== null) {
+            $covered = JobOrderPackage::query()
+                ->where('job_order_id', $jobOrder->id)
+                ->where('sample_id', $sampleId)
+                ->get()
+                ->contains(function (JobOrderPackage $link) use ($typeId): bool {
+                    return in_array($typeId, array_map('intval', $link->selected_type_ids ?? []), true);
+                });
+
+            if ($covered) {
+                throw ValidationException::withMessages([
+                    'analysis' => 'Remove the package first, or remove only standalone tests.',
+                ]);
+            }
+        }
+
+        return DB::transaction(function () use ($jobOrder, $analysis) {
+            $analysis->delete();
+            $this->assertJobKeepsAnalyses($jobOrder);
+            $jobOrder->recalculateTotal();
+            LabQueueUpdated::notify([LabQueueUpdated::SCOPE_RECEIVING], $jobOrder->id);
+
+            return $jobOrder->fresh([
+                'samples',
+                'analyses.analysisType',
+                'analyses.assignee',
+                'packageLinks.analysisPackage.analysisTypes',
+            ]) ?? $jobOrder;
+        });
+    }
+
+    /**
+     * @return list<Sample>
+     */
+    private function targetSamplesForAnalysisEdit(JobOrder $jobOrder, ?int $sampleId): array
+    {
+        $jobOrder->loadMissing('samples');
+
+        if ($jobOrder->samples->isEmpty()) {
+            throw ValidationException::withMessages([
+                'sample_id' => 'This job order has no samples.',
+            ]);
+        }
+
+        if ($jobOrder->is_receiving_bulk) {
+            return $jobOrder->samples->values()->all();
+        }
+
+        if ($sampleId === null) {
+            if ($jobOrder->samples->count() === 1) {
+                return [$jobOrder->samples->first()];
+            }
+
+            throw ValidationException::withMessages([
+                'sample_id' => 'Choose which sample should receive the added package or test.',
+            ]);
+        }
+
+        $sample = $jobOrder->samples->firstWhere('id', $sampleId);
+        if ($sample === null) {
+            throw ValidationException::withMessages([
+                'sample_id' => 'That sample does not belong to this job order.',
+            ]);
+        }
+
+        return [$sample];
+    }
+
+    private function assertJobKeepsAnalyses(JobOrder $jobOrder): void
+    {
+        if ($jobOrder->analyses()->count() < 1) {
+            throw ValidationException::withMessages([
+                'analyses' => 'Keep at least one test or package on the job order.',
+            ]);
+        }
     }
 
     /**

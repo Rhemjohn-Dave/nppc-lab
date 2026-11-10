@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Enums\JobOrderStatus;
+use App\Models\AnalysisPackage;
 use App\Models\AnalysisType;
 use App\Models\JobOrder;
 use App\Support\OfficialAnalysisCatalog;
@@ -76,6 +77,12 @@ class JobOrderFormPresenter
                     JobOrderStatus::PendingJoApproval,
                     JobOrderStatus::Priced,
                 ], true),
+            'can_edit_analyses' => ! (bool) $jobOrder->is_laboratory_services
+                && in_array($jobOrder->status, [
+                    JobOrderStatus::DraftSubmitted,
+                    JobOrderStatus::PendingJoApproval,
+                    JobOrderStatus::Priced,
+                ], true),
             'can_mark_lab_services_ready' => (bool) $jobOrder->is_laboratory_services
                 && $jobOrder->status === JobOrderStatus::JoApproved
                 && $jobOrder->analyses->isNotEmpty(),
@@ -135,6 +142,7 @@ class JobOrderFormPresenter
                     'id' => $sample->id,
                     'sample_code' => $sample->sample_code,
                     'description' => $sample->description,
+                    'classification' => $sample->classification,
                     'matrix' => $sample->matrix,
                     'quantity' => $sample->quantity,
                     'unit' => $sample->unit,
@@ -230,5 +238,53 @@ class JobOrderFormPresenter
                 'category_label' => $type->category?->name,
             ])
             ->all());
+    }
+
+    /**
+     * Catalog for Receiving add-package / add-test pickers.
+     *
+     * @return array{
+     *     packages: list<array{id: int, name: string, code: string|null, default_price: float|int|string|null, analysis_type_ids: list<int>, classifications: list<string>}>,
+     *     analysis_types: list<array{id: int, code: string, name: string, default_price: float|int|string|null, category: string|null, category_label: string|null}>
+     * }
+     */
+    public static function analysisEditCatalog(): array
+    {
+        $packages = AnalysisPackage::query()
+            ->where('is_active', true)
+            ->with('analysisTypes')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (AnalysisPackage $package) => [
+                'id' => $package->id,
+                'name' => $package->name,
+                'code' => $package->code,
+                'default_price' => $package->default_price,
+                'analysis_type_ids' => $package->orderedTypeIds(),
+                'classifications' => array_values(array_map('strval', $package->classifications ?? [])),
+            ])
+            ->values()
+            ->all();
+
+        $analysisTypes = AnalysisType::query()
+            ->with('category')
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->map(fn (AnalysisType $type) => [
+                'id' => $type->id,
+                'code' => $type->code,
+                'name' => $type->name,
+                'default_price' => $type->default_price,
+                'category' => $type->category?->slug,
+                'category_label' => $type->category?->name,
+            ])
+            ->values()
+            ->all();
+
+        return [
+            'packages' => $packages,
+            'analysis_types' => $analysisTypes,
+        ];
     }
 }

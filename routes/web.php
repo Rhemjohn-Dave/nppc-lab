@@ -71,6 +71,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('/{jobOrder}/samples', [ReceivingController::class, 'updateSamples'])->name('samples.update');
         Route::get('/{jobOrder}', [ReceivingController::class, 'show'])->name('show');
         Route::patch('/{jobOrder}/pricing', [ReceivingController::class, 'updatePricing'])->name('pricing');
+        Route::post('/{jobOrder}/analyses/packages', [ReceivingController::class, 'addPackage'])->name('analyses.packages.store');
+        Route::post('/{jobOrder}/analyses/types', [ReceivingController::class, 'addAnalysisType'])->name('analyses.types.store');
+        Route::delete('/{jobOrder}/analyses/packages/{packageLink}', [ReceivingController::class, 'removePackage'])->name('analyses.packages.destroy');
+        Route::delete('/{jobOrder}/analyses/{analysis}', [ReceivingController::class, 'removeAnalysis'])->name('analyses.destroy');
         Route::patch('/{jobOrder}/lab-services', [ReceivingController::class, 'updateLabServices'])->name('lab-services');
         Route::post('/{jobOrder}/lab-services/ready', [ReceivingController::class, 'markLabServicesReady'])->name('lab-services.ready');
         Route::post('/{jobOrder}/receive', [ReceivingController::class, 'receive'])->name('receive');

@@ -233,7 +233,7 @@ Completing tests does **not** make a job Ready for pickup. Encoding stays In ana
 Intake (kiosk) captures customer, samples, packages and/or standalone tests. For a package, members start checked; the customer may uncheck some. The system creates a job order, assigns a reference number, stores only **checked** tests as analysis lines, records waived package members for the result sheet, and stores a unique customer for later lookup.
 
 ### Step 2. Receiving prices the request
-Receiving updates quantities and prices. The job becomes **Pending JO approval**.
+Receiving updates quantities and prices. Before Head **JO approval**, Receiving may also **add a forgotten package or individual catalog test** (and remove a mistaken add). On a normal multi-sample job the receiver picks which sample gets the add; on a receiving-bulk job the add applies to every sample. Added lines show on the pricing matrix and on the printed JO/RFA billing parameters. After JO approval, packages and tests are locked; price/qty edits may still continue. The job becomes **Pending JO approval** when pricing is saved.
 
 ### Step 3. Head approves the Job Order
 Head reviews costing and clicks **Approve JO**. That:
@@ -459,7 +459,7 @@ Resolve order in `AnalysisResultReportResolver`: package-bound active form first
 Creates job order, samples, analyses for selected tests only, optional `job_order_packages` rows (with `selected_type_ids` / `waived_type_ids` when package members are unchecked), `Customer::rememberFromIntake()`. Status `draft_submitted`. Queues `RequestReceivedMail` (reference no., sample count, requested tests — no prices) via `CustomerEmailService`.
 
 ### 2. Pricing
-Receiving updates line prices. Status `pending_jo_approval`. First pricing save also stamps `received_at` / `received_by` (JO **Received by** date — samples already on hand).
+Receiving updates line prices. Before JO approval, Receiving may add/remove packages and catalog tests (`POST/DELETE /receiving/{job}/analyses/...`); new analyses appear in `collapsedBillingLines` / `bill_param_*` on the next JO print. Status `pending_jo_approval`. First pricing save also stamps `received_at` / `received_by` (JO **Received by** date — samples already on hand).
 
 ### 3. Head JO approval
 `JobOrderService::approveJobOrder()`. Status `jo_approved`. `jo_approved_at` / `jo_approved_by` set. Notifies Receiving (and admin) via `JobOrderJoApproved`. Unlocks JO print and send to analysts.
