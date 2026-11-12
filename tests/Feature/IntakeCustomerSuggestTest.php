@@ -63,13 +63,19 @@ class IntakeCustomerSuggestTest extends TestCase
                 'customer_id' => $chosen->id,
             ])
             ->assertRedirect(route('intake.create', [
-                'customer_name' => 'Juan Dela Cruz',
-                'customer_email' => 'juan.chosen@example.com',
-                'customer_contact' => '09171110001',
-                'customer_address' => 'Bacolod City',
-                'company_name' => 'Farm Chosen',
-                'ownership_type' => 'Private',
+                'customer_id' => $chosen->id,
             ]));
+
+        $this->get(route('intake.create', ['customer_id' => $chosen->id]))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('intake/wizard')
+                ->where('prefill.customer_name', 'Juan Dela Cruz')
+                ->where('prefill.customer_email', 'juan.chosen@example.com')
+                ->where('prefill.customer_contact', '09171110001')
+                ->where('prefill.customer_address', 'Bacolod City')
+                ->where('prefill.company_name', 'Farm Chosen')
+                ->where('prefill.ownership_type', 'Private'));
     }
 
     public function test_ambiguous_lookup_requires_suggestion_pick(): void
@@ -103,15 +109,18 @@ class IntakeCustomerSuggestTest extends TestCase
             'customer_contact' => '09175550005',
         ]);
 
+        $only = Customer::query()->where('customer_email', 'only@example.com')->firstOrFail();
+
         $response = $this->from('/intake')
             ->post('/intake/lookup', ['query' => 'Only One Match']);
 
-        $response->assertRedirect();
-        $location = $response->headers->get('Location');
-        $this->assertNotNull($location);
-        $this->assertStringContainsString('/intake/create', $location);
-        $this->assertStringContainsString('customer_name=Only%20One%20Match', $location);
-        $this->assertStringContainsString('customer_email=only%40example.com', $location);
-        $this->assertStringContainsString('customer_contact=09175550005', $location);
+        $response->assertRedirect(route('intake.create', [
+            'customer_id' => $only->id,
+        ]));
+
+        $location = (string) $response->headers->get('Location');
+        $this->assertStringNotContainsString('customer_name=', $location);
+        $this->assertStringNotContainsString('customer_email=', $location);
+        $this->assertStringNotContainsString('customer_contact=', $location);
     }
 }

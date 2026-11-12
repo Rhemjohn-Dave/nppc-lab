@@ -142,18 +142,80 @@ class IntakeController extends Controller
     }
 
     /**
+     * Prefill intake without putting customer details in the URL.
+     *
      * @param  Customer|JobOrder  $previous
      */
     private function redirectToIntakeCreate(Customer|JobOrder $previous): RedirectResponse
     {
-        return redirect()->route('intake.create', [
-            'customer_name' => $previous->customer_name,
-            'customer_email' => $previous->customer_email,
-            'customer_contact' => $previous->customer_contact,
-            'customer_address' => $previous->customer_address,
-            'company_name' => $previous->company_name,
-            'ownership_type' => $previous->ownership_type,
-        ]);
+        if ($previous instanceof Customer) {
+            return redirect()->route('intake.create', [
+                'customer_id' => $previous->id,
+            ]);
+        }
+
+        return redirect()
+            ->route('intake.create')
+            ->with('intake_prefill', $this->prefillFromRecord($previous));
+    }
+
+    /**
+     * @param  Customer|JobOrder  $record
+     * @return array{
+     *     customer_name: ?string,
+     *     customer_email: ?string,
+     *     customer_contact: ?string,
+     *     customer_address: ?string,
+     *     company_name: ?string,
+     *     ownership_type: ?string
+     * }
+     */
+    private function prefillFromRecord(Customer|JobOrder $record): array
+    {
+        return [
+            'customer_name' => $record->customer_name ?: null,
+            'customer_email' => $record->customer_email ?: null,
+            'customer_contact' => $record->customer_contact ?: null,
+            'customer_address' => $record->customer_address ?: null,
+            'company_name' => $record->company_name ?: null,
+            'ownership_type' => $record->ownership_type ?: null,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     customer_name: ?string,
+     *     customer_email: ?string,
+     *     customer_contact: ?string,
+     *     customer_address: ?string,
+     *     company_name: ?string,
+     *     ownership_type: ?string
+     * }
+     */
+    private function resolveIntakePrefill(Request $request): array
+    {
+        $empty = [
+            'customer_name' => null,
+            'customer_email' => null,
+            'customer_contact' => null,
+            'customer_address' => null,
+            'company_name' => null,
+            'ownership_type' => null,
+        ];
+
+        $customerId = $request->integer('customer_id');
+        if ($customerId > 0) {
+            $customer = Customer::query()->find($customerId);
+
+            return $customer ? $this->prefillFromRecord($customer) : $empty;
+        }
+
+        $flashed = $request->session()->pull('intake_prefill');
+        if (is_array($flashed)) {
+            return array_merge($empty, array_intersect_key($flashed, $empty));
+        }
+
+        return $empty;
     }
 
     public function create(Request $request): Response
@@ -183,14 +245,7 @@ class IntakeController extends Controller
             'categories' => $categories,
             'packages' => $this->kioskPackages(),
             'type_presets' => $this->typePresets(),
-            'prefill' => [
-                'customer_name' => $request->string('customer_name')->toString() ?: null,
-                'customer_email' => $request->string('customer_email')->toString() ?: null,
-                'customer_contact' => $request->string('customer_contact')->toString() ?: null,
-                'customer_address' => $request->string('customer_address')->toString() ?: null,
-                'company_name' => $request->string('company_name')->toString() ?: null,
-                'ownership_type' => $request->string('ownership_type')->toString() ?: null,
-            ],
+            'prefill' => $this->resolveIntakePrefill($request),
             'options' => [
                 'ownership' => OfficialAnalysisCatalog::ownershipTypes(),
                 'classifications' => OfficialAnalysisCatalog::classifications(),

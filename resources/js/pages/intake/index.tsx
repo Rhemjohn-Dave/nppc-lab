@@ -110,13 +110,9 @@ export default function IntakeIndex() {
     function prefillFromCustomer(customer: CustomerSuggestion) {
         setSelectedId(customer.id);
         setSuggestOpen(false);
+        // Only the customer id goes in the URL; the wizard loads details server-side.
         router.get('/intake/create', {
-            customer_name: customer.customer_name,
-            customer_email: customer.customer_email ?? '',
-            customer_contact: customer.customer_contact ?? '',
-            customer_address: customer.customer_address ?? '',
-            company_name: customer.company_name ?? '',
-            ownership_type: customer.ownership_type ?? '',
+            customer_id: customer.id,
         });
     }
 
