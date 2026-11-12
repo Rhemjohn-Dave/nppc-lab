@@ -8,6 +8,7 @@ use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
 use App\Models\JobOrderPackage;
 use App\Services\JobOrderService;
+use App\Support\BulkSampleRemarks;
 use App\Support\JobOrderFormPresenter;
 use App\Support\RfaPdfExporter;
 use Illuminate\Http\RedirectResponse;
@@ -267,6 +268,44 @@ class ReceivingController extends Controller
         return back()->with('success', 'Test removed.');
     }
 
+    public function printSamples(JobOrder $jobOrder): Response
+    {
+        abort_unless(
+            $jobOrder->is_receiving_bulk
+                && ! $jobOrder->is_bulk_draft
+                && ! $jobOrder->is_laboratory_services,
+            404,
+        );
+
+        $jobOrder->load(['samples']);
+        abort_unless($jobOrder->samples->isNotEmpty(), 404);
+
+        return Inertia::render('receiving/print-sample-details', [
+            'jobOrder' => [
+                'id' => $jobOrder->id,
+                'reference_no' => $jobOrder->reference_no,
+                'customer_name' => $jobOrder->customer_name,
+                'company_name' => $jobOrder->company_name,
+                'classification' => $jobOrder->classification,
+                'see_attached_file' => (bool) $jobOrder->see_attached_file,
+                'samples_count' => $jobOrder->samples->count(),
+                'show_url' => route('receiving.show', $jobOrder, false),
+            ],
+            'samples' => $jobOrder->samples->values()->map(function ($sample, int $index) {
+                $parsed = BulkSampleRemarks::parse($sample->remarks);
+
+                return [
+                    'index' => $index + 1,
+                    'sample_code' => $sample->sample_code ?? '',
+                    'description' => $sample->description ?? '',
+                    'location' => $parsed['location'],
+                    'sample_point' => $parsed['sample_point'],
+                    'collected_time' => $parsed['collected_time'],
+                ];
+            })->all(),
+        ]);
+    }
+
     public function editSamples(JobOrder $jobOrder): Response
     {
         abort_unless($this->jobOrders->canEncodeSampleDetails($jobOrder), 404);
@@ -288,9 +327,10 @@ class ReceivingController extends Controller
                 'samples_named_count' => $named,
                 'samples_encode_complete' => $named === $jobOrder->samples->count(),
                 'show_url' => route('receiving.show', $jobOrder, false),
+                'print_url' => route('receiving.samples.print', $jobOrder, false),
             ],
             'samples' => $jobOrder->samples->values()->map(function ($sample, int $index) use ($jobOrder) {
-                $parsed = $this->parseSampleRemarks((string) ($sample->remarks ?? ''));
+                $parsed = BulkSampleRemarks::parse($sample->remarks);
 
                 return [
                     'id' => $sample->id,
@@ -480,28 +520,4 @@ class ReceivingController extends Controller
         );
     }
 
-    /**
-     * @return array{location: string, sample_point: string, collected_time: string}
-     */
-    private function parseSampleRemarks(string $remarks): array
-    {
-        $out = [
-            'location' => '',
-            'sample_point' => '',
-            'collected_time' => '',
-        ];
-
-        foreach (explode(' | ', $remarks) as $part) {
-            $part = trim($part);
-            if (str_starts_with($part, 'Location: ')) {
-                $out['location'] = trim(substr($part, 10));
-            } elseif (str_starts_with($part, 'Sample point: ')) {
-                $out['sample_point'] = trim(substr($part, 14));
-            } elseif (str_starts_with($part, 'Collected: ')) {
-                $out['collected_time'] = trim(substr($part, 11));
-            }
-        }
-
-        return $out;
-    }
 }

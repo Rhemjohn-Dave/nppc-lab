@@ -1,5 +1,5 @@
 import { Head, Link, useForm } from '@inertiajs/react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Printer } from 'lucide-react';
 import FlashAlert from '@/components/flash-alert';
 import LimsWorkspace from '@/components/lims/lims-workspace';
 import WorkspaceHeader from '@/components/workspace-header';
@@ -33,6 +33,7 @@ type Props = {
         samples_named_count: number;
         samples_encode_complete: boolean;
         show_url: string;
+        print_url: string;
     };
     samples: SampleRow[];
 };
@@ -100,12 +101,24 @@ export default function ReceivingEncodeSamples({ jobOrder, samples }: Props) {
                     title={`Encode samples — ${jobOrder.reference_no}`}
                     description={`${jobOrder.customer_name}${jobOrder.company_name ? ` · ${jobOrder.company_name}` : ''} — fill Names gradually; pricing and Head approval can proceed in parallel. Locked after Send to analysts.`}
                     actions={
-                        <Button asChild variant="outline" size="sm">
-                            <Link href={jobOrder.show_url}>
-                                <ArrowLeft className="size-3.5" />
-                                Back to Job Order
-                            </Link>
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                            <Button asChild variant="outline" size="sm">
+                                <Link href={jobOrder.show_url}>
+                                    <ArrowLeft className="size-3.5" />
+                                    Back to Job Order
+                                </Link>
+                            </Button>
+                            <Button asChild variant="outline" size="sm">
+                                <a
+                                    href={jobOrder.print_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
+                                    <Printer className="size-3.5" />
+                                    Print sample details
+                                </a>
+                            </Button>
+                        </div>
                     }
                 />
 

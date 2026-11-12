@@ -1,5 +1,5 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Printer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import ConfirmDialog from '@/components/confirm-dialog';
 import CustomerEmailLog from '@/components/email/customer-email-log';
@@ -761,6 +761,24 @@ export default function ReceivingShow({
                                                 {samplesNamedCount}/
                                                 {samplesCount} named)
                                             </Link>
+                                        </Button>
+                                    ) : null}
+                                    {Boolean(jobOrder.is_bulk) &&
+                                    samplesCount > 0 ? (
+                                        <Button
+                                            asChild
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-8 w-full border-slate-200 text-xs shadow-xs"
+                                        >
+                                            <a
+                                                href={`/receiving/${jobOrder.id}/samples/print`}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                            >
+                                                <Printer className="size-3.5" />
+                                                Print sample details
+                                            </a>
                                         </Button>
                                     ) : null}
                                     {!isReviewed ? (
