@@ -55,23 +55,44 @@ class WastewaterFo2KindDefaultsTest extends TestCase
     }
 
     #[Test]
-    public function wastewater_kinds_list_the_three_descriptions(): void
+    public function wastewater_kinds_list_the_four_descriptions(): void
     {
         $this->assertSame(
-            ['Wastewater', 'River water', 'Abstracted water'],
+            ['Wastewater', 'River water', 'Abstracted water', 'Coastal Water'],
             OfficialAnalysisCatalog::wastewaterKinds(),
         );
+    }
+
+    #[Test]
+    public function coastal_defaults_include_nitrite_and_stay_on_panel(): void
+    {
+        $coastal = OfficialAnalysisCatalog::wastewaterPhysicoCoastalTypeCodes();
+        $this->assertSame(
+            ['WW-08', 'WW-05', 'WW-02', 'WW-14', 'WW-15', 'WW-01'],
+            $coastal,
+        );
+        $this->assertSame(
+            $coastal,
+            OfficialAnalysisCatalog::wastewaterFo2DefaultTypeCodes('Coastal Water'),
+        );
+
+        foreach ($coastal as $code) {
+            $this->assertTrue(OfficialAnalysisCatalog::isWastewaterPhysicoPanelCode($code));
+        }
     }
 
     #[Test]
     public function fo2_footer_variant_follows_sample_description_kind(): void
     {
         $this->assertSame('abstracted', OfficialAnalysisCatalog::fo2FooterVariant('Abstracted water'));
+        $this->assertSame('coastal', OfficialAnalysisCatalog::fo2FooterVariant('Coastal Water'));
         $this->assertSame('full', OfficialAnalysisCatalog::fo2FooterVariant('Wastewater'));
         $this->assertSame('full', OfficialAnalysisCatalog::fo2FooterVariant('River water'));
         $this->assertSame('full', OfficialAnalysisCatalog::fo2FooterVariant(null));
         $this->assertTrue(OfficialAnalysisCatalog::isWastewaterAbstractedKind('Abstracted water'));
         $this->assertFalse(OfficialAnalysisCatalog::isWastewaterAbstractedKind('River water'));
+        $this->assertTrue(OfficialAnalysisCatalog::isWastewaterCoastalKind('Coastal Water'));
+        $this->assertFalse(OfficialAnalysisCatalog::isWastewaterCoastalKind('Abstracted water'));
     }
 
     #[Test]
@@ -153,8 +174,44 @@ class WastewaterFo2KindDefaultsTest extends TestCase
     public function wastewater_physico_form_code_follows_kind(): void
     {
         $this->assertSame('LSP-7.8-FO2A', OfficialAnalysisCatalog::wastewaterPhysicoFormCode('Abstracted water'));
+        $this->assertSame('LSP-7.8-FO2B', OfficialAnalysisCatalog::wastewaterPhysicoFormCode('Coastal Water'));
         $this->assertSame('LSP-7.8-FO2', OfficialAnalysisCatalog::wastewaterPhysicoFormCode('Wastewater'));
         $this->assertSame('LSP-7.8-FO2', OfficialAnalysisCatalog::wastewaterPhysicoFormCode('River water'));
         $this->assertSame('LSP-7.8-FO2', OfficialAnalysisCatalog::wastewaterPhysicoFormCode(null));
+    }
+
+    #[Test]
+    public function coastal_matrix_caption_follows_issue_18_map(): void
+    {
+        $this->assertSame(
+            'Time of Analysis',
+            OfficialAnalysisCatalog::wastewaterPhysicoAnalysisCaption('WW-08', 'Coastal Water'),
+        );
+        $this->assertSame(
+            'Date/Time of Analysis',
+            OfficialAnalysisCatalog::wastewaterPhysicoAnalysisCaption('WW-14', 'Coastal Water'),
+        );
+        $this->assertSame(
+            'Date/Time of Analysis',
+            OfficialAnalysisCatalog::wastewaterPhysicoAnalysisCaption('WW-15', 'Coastal Water'),
+        );
+        $this->assertSame(
+            'Time of Analysis',
+            OfficialAnalysisCatalog::wastewaterPhysicoAnalysisCaption('WW-01', 'Coastal Water'),
+        );
+    }
+
+    #[Test]
+    public function fo2b_designer_preview_shows_coastal_preset_only(): void
+    {
+        $rows = \App\Support\DynamicTestMatrix::wastewaterPhysicoCoastalSampleRows();
+
+        $this->assertCount(6, $rows);
+        $this->assertSame('Lab pH', $rows[0]['test']);
+        $this->assertSame('8.12', $rows[0]['result']);
+        $this->assertSame('*Nitrite (mg/L)', $rows[4]['test']);
+        $this->assertSame('0.01', $rows[4]['result']);
+        $this->assertSame('Ammonia as NH3-N (mg/L)', $rows[5]['test']);
+        $this->assertSame('0.07', $rows[5]['result']);
     }
 }

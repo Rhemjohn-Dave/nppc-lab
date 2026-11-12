@@ -514,7 +514,7 @@ class DynamicTestMatrixReportTest extends TestCase
         $this->assertSame(4, (int) $form->analyst_signatory_slots);
 
         $codes = $form->analysisTypes()->orderByPivot('slot')->pluck('code')->all();
-        $this->assertSame(\App\Support\OfficialAnalysisCatalog::wastewaterPhysicoIssue18TypeCodes(), $codes);
+        $this->assertSame(\App\Support\OfficialAnalysisCatalog::wastewaterPhysicoPanelTypeCodes(), $codes);
 
         $revision = $form->activeRevision();
         $this->assertNotNull($revision);

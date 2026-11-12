@@ -348,6 +348,7 @@ export default function ResultReportPreview({
         lab_conditions: string;
         references: string;
         notes: string;
+        field_data?: string;
     }) {
         if (!footer?.save_url) {
             throw new Error('Footer save URL is missing.');
@@ -394,9 +395,13 @@ export default function ResultReportPreview({
     }
 
     async function confirmFooter(values: {
+        temperature_c?: string;
+        humidity_pct?: string;
+        test_report_no?: string;
         lab_conditions: string;
         references: string;
         notes: string;
+        field_data?: string;
     }) {
         setFooterSaving(true);
         setFooterError(null);

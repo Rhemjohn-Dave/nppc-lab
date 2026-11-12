@@ -12,9 +12,13 @@ export type ResultFooterConfig = {
     lab_conditions: string;
     references: string;
     notes: string;
+    field_data?: string;
     requires_atmosphere?: boolean;
+    requires_field_data?: boolean;
     atmosphere_complete?: boolean;
+    field_data_complete?: boolean;
     show_notes_fields?: boolean;
+    show_field_data?: boolean;
     save_url?: string | null;
     can_edit?: boolean;
 };
@@ -26,6 +30,7 @@ export type ResultFooterValues = {
     lab_conditions: string;
     references: string;
     notes: string;
+    field_data: string;
 };
 
 type Props = {
@@ -39,7 +44,7 @@ type Props = {
 };
 
 /**
- * Lab conditions (required Temp/Humidity/Test Report #) plus FO2/FO2A references and notes.
+ * Lab conditions (required Temp/Humidity/Test Report #) plus FO2 family references/notes and FO2B FIELD DATA.
  */
 export default function ResultFooterPanel({
     config,
@@ -52,6 +57,7 @@ export default function ResultFooterPanel({
 }: Props) {
     const requiresAtmosphere = config.requires_atmosphere !== false;
     const showNotes = config.show_notes_fields === true;
+    const showFieldData = config.show_field_data === true;
     const reportPrefix = (config.test_report_prefix ?? 'CHE WW –').trim();
 
     const [temperature, setTemperature] = useState(config.temperature_c ?? '');
@@ -60,6 +66,7 @@ export default function ResultFooterPanel({
     const [labConditions, setLabConditions] = useState(config.lab_conditions);
     const [references, setReferences] = useState(config.references);
     const [notes, setNotes] = useState(config.notes);
+    const [fieldData, setFieldData] = useState(config.field_data ?? '');
 
     useEffect(() => {
         setTemperature(config.temperature_c ?? '');
@@ -68,6 +75,7 @@ export default function ResultFooterPanel({
         setLabConditions(config.lab_conditions);
         setReferences(config.references);
         setNotes(config.notes);
+        setFieldData(config.field_data ?? '');
     }, [
         config.temperature_c,
         config.humidity_pct,
@@ -75,6 +83,7 @@ export default function ResultFooterPanel({
         config.lab_conditions,
         config.references,
         config.notes,
+        config.field_data,
     ]);
 
     function submit(event: FormEvent) {
@@ -86,6 +95,7 @@ export default function ResultFooterPanel({
             lab_conditions: labConditions,
             references,
             notes,
+            field_data: fieldData,
         });
     }
 
@@ -100,7 +110,7 @@ export default function ResultFooterPanel({
                 </h2>
                 <p className="mt-1 text-xs text-slate-600">
                     Enter temperature, humidity, and Test Report # before encoding
-                    results. Values print on FO2 / FO2A / FO3 / FO37 result sheets.
+                    results. Values print on FO2 / FO2A / FO2B / FO3 / FO37 result sheets.
                 </p>
             </div>
 
@@ -215,6 +225,21 @@ export default function ResultFooterPanel({
                             />
                         </div>
                     </>
+                ) : null}
+
+                {showFieldData ? (
+                    <div className="space-y-1.5">
+                        <Label htmlFor="fo2_field_data">FIELD DATA</Label>
+                        <Textarea
+                            id="fo2_field_data"
+                            rows={7}
+                            required={config.requires_field_data === true}
+                            className="font-mono text-xs leading-relaxed"
+                            value={fieldData}
+                            onChange={(e) => setFieldData(e.target.value)}
+                            disabled={submitting}
+                        />
+                    </div>
                 ) : null}
             </div>
 

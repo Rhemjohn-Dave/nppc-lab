@@ -175,6 +175,10 @@ class ResultSignatories
 
     public static function slotsFor(?ControlledForm $form, ?JobOrder $jobOrder = null): int
     {
+        if ($form?->form_code === 'LSP-7.8-FO2B') {
+            return 2;
+        }
+
         if ($form?->form_code === 'LSP-7.8-FO2A') {
             return 3;
         }
@@ -192,6 +196,13 @@ class ResultSignatories
     public static function slotLabels(?ControlledForm $form, ?JobOrder $jobOrder = null): array
     {
         $slots = self::slotsFor($form, $jobOrder);
+
+        if ($form?->form_code === 'LSP-7.8-FO2B') {
+            return array_slice([
+                'Reviewed by',
+                'Certified Correct',
+            ], 0, $slots);
+        }
 
         if ($form?->form_code === 'LSP-7.8-FO2A') {
             return array_slice([
@@ -357,6 +368,10 @@ class ResultSignatories
     private static function fo2LicenseKeysForForm(?ControlledForm $form): array
     {
         return match ($form?->form_code) {
+            'LSP-7.8-FO2B' => [
+                'fo2_lic_reviewed',
+                'fo2_lic_certified',
+            ],
             'LSP-7.8-FO2A' => [
                 'fo2_lic_reviewed',
                 'fo2_lic_certified',

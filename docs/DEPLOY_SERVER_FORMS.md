@@ -19,7 +19,7 @@ For a brand-new VPS (OS, Nginx, MySQL, first `migrate --seed`), use [DEPLOY.md](
 **Forms covered** (`ExportControlledFormBlueprintsCommand::TARGETS`):
 
 - Job Order: `NPPC-LAB-FRM-001` (General RFA), `NPPC-LAB-FRM-AQUA`
-- Results: `LSP-7.8-FO2`, `FO2A`, `FO3`, `FO37`, `FO4`, `FO5`, `F016-PROX`, `F016-MILK`, `F016-WA`, `F016-CAP`, `F016-NO2`, `FO26`, `FO27`
+- Results: `LSP-7.8-FO2`, `FO2A`, `FO2B`, `FO3`, `FO37`, `FO4`, `FO5`, `F016-PROX`, `F016-MILK`, `F016-WA`, `F016-CAP`, `F016-NO2`, `FO26`, `FO27`
 
 **Milk (`LSP-7.8-F016-MILK`):** repo PDF is reference-only. If the server already has a Designer-uploaded PDF, seed will **not** replace it.
 

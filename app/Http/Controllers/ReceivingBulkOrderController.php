@@ -243,6 +243,7 @@ class ReceivingBulkOrderController extends Controller
                     'Wastewater' => OfficialAnalysisCatalog::wastewaterFo2DefaultTypeCodes('Wastewater'),
                     'River water' => OfficialAnalysisCatalog::wastewaterFo2DefaultTypeCodes('River water'),
                     'Abstracted water' => OfficialAnalysisCatalog::wastewaterFo2DefaultTypeCodes('Abstracted water'),
+                    'Coastal Water' => OfficialAnalysisCatalog::wastewaterFo2DefaultTypeCodes('Coastal Water'),
                 ],
             ],
         ];

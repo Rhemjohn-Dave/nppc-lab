@@ -87,7 +87,7 @@ class DynamicTestMatrix
             return self::drinkingWaterPhysicoConfig();
         }
 
-        if (in_array($resolvedFormCode, ['LSP-7.8-FO2', 'LSP-7.8-FO2A'], true)) {
+        if (in_array($resolvedFormCode, ['LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO2B'], true)) {
             return self::wastewaterPhysicoConfig();
         }
 
@@ -133,8 +133,8 @@ class DynamicTestMatrix
             unset($tableConfig['method_font_size']);
         }
 
-        $isFo2Matrix = in_array($fieldName, ['ww_fo2_matrix', 'ww_fo2a_matrix'], true)
-            || in_array($form?->form_code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A'], true);
+        $isFo2Matrix = in_array($fieldName, ['ww_fo2_matrix', 'ww_fo2a_matrix', 'ww_fo2b_matrix'], true)
+            || in_array($form?->form_code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO2B'], true);
         $isWaMatrix = $fieldName === 'water_activity_f016_matrix'
             || $form?->form_code === 'LSP-7.8-F016-WA';
         $isCapMatrix = $fieldName === 'chloramphenicol_f016_matrix'
@@ -283,6 +283,10 @@ class DynamicTestMatrix
     {
         if ($form?->form_code === 'LSP-7.8-FO28') {
             return self::metalsFo28SampleRows();
+        }
+
+        if ($form?->form_code === 'LSP-7.8-FO2B') {
+            return self::wastewaterPhysicoCoastalSampleRows();
         }
 
         if ($form === null) {
@@ -1402,7 +1406,11 @@ class DynamicTestMatrix
     public static function testDetailForAnalysis(JobOrderAnalysis $line): ?string
     {
         $code = $line->analysisType?->code;
-        $caption = OfficialAnalysisCatalog::wastewaterPhysicoIssue18AnalysisCaption($code);
+        $line->loadMissing('sample');
+        $caption = OfficialAnalysisCatalog::wastewaterPhysicoAnalysisCaption(
+            $code,
+            $line->sample?->description,
+        );
         if ($caption === null) {
             return null;
         }
@@ -1412,9 +1420,12 @@ class DynamicTestMatrix
         return $stamp !== null ? "{$caption}: {$stamp}" : "{$caption}:";
     }
 
-    public static function testDetailForType(?AnalysisType $type): ?string
+    public static function testDetailForType(?AnalysisType $type, ?string $sampleDescription = null): ?string
     {
-        $caption = OfficialAnalysisCatalog::wastewaterPhysicoIssue18AnalysisCaption($type?->code);
+        $caption = OfficialAnalysisCatalog::wastewaterPhysicoAnalysisCaption(
+            $type?->code,
+            $sampleDescription,
+        );
         if ($caption === null) {
             return null;
         }
@@ -1818,6 +1829,34 @@ class DynamicTestMatrix
             'test_method' => $row[1],
             'method' => $row[1],
             'result' => $row[2],
+        ], $rows);
+    }
+
+    /**
+     * FO2B Form Designer sample: Coastal Water preset only (not the full WW panel).
+     *
+     * @return list<array{test: string, test_method: string, method: string, test_detail: string, result: string, sample_1: string, sample_2: null, remarks: null}>
+     */
+    public static function wastewaterPhysicoCoastalSampleRows(): array
+    {
+        $rows = [
+            ['Lab pH', '4500-H+ B – Electrometric Method', 'Time of Analysis:1:30 PM', '8.12'],
+            ['Lab Dissolved Oxygen (mg/L)', '4500-O C – Azide Modification', 'Time of Analysis:1:30  PM', '7.3'],
+            ['Biochemical Oxygen Demand (mg/L)', '5210 B 5-Day BOD Test', 'Time of Analysis:1:30  PM', '4'],
+            ['Total Suspended Solids (mg/L)', '2540 D – Total Suspended Solids Dried at 103-105°C', 'Date/Time of Analysis:09-11-2026/10:00 AM', '23'],
+            ['*Nitrite (mg/L)', 'Diazotization Method', 'Time of Analysis:5:00 PM', '0.01'],
+            ['Ammonia as NH3-N (mg/L)', '4500-NH3 F – Phenate Method', 'Time of Analysis:5:00 PM', '0.07'],
+        ];
+
+        return array_map(static fn (array $row): array => [
+            'test' => $row[0],
+            'test_method' => $row[1],
+            'method' => $row[1],
+            'test_detail' => $row[2],
+            'result' => $row[3],
+            'sample_1' => $row[3],
+            'sample_2' => null,
+            'remarks' => null,
         ], $rows);
     }
 

@@ -103,6 +103,10 @@ return new class extends Migration
                 'analyst_signatory_slots' => 3,
                 'analyst_require_prc' => true,
             ],
+            'LSP-7.8-FO2B' => [
+                'analyst_signatory_slots' => 2,
+                'analyst_require_prc' => true,
+            ],
             default => null,
         };
     }

@@ -406,6 +406,13 @@ class DatabaseSeeder extends Seeder
                 ])->save();
             }
 
+            if (($meta['form_code'] ?? null) === 'LSP-7.8-FO2B') {
+                $form->fill([
+                    'analyst_signatory_slots' => 2,
+                    'analyst_require_prc' => true,
+                ])->save();
+            }
+
             if ($package) {
                 if ($form->analysis_package_id !== $package->id) {
                     $form->update(['analysis_package_id' => $package->id]);
@@ -488,7 +495,7 @@ class DatabaseSeeder extends Seeder
             }
 
             if (
-                in_array($meta['form_code'] ?? null, ['LSP-7.8-FO37', 'LSP-7.8-FO3', 'LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO26', 'LSP-7.8-FO27', 'LSP-7.8-F016-MILK', 'LSP-7.8-F016-PROX', 'LSP-7.8-F016-NO2'], true)
+                in_array($meta['form_code'] ?? null, ['LSP-7.8-FO37', 'LSP-7.8-FO3', 'LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO2B', 'LSP-7.8-FO26', 'LSP-7.8-FO27', 'LSP-7.8-F016-MILK', 'LSP-7.8-F016-PROX', 'LSP-7.8-F016-NO2'], true)
                 && $revision->hasCanonicalPdf()
                 && $revision->fields()->exists()
                 && $revision->status !== \App\Enums\ControlledFormRevisionStatus::Active

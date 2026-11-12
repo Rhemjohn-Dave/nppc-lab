@@ -10,6 +10,7 @@ class ResultFooter
     public const ATMOSPHERE_FORM_CODES = [
         'LSP-7.8-FO2',
         'LSP-7.8-FO2A',
+        'LSP-7.8-FO2B',
         'LSP-7.8-FO3',
         'LSP-7.8-FO37',
     ];
@@ -17,6 +18,7 @@ class ResultFooter
     public const PAGE_STAMP_FORM_CODES = [
         'LSP-7.8-FO2',
         'LSP-7.8-FO2A',
+        'LSP-7.8-FO2B',
         'LSP-7.8-FO3',
         'LSP-7.8-FO37',
         'LSP-7.8-FO28',
@@ -42,9 +44,11 @@ class ResultFooter
     {
         $code = $form?->form_code;
         $description = trim((string) ($jobOrder?->samples->first()?->description ?? ''));
-        $variant = ($code === 'LSP-7.8-FO2A' || OfficialAnalysisCatalog::isWastewaterAbstractedKind($description))
-            ? 'abstracted'
-            : 'full';
+        $variant = OfficialAnalysisCatalog::fo2FooterVariant(
+            $code === 'LSP-7.8-FO2A'
+                ? 'Abstracted water'
+                : ($code === 'LSP-7.8-FO2B' ? 'Coastal Water' : $description),
+        );
 
         $stored = is_array($jobOrder?->result_footer) ? $jobOrder->result_footer : [];
         $temperature = trim((string) ($stored['temperature_c'] ?? ''));
@@ -65,6 +69,12 @@ class ResultFooter
             ];
         }
 
+        $notes = match ($variant) {
+            'abstracted' => OfficialAnalysisCatalog::fo2AbstractedNotesText(),
+            'coastal' => OfficialAnalysisCatalog::fo2CoastalNotesText(),
+            default => OfficialAnalysisCatalog::fo2FullNotesText(),
+        };
+
         return [
             'temperature_c' => $temperature,
             'humidity_pct' => $humidity,
@@ -74,9 +84,7 @@ class ResultFooter
                 'humidity_pct' => $humidity !== '' ? $humidity : null,
             ], $variant),
             'references' => OfficialAnalysisCatalog::fo2ReferencesText(),
-            'notes' => $variant === 'abstracted'
-                ? OfficialAnalysisCatalog::fo2AbstractedNotesText()
-                : OfficialAnalysisCatalog::fo2FullNotesText(),
+            'notes' => $notes,
         ];
     }
 
@@ -116,7 +124,7 @@ class ResultFooter
         };
 
         $code = $form?->form_code;
-        $showNotes = in_array($code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A'], true);
+        $showNotes = in_array($code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO2B'], true);
         $requiresAtmosphere = self::formRequiresLabAtmosphere($form);
 
         $composed = self::composeLabConditionsText($form, [
@@ -124,6 +132,12 @@ class ResultFooter
             'humidity_pct' => $humidity !== '' ? $humidity : null,
             'lab_conditions' => $stored['lab_conditions'] ?? null,
         ]);
+
+        $showFieldData = self::formShowsFieldData($form, $jobOrder);
+        $fieldData = trim((string) ($jobOrder->field_data ?? ''));
+        if ($showFieldData && $fieldData === '') {
+            $fieldData = OfficialAnalysisCatalog::coastalFieldDataTemplate();
+        }
 
         return [
             'temperature_c' => $temperature,
@@ -133,12 +147,28 @@ class ResultFooter
             'lab_conditions' => $composed !== '' ? $composed : $value('lab_conditions'),
             'references' => $showNotes ? $value('references') : '',
             'notes' => $showNotes ? $value('notes') : '',
+            'field_data' => $showFieldData ? $fieldData : '',
             'requires_atmosphere' => $requiresAtmosphere,
+            'requires_field_data' => $showFieldData,
             'atmosphere_complete' => self::isAtmosphereComplete($jobOrder, $form),
+            'field_data_complete' => ! $showFieldData || trim((string) ($jobOrder->field_data ?? '')) !== '',
             'show_notes_fields' => $showNotes,
+            'show_field_data' => $showFieldData,
             'save_url' => $saveUrl,
             'can_edit' => filled($saveUrl),
         ];
+    }
+
+    public static function formShowsFieldData(?ControlledForm $form, ?JobOrder $jobOrder = null): bool
+    {
+        if ($form?->form_code === 'LSP-7.8-FO2B') {
+            return true;
+        }
+
+        $jobOrder?->loadMissing('samples');
+        $description = trim((string) ($jobOrder?->samples->first()?->description ?? ''));
+
+        return OfficialAnalysisCatalog::isWastewaterCoastalKind($description);
     }
 
     /**
@@ -177,7 +207,7 @@ class ResultFooter
             'lab_conditions' => $payload['lab_conditions'] ?? null,
         ]);
 
-        $showNotes = in_array($form?->form_code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A'], true);
+        $showNotes = in_array($form?->form_code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO2B'], true);
 
         return [
             'temperature_c' => $temperature,
@@ -252,7 +282,7 @@ class ResultFooter
             return "Laboratory Test Conditions during the conduct of the test:   Temp: {$tempDisplay}   Humidity: {$humDisplay}";
         }
 
-        if (in_array($code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A'], true)) {
+        if (in_array($code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO2B'], true)) {
             return "Laboratory Conditions during the conduct of test: Temp = {$tempDisplay} °C ; Humidity = {$humDisplay} %\n"
                 .'NA – Not Applicable for specified water body .';
         }
@@ -262,10 +292,20 @@ class ResultFooter
         return $legacy;
     }
 
-    public static function composeFo2FormMeta(?string $testReportNo, bool $abstracted = false): string
+    /**
+     * @param  bool|'abstracted'|'coastal'|'full'  $variantOrAbstracted
+     */
+    public static function composeFo2FormMeta(?string $testReportNo, bool|string $variantOrAbstracted = false): string
     {
         $suffix = trim((string) $testReportNo);
-        $codeLine = $abstracted ? 'LSP 7.8_FO2' : 'LSP 7.8  FO2';
+        $variant = is_string($variantOrAbstracted)
+            ? $variantOrAbstracted
+            : ($variantOrAbstracted ? 'abstracted' : 'full');
+        $codeLine = match ($variant) {
+            'abstracted' => 'LSP 7.8_FO2',
+            'coastal' => 'LSP 7.8_FO2B',
+            default => 'LSP 7.8  FO2',
+        };
 
         return "Test Report#: ".self::TEST_REPORT_PREFIX_WW.($suffix !== '' ? ' '.$suffix : '')."\n"
             ."NPPC-ADL\n"

@@ -366,6 +366,10 @@ class IntakeTypePresetTest extends TestCase
                 ->where(
                     'options.wastewater_fo2_default_codes.Abstracted water',
                     OfficialAnalysisCatalog::wastewaterPhysicoAbstractedTypeCodes(),
+                )
+                ->where(
+                    'options.wastewater_fo2_default_codes.Coastal Water',
+                    OfficialAnalysisCatalog::wastewaterPhysicoCoastalTypeCodes(),
                 ));
     }
 

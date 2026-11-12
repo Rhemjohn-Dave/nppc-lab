@@ -51,7 +51,7 @@ Main responsibilities:
 | Analysis Result | Package | Job package → `analysis_package_id` (partial selection still matches; waived slots print `-` on **fixed-slot** packages) |
 | Analysis Result | Package + `dynamic_matrix` | Same binding; form includes one **Dynamic test matrix** region — only selected tests render as rows (see `docs/DYNAMIC_CONTROLLED_FORMS.md`) |
 | Analysis Result | Analysis types only | Exact `combination_key` when no package form applies |
-| Analysis Result | Types-only + `dynamic_test_matrix` | After exact miss: job type IDs ⊆ form bound types (e.g. `LSP-7.8-FO3` Issue 11 OLD individual DW sheet, `LSP-7.8-FO2` / `LSP-7.8-FO2A` Issue 18 wastewater physico by sample kind, `LSP-7.8-FO26` / `LSP-7.8-FO27` food / sugar micro). Package forms still win first (e.g. `LSP-7.8-FO37`). |
+| Analysis Result | Types-only + `dynamic_test_matrix` | After exact miss: job type IDs ⊆ form bound types (e.g. `LSP-7.8-FO3` Issue 11 OLD individual DW sheet, `LSP-7.8-FO2` / `LSP-7.8-FO2A` / `LSP-7.8-FO2B` Issue 18 wastewater physico by sample kind, `LSP-7.8-FO26` / `LSP-7.8-FO27` food / sugar micro). Package forms still win first (e.g. `LSP-7.8-FO37`). |
 
 Packages admin shows the linked form read-only. Tag forms in Controlled Forms, not via free-text package form codes.
 
@@ -263,7 +263,7 @@ Versioned source documents live under `resources/forms/`. Combined microbiologic
 - `lsp-7.8-fo5-micro-drinking-water.pdf` (official `LSP 7.8 FO5` → internal `LSP-7.8-FO5`) — bind to package `PKG-MIC-DW` / `PKG-DW-BACT` / `MB-02A` + `MB-02B` + `MB-01`
 
 Physico-chemical:
-- `PC Wastewater result Form Issue 18 09012026 blank.pdf` (official `LSP 7.8 FO2` Issue 18 → `LSP-7.8-FO2` for Wastewater/River; `LSP-7.8-FO2A` for Abstracted water) — types-only dynamic matrix (TEST | METHOD | RESULTS; Time/Date of Analysis under each test name from `completed_at`); WW/SA panel tests individual pay; analysts may override footer notes via `result_footer`
+- `PC Wastewater result Form Issue 18 09012026 blank.pdf` (official `LSP 7.8 FO2` Issue 18 → `LSP-7.8-FO2` for Wastewater/River; `LSP-7.8-FO2A` for Abstracted water; `LSP-7.8-FO2B` for Coastal Water) — types-only dynamic matrix (TEST | METHOD | RESULTS; Time/Date of Analysis under each test name from `completed_at`; Coastal uses Date/Time for all rows); WW/SA panel + WW-15 Nitrite individual pay; FO2B plots `job_orders.field_data` beside lab conditions; analysts may override footer notes via `result_footer`
 - `PC Drinking Water Test Result Form Issue 7…` → `LSP-7.8-FO37` / `PKG-DW-PHYSICO`
 - `PC OLD Drinking Water Test Result Form Issue 11 blank.pdf` → `LSP-7.8-FO3` types-only (flowing footer: remove notes/signature chrome below the table on the blank; overlays use `options.anchor` + `static_text` — see `docs/DYNAMIC_CONTROLLED_FORMS.md`)
 - `micro food test result form issue4 07152026.pdf` → `LSP-7.8-FO26` types-only dynamic matrix (Tests | Control No.; selected tests only); Methods/References via `results.test_methods_references`

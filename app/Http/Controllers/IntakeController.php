@@ -257,6 +257,7 @@ class IntakeController extends Controller
                     'Wastewater' => OfficialAnalysisCatalog::wastewaterFo2DefaultTypeCodes('Wastewater'),
                     'River water' => OfficialAnalysisCatalog::wastewaterFo2DefaultTypeCodes('River water'),
                     'Abstracted water' => OfficialAnalysisCatalog::wastewaterFo2DefaultTypeCodes('Abstracted water'),
+                    'Coastal Water' => OfficialAnalysisCatalog::wastewaterFo2DefaultTypeCodes('Coastal Water'),
                 ],
             ],
         ]);
@@ -484,6 +485,15 @@ class IntakeController extends Controller
                 ])->withInput();
             }
             $data['samples'] = $samples;
+
+            $hasCoastal = collect($samples)->contains(
+                fn ($sample): bool => OfficialAnalysisCatalog::isWastewaterCoastalKind(
+                    is_array($sample) ? ($sample['description'] ?? null) : null,
+                ),
+            );
+            if ($hasCoastal && trim((string) ($data['field_data'] ?? '')) === '') {
+                $data['field_data'] = OfficialAnalysisCatalog::coastalFieldDataTemplate();
+            }
 
             $usesLegacyJoLevelSelection = array_key_exists('analysis_type_ids', $data)
                 || array_key_exists('package_ids', $data);

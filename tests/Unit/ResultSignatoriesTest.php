@@ -73,6 +73,19 @@ class ResultSignatoriesTest extends TestCase
         ], ResultSignatories::slotLabels($form));
     }
 
+    public function test_fo2b_uses_two_signatory_slots(): void
+    {
+        $this->seed();
+
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2B')->firstOrFail();
+
+        $this->assertSame(2, ResultSignatories::slotsFor($form));
+        $this->assertSame([
+            'Reviewed by',
+            'Certified Correct',
+        ], ResultSignatories::slotLabels($form));
+    }
+
     public function test_normalize_scales_to_configured_slots(): void
     {
         $form = new ControlledForm([

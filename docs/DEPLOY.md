@@ -211,7 +211,7 @@ Seed accounts (`admin@nppc.local`, `receiving@nppc.local`, `analyst@nppc.local`,
 
 Existing server — refresh this repo’s exact plotted forms and catalog without a full OS rebuild: [DEPLOY_SERVER_FORMS.md](DEPLOY_SERVER_FORMS.md).
 
-`DatabaseSeeder` runs `ControlledFormDefaultsSeeder`, which for each plotted default form (Job Orders + FO2/FO2A/FO3/FO37/FO4/FO5/F016-PROX/F016-MILK/F016-WA/F016-CAP/F016-NO2/FO26/FO27):
+`DatabaseSeeder` runs `ControlledFormDefaultsSeeder`, which for each plotted default form (Job Orders + FO2/FO2A/FO2B/FO3/FO37/FO4/FO5/F016-PROX/F016-MILK/F016-WA/F016-CAP/F016-NO2/FO26/FO27):
 
 - keeps **only revision `1`** (deletes other revisions)
 - attaches the official PDF from `resources/forms/official/` (**except** reference-only forms — see below)
@@ -228,9 +228,15 @@ php artisan controlled-forms:export-blueprints --pdfs
 
 Then commit the updated `config/*_form_fields.php` files and any new official PDFs. For Milk, prefer exporting fields only (`--form=LSP-7.8-F016-MILK` without forcing a PDF replace of a Designer-calibrated upload).
 
-**Sole-revision deploy (all plotted forms):** migration `2026_10_27_130000_deploy_all_plotted_controlled_forms_sole_rev` collapses every form in `ExportControlledFormBlueprintsCommand::TARGETS` (RFA + RFA Aqua + FO2/FO2A/FO3/FO37/FO4/FO5 + F016-PROX/MILK/WA/CAP/NO2 + FO26/FO27) to a **single active revision labeled `1`**, imports the committed blueprints, syncs page metrics, and sets signatory slots/PRC. On first install, `migrate --seed` then re-applies the same via `ControlledFormDefaultsSeeder` (attaches official PDFs except milk reference-only). After Designer edits: `php artisan controlled-forms:export-blueprints --pdfs` (or `--form=CODE`), commit configs/PDFs, then migrate/seed on the server.
+**Sole-revision deploy (all plotted forms):** migration `2026_10_27_130000_deploy_all_plotted_controlled_forms_sole_rev` collapses every form in `ExportControlledFormBlueprintsCommand::TARGETS` (RFA + RFA Aqua + FO2/FO2A/FO2B/FO3/FO37/FO4/FO5 + F016-PROX/MILK/WA/CAP/NO2 + FO26/FO27) to a **single active revision labeled `1`**, imports the committed blueprints, syncs page metrics, and sets signatory slots/PRC. On first install, `migrate --seed` then re-applies the same via `ControlledFormDefaultsSeeder` (attaches official PDFs except milk reference-only). After Designer edits: `php artisan controlled-forms:export-blueprints --pdfs` (or `--form=CODE`), commit configs/PDFs, then migrate/seed on the server. **Coastal FO2B on a server that already has corrected FO2/FO2A Designer plots — do not `migrate --force` blindly and do not `db:seed`.** Those would re-import other forms. Ship code + `config/result_ww_physico_coastal_form_fields.php`, then run **only**:
 
-**Footer chrome notes:** FO26/FO27 use static methods + NOTES + 1 Analyzed-by (no PRC). F016-MILK/NO2 use NOTES + Ferresa + PRC + static Wendy. F016-PROX uses two Analyzed-by slots + PRC. FO2/FO2A use wastewater physico footers (4 / 3 slots). Details: `docs/DYNAMIC_CONTROLLED_FORMS.md`.
+```bash
+php artisan migrate --path=database/migrations/2026_11_13_011000_deploy_coastal_fo2b_local_plot.php --force
+```
+
+That path alone creates WW-15 + FO2B and imports the Coastal plot/signatories. It does not touch FO2 / FO2A / FO3 / FO37 / FO4 / FO5 field plots. Optional empty-shell helper: `2026_11_13_003000_seed_coastal_fo2b_and_ww15` (no blueprint import). Re-export after Designer edits: `php artisan controlled-forms:export-blueprints --form=LSP-7.8-FO2B --pdfs`.
+
+**Footer chrome notes:** FO26/FO27 use static methods + NOTES + 1 Analyzed-by (no PRC). F016-MILK/NO2 use NOTES + Ferresa + PRC + static Wendy. F016-PROX uses two Analyzed-by slots + PRC. FO2/FO2A/FO2B use wastewater physico footers (4 / 3 / 2 slots; FO2B requires FIELD DATA). Details: `docs/DYNAMIC_CONTROLLED_FORMS.md`.
 
 ## Subsequent deploys
 

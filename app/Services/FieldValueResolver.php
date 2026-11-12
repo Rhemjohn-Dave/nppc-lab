@@ -65,9 +65,9 @@ class FieldValueResolver
             );
         }
 
-        // FO2 / FO2A Sample Description prints the wastewater kind stored on the sample.
+        // FO2 / FO2A / FO2B Sample Description prints the wastewater kind stored on the sample.
         // Footer defaults follow form/kind; analyst result_footer overrides when set.
-        if (in_array($form?->form_code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A'], true)) {
+        if (in_array($form?->form_code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO2B'], true)) {
             $fo2Description = trim((string) (
                 ($focusSample?->description ?? null)
                 ?: ($jobOrder->samples->first()?->description ?? '')
@@ -265,14 +265,19 @@ class FieldValueResolver
         ?string $formCode = null,
         ?JobOrder $jobOrder = null,
     ): void {
-        $variant = ($formCode === 'LSP-7.8-FO2A' || OfficialAnalysisCatalog::isWastewaterAbstractedKind($description))
-            ? 'abstracted'
-            : 'full';
+        $kindHint = match ($formCode) {
+            'LSP-7.8-FO2A' => 'Abstracted water',
+            'LSP-7.8-FO2B' => 'Coastal Water',
+            default => $description,
+        };
+        $variant = OfficialAnalysisCatalog::fo2FooterVariant($kindHint);
         $bag['fo2_footer_variant'] = $variant;
         $bag['fo2_references'] = OfficialAnalysisCatalog::fo2ReferencesText();
-        $bag['fo2_notes'] = $variant === 'abstracted'
-            ? OfficialAnalysisCatalog::fo2AbstractedNotesText()
-            : OfficialAnalysisCatalog::fo2FullNotesText();
+        $bag['fo2_notes'] = match ($variant) {
+            'abstracted' => OfficialAnalysisCatalog::fo2AbstractedNotesText(),
+            'coastal' => OfficialAnalysisCatalog::fo2CoastalNotesText(),
+            default => OfficialAnalysisCatalog::fo2FullNotesText(),
+        };
 
         $footer = is_array($jobOrder?->result_footer) ? $jobOrder->result_footer : [];
         $form = $formCode !== null
@@ -281,7 +286,7 @@ class FieldValueResolver
         $bag['fo2_lab_conditions'] = ResultFooter::composeLabConditionsText($form, $footer, $variant);
         $bag['fo2_form_meta'] = ResultFooter::composeFo2FormMeta(
             $footer['test_report_no'] ?? null,
-            $variant === 'abstracted',
+            $variant,
         );
 
         foreach (['references', 'notes'] as $key) {
@@ -558,10 +563,12 @@ class FieldValueResolver
             $bag['test_2_result'] = '16';
         }
 
-        if (in_array($revision->form?->form_code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A'], true)) {
-            $sampleKind = $revision->form?->form_code === 'LSP-7.8-FO2A'
-                ? 'Abstracted water'
-                : 'Wastewater';
+        if (in_array($revision->form?->form_code, ['LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO2B'], true)) {
+            $sampleKind = match ($revision->form?->form_code) {
+                'LSP-7.8-FO2A' => 'Abstracted water',
+                'LSP-7.8-FO2B' => 'Coastal Water',
+                default => 'Wastewater',
+            };
             $bag['results.sample_description'] = $sampleKind;
             $this->putFo2FooterBag($bag, $sampleKind, $revision->form?->form_code, null);
         }

@@ -866,6 +866,7 @@ class AnalystController extends Controller
             'lab_conditions' => ['nullable', 'string', 'max:2000'],
             'references' => ['nullable', 'string', 'max:4000'],
             'notes' => ['nullable', 'string', 'max:8000'],
+            'field_data' => ['nullable', 'string', 'max:2000'],
             'reset' => ['sometimes', 'boolean'],
             'sample_id' => ['nullable', 'integer'],
             'form_id' => ['nullable', 'integer'],
@@ -900,7 +901,7 @@ class AnalystController extends Controller
         abort_unless(
             ResultFooter::formSupportsFooter($form),
             422,
-            'Lab conditions apply only to FO2 / FO2A / FO3 / FO37 physico result sheets.',
+            'Lab conditions apply only to FO2 / FO2A / FO2B / FO3 / FO37 physico result sheets.',
         );
 
         if (($data['reset'] ?? false) === true) {
@@ -925,9 +926,21 @@ class AnalystController extends Controller
                 }
             }
 
-            $jobOrder->update([
+            $updates = [
                 'result_footer' => ResultFooter::normalizeForStorage($data, $form),
-            ]);
+            ];
+
+            if (ResultFooter::formShowsFieldData($form, $jobOrder) && array_key_exists('field_data', $data)) {
+                $fieldData = trim((string) ($data['field_data'] ?? ''));
+                if ($fieldData === '') {
+                    throw ValidationException::withMessages([
+                        'field_data' => 'Enter FIELD DATA for Coastal Water results.',
+                    ]);
+                }
+                $updates['field_data'] = $fieldData;
+            }
+
+            $jobOrder->update($updates);
         }
 
         $jobOrder->refresh();
@@ -1299,7 +1312,7 @@ class AnalystController extends Controller
     }
 
     /**
-     * Wastewater kinds stay a fixed choice so FO2 vs FO2A still follows the description.
+     * Wastewater kinds stay a fixed choice so FO2 / FO2A / FO2B still follows the description.
      *
      * @return list<string>|null
      */

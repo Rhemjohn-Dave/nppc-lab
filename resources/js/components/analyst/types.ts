@@ -108,9 +108,13 @@ export type ResultFooterConfig = {
     lab_conditions: string;
     references: string;
     notes: string;
+    field_data?: string;
     requires_atmosphere?: boolean;
+    requires_field_data?: boolean;
     atmosphere_complete?: boolean;
+    field_data_complete?: boolean;
     show_notes_fields?: boolean;
+    show_field_data?: boolean;
     save_url?: string | null;
     can_edit?: boolean;
 };

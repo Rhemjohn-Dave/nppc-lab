@@ -521,8 +521,8 @@ export default function AnalystIndex({
         const footer = consolidationsById.get(jobId)?.footer;
         if (
             footer?.can_edit &&
-            footer.requires_atmosphere &&
-            !footer.atmosphere_complete
+            ((footer.requires_atmosphere && !footer.atmosphere_complete) ||
+                (footer.requires_field_data && !footer.field_data_complete))
         ) {
             setFooterError(null);
             setFooterContinueSubmit(false);
@@ -1245,6 +1245,17 @@ export default function AnalystIndex({
             return;
         }
 
+        if (
+            footer?.requires_field_data &&
+            !footer.field_data_complete
+        ) {
+            setSendGateError(
+                'Enter FIELD DATA for Coastal Water before Send to Head.',
+            );
+
+            return;
+        }
+
         setSendGateError(null);
         // Lab conditions are captured at encode time — Send to Head goes to signatories only.
         proceedSubmitAfterFooter(jobId, resolvedSampleId, resolvedFormId);
@@ -1269,6 +1280,7 @@ export default function AnalystIndex({
         lab_conditions: string;
         references: string;
         notes: string;
+        field_data?: string;
     }) {
         const config = footerConfig;
         if (!footerJobId || !config?.save_url) {

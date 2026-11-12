@@ -1585,6 +1585,12 @@ class JobOrderService
                     'result_footer' => 'Enter laboratory temperature and humidity before encoding results.',
                 ]);
             }
+            if (ResultFooter::formShowsFieldData($resultForm, $jobOrder)
+                && trim((string) ($jobOrder->field_data ?? '')) === '') {
+                throw ValidationException::withMessages([
+                    'field_data' => 'Enter FIELD DATA for Coastal Water before encoding results.',
+                ]);
+            }
         }
 
         $code = $analysis->analysisType?->code;

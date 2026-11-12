@@ -444,9 +444,9 @@ class ControlledFormService
             ->where('combination_key', $key)
             ->where('id', '!=', $form->id);
 
-        // FO2 (WW/River) and FO2A (Abstracted) intentionally share the Issue 18
-        // type panel; AnalysisResultReportResolver picks by sample.description.
-        $wwPhysicoSiblings = ['LSP-7.8-FO2', 'LSP-7.8-FO2A'];
+        // FO2 / FO2A / FO2B intentionally share the WW physico type panel;
+        // AnalysisResultReportResolver picks by sample.description.
+        $wwPhysicoSiblings = ['LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO2B'];
         if (in_array($form->form_code, $wwPhysicoSiblings, true)) {
             $query->whereNotIn('form_code', $wwPhysicoSiblings);
         }

@@ -662,10 +662,20 @@ export default function IntakeWizard({
     );
     const [otherTests, setOtherTests] = useState('');
 
+    const coastalFieldDataTemplate = [
+        'FIELD DATA:',
+        'a) Temperature –',
+        'b) Dissolved Oxygen -',
+        'c) Time of Sampling -',
+        'd) Other field data will be available upon request',
+        '(Field Sampling Logbook)',
+    ].join('\n');
+
     const wastewaterKinds = options.wastewater_kinds ?? [
         'Wastewater',
         'River water',
         'Abstracted water',
+        'Coastal Water',
     ];
     const wastewaterKindSet = useMemo(
         () => new Set(wastewaterKinds),
@@ -1584,6 +1594,12 @@ export default function IntakeWizard({
                 ),
             );
 
+            if (value === 'Coastal Water') {
+                setFieldData((current) =>
+                    current.trim() === '' ? coastalFieldDataTemplate : current,
+                );
+            }
+
             return;
         }
 
@@ -1815,11 +1831,25 @@ export default function IntakeWizard({
                           paymentMode === 'billing_partial'
                               ? paymentTerms || null
                               : null,
-                      field_data: sterileBottle
-                          ? fieldData.trim()
-                              ? `Water in sterile bottle. ${fieldData.trim()}`
-                              : 'Water in sterile bottle'
-                          : fieldData || null,
+                      field_data: (() => {
+                          const hasCoastal = samples.some(
+                              (sample) =>
+                                  sample.description.trim() === 'Coastal Water',
+                          );
+                          if (hasCoastal) {
+                              return (
+                                  fieldData.trim() || coastalFieldDataTemplate
+                              );
+                          }
+
+                          if (sterileBottle) {
+                              return fieldData.trim()
+                                  ? `Water in sterile bottle. ${fieldData.trim()}`
+                                  : 'Water in sterile bottle';
+                          }
+
+                          return fieldData || null;
+                      })(),
                       sample_storage_temp: sampleStorageTemp || null,
                       wastewater_source: resolvedSampleSource || null,
                       other_tests: otherTests || null,

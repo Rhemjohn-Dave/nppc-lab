@@ -361,7 +361,7 @@ class AnalysisResultReportResolver
             ->with(['analysisTypes', 'currentRevision.fields'])
             ->where('category', ControlledFormCategory::AnalysisResult)
             ->whereNull('analysis_package_id')
-            ->whereNotIn('form_code', ['LSP-7.8-FO2', 'LSP-7.8-FO2A'])
+            ->whereNotIn('form_code', ['LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO2B'])
             ->where('combination_key', ControlledFormService::combinationKey($typeIds))
             ->whereHas('revisions', fn ($query) => $query->where('status', ControlledFormRevisionStatus::Active))
             ->first();
@@ -472,7 +472,7 @@ class AnalysisResultReportResolver
     }
 
     /**
-     * FO2 (WW/River) vs FO2A (Abstracted) share the same type panel; pick by sample description.
+     * FO2 / FO2A / FO2B share the WW physico type panel; pick by sample description.
      *
      * @param  list<int>  $jobTypeIds
      */
@@ -484,7 +484,7 @@ class AnalysisResultReportResolver
             ->with(['analysisTypes', 'currentRevision.fields'])
             ->where('category', ControlledFormCategory::AnalysisResult)
             ->whereNull('analysis_package_id')
-            ->whereIn('form_code', ['LSP-7.8-FO2', 'LSP-7.8-FO2A'])
+            ->whereIn('form_code', ['LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO2B'])
             ->whereHas('revisions', fn ($query) => $query->where('status', ControlledFormRevisionStatus::Active))
             ->get()
             ->keyBy('form_code');
@@ -521,8 +521,14 @@ class AnalysisResultReportResolver
 
         $fo2 = $candidates->get('LSP-7.8-FO2');
         $fo2a = $candidates->get('LSP-7.8-FO2A');
+        $fo2b = $candidates->get('LSP-7.8-FO2B');
         $description = trim((string) (($sample ?? $jobOrder->samples->first())?->description ?? ''));
         $wantAbstracted = OfficialAnalysisCatalog::isWastewaterAbstractedKind($description);
+        $wantCoastal = OfficialAnalysisCatalog::isWastewaterCoastalKind($description);
+
+        if ($wantCoastal && $fo2b instanceof ControlledForm && $contained($fo2b)) {
+            return $fo2b;
+        }
 
         if ($wantAbstracted && $fo2a instanceof ControlledForm && $contained($fo2a)) {
             return $fo2a;
@@ -530,6 +536,10 @@ class AnalysisResultReportResolver
 
         if ($fo2 instanceof ControlledForm && $contained($fo2)) {
             return $fo2;
+        }
+
+        if ($fo2b instanceof ControlledForm && $contained($fo2b)) {
+            return $fo2b;
         }
 
         if ($fo2a instanceof ControlledForm && $contained($fo2a)) {
@@ -554,7 +564,7 @@ class AnalysisResultReportResolver
             ->with(['analysisTypes', 'currentRevision.fields'])
             ->where('category', ControlledFormCategory::AnalysisResult)
             ->whereNull('analysis_package_id')
-            ->whereNotIn('form_code', ['LSP-7.8-FO2', 'LSP-7.8-FO2A'])
+            ->whereNotIn('form_code', ['LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO2B'])
             ->whereHas('revisions', fn ($query) => $query->where('status', ControlledFormRevisionStatus::Active))
             ->whereHas('analysisTypes')
             ->orderBy('id')

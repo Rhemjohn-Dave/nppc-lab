@@ -59,6 +59,93 @@ class ResultFooterTest extends TestCase
         $this->assertSame('LSP-7.8-FO2A', $resolved->controlledForm?->form_code);
     }
 
+    public function test_seed_exposes_fo2b_coastal_resolves_with_field_data_and_extras(): void
+    {
+        Storage::fake('local');
+        $this->seed();
+
+        $fo2b = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2B')->first();
+        $this->assertNotNull($fo2b);
+        $this->assertNotNull($fo2b->activeRevision());
+        $this->assertSame(2, (int) $fo2b->analyst_signatory_slots);
+        $this->assertNotNull($fo2b->activeRevision()?->fields()->where('name', 'job_orders.field_data')->first());
+        $this->assertNotNull($fo2b->activeRevision()?->fields()->where('name', 'ww_fo2b_matrix')->first());
+        $this->assertNull($fo2b->activeRevision()?->fields()->where('name', 'results.analyst_name_3')->first());
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $defaultCodes = OfficialAnalysisCatalog::wastewaterPhysicoCoastalTypeCodes();
+        $extraCodes = array_values(array_unique([...$defaultCodes, 'WW-03', 'SA-06']));
+        $typeIds = AnalysisType::query()
+            ->whereIn('code', $extraCodes)
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        $this->actingAs($receiving)
+            ->post('/intake/job-orders', [
+                'customer_name' => 'FO2B Coastal',
+                'customer_email' => 'fo2b-coastal@example.com',
+                'classification' => 'Wastewater',
+                'samples' => [
+                    [
+                        'description' => 'Coastal Water',
+                        'matrix' => 'Liquid',
+                        'analysis_type_ids' => $typeIds,
+                        'package_ids' => [],
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $this->assertStringContainsString('FIELD DATA:', (string) $job->field_data);
+
+        $nitrite = AnalysisType::query()->where('code', 'WW-15')->firstOrFail();
+        $this->assertTrue($job->analyses()->where('analysis_type_id', $nitrite->id)->exists());
+
+        $this->advanceFo2JobToReady($job, [
+            'field_data' => OfficialAnalysisCatalog::coastalFieldDataTemplate()."\nTemp 28C",
+        ]);
+
+        $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+        $resolved = app(\App\Services\AnalysisResultReportResolver::class)->forJobOrder($job->fresh(), $analyst);
+        $this->assertSame('LSP-7.8-FO2B', $resolved->controlledForm?->form_code);
+
+        $this->actingAs($analyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'CW-1',
+                'field_data' => '',
+            ])
+            ->assertStatus(422);
+
+        $this->actingAs($analyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'CW-1',
+                'field_data' => "FIELD DATA:\na) Temperature – 28",
+            ])
+            ->assertOk()
+            ->assertJsonPath('footer.show_field_data', true)
+            ->assertJsonPath('footer.requires_field_data', true)
+            ->assertJsonPath('footer.field_data_complete', true);
+
+        $this->assertStringContainsString('Temperature – 28', (string) $job->fresh()->field_data);
+
+        $bag = app(FieldValueResolver::class)->forResult(
+            $fo2b->activeRevision()->load('fields'),
+            $job->fresh(['samples', 'analyses.analysisType']),
+            null,
+            $fo2b->fresh(['analysisPackage', 'analysisTypes']),
+            $job->samples()->first(),
+        );
+
+        $this->assertStringContainsString('Temperature – 28', (string) ($bag['job_orders.field_data'] ?? ''));
+        $this->assertSame('coastal', $bag['fo2_footer_variant'] ?? null);
+    }
+
     public function test_analyst_can_override_result_footer_notes(): void
     {
         Storage::fake('local');
@@ -346,17 +433,20 @@ class ResultFooterTest extends TestCase
         $this->assertSame('- page 1/1 -', ResultFooter::pageStampText(1, 1));
     }
 
-    private function advanceFo2JobToReady(JobOrder $job): void
+    /**
+     * @param  array<string, mixed>  $footerExtras
+     */
+    private function advanceFo2JobToReady(JobOrder $job, array $footerExtras = []): void
     {
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
         $this->priceApproveReceiveAssign($job, $analyst);
 
         $this->actingAs($analyst)
-            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", array_merge([
                 'temperature_c' => '25',
                 'humidity_pct' => '55',
                 'test_report_no' => 'TR-001',
-            ])
+            ], $footerExtras))
             ->assertOk();
 
         foreach ($job->fresh()->analyses as $line) {

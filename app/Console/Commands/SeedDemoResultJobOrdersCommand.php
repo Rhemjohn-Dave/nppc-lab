@@ -324,7 +324,7 @@ class SeedDemoResultJobOrdersCommand extends Command
                 : $meta['description'].' #'.($i + 1);
 
             // FO2 / FO2A resolution keys off the exact description string.
-            if (in_array($formCode, ['LSP-7.8-FO2', 'LSP-7.8-FO2A'], true)) {
+            if (in_array($formCode, ['LSP-7.8-FO2', 'LSP-7.8-FO2A', 'LSP-7.8-FO2B'], true)) {
                 $label = $meta['description'];
             }
 

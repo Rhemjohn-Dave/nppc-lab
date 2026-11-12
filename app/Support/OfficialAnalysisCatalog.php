@@ -77,6 +77,7 @@ class OfficialAnalysisCatalog
                 ['WW-12', 'Total Dissolved Solids (mg/L)', 750],
                 ['WW-13', 'Total Fecal Coliform', 750],
                 ['WW-14', 'Total Suspended Solids (mg/L)', 750],
+                ['WW-15', '*Nitrite (mg/L)', 750],
             ],
             AnalysisCategory::FoodProductsMicrobiological->value => [
                 // FO26 Issue 4 print order (FM-04 Listeria spp. kept off the FO26 sheet).
@@ -318,6 +319,7 @@ class OfficialAnalysisCatalog
             'WW-08' => '4500-H+ B – Electrometric Method',
             'WW-05' => '4500-O C – Azide Modification',
             'WW-02' => '5210 B 5-Day BOD Test',
+            'WW-15' => 'Diazotization Method',
             'WW-14' => '2540 D – Total Suspended Solids Dried at 103-105°C',
             'WW-12' => '2540 C – Total Dissolved Solids Dried at 180°C',
             'SA-25' => '2540 B – Total Solids Dried at 103-105°C',
@@ -706,17 +708,40 @@ class OfficialAnalysisCatalog
     }
 
     /**
-     * Wastewater sample-description kinds shown at intake (also printed on FO2).
+     * FO2B default member codes for Coastal Water (subset + Nitrite), print order.
+     *
+     * @return list<string>
+     */
+    public static function wastewaterPhysicoCoastalTypeCodes(): array
+    {
+        return ['WW-08', 'WW-05', 'WW-02', 'WW-14', 'WW-15', 'WW-01'];
+    }
+
+    /**
+     * Types bound on FO2 / FO2A / FO2B sheets (Issue 18 panel + coastal Nitrite).
+     *
+     * @return list<string>
+     */
+    public static function wastewaterPhysicoPanelTypeCodes(): array
+    {
+        return array_values(array_unique([
+            ...self::wastewaterPhysicoIssue18TypeCodes(),
+            'WW-15',
+        ]));
+    }
+
+    /**
+     * Wastewater sample-description kinds shown at intake (also printed on FO2 family).
      *
      * @return list<string>
      */
     public static function wastewaterKinds(): array
     {
-        return ['Wastewater', 'River water', 'Abstracted water'];
+        return ['Wastewater', 'River water', 'Abstracted water', 'Coastal Water'];
     }
 
     /**
-     * FO2 default type codes for a wastewater sample-description kind.
+     * FO2 family default type codes for a wastewater sample-description kind.
      *
      * @return list<string>
      */
@@ -724,6 +749,7 @@ class OfficialAnalysisCatalog
     {
         return match ($kind) {
             'Abstracted water' => self::wastewaterPhysicoAbstractedTypeCodes(),
+            'Coastal Water' => self::wastewaterPhysicoCoastalTypeCodes(),
             'Wastewater', 'River water' => self::wastewaterPhysicoIssue18TypeCodes(),
             default => [],
         };
@@ -734,14 +760,41 @@ class OfficialAnalysisCatalog
         return trim((string) $description) === 'Abstracted water';
     }
 
+    public static function isWastewaterCoastalKind(?string $description): bool
+    {
+        return trim((string) $description) === 'Coastal Water';
+    }
+
     /**
      * FO2 under-table footer variant for a sample description kind.
      *
-     * @return 'abstracted'|'full'
+     * @return 'abstracted'|'coastal'|'full'
      */
     public static function fo2FooterVariant(?string $description): string
     {
-        return self::isWastewaterAbstractedKind($description) ? 'abstracted' : 'full';
+        if (self::isWastewaterAbstractedKind($description)) {
+            return 'abstracted';
+        }
+        if (self::isWastewaterCoastalKind($description)) {
+            return 'coastal';
+        }
+
+        return 'full';
+    }
+
+    /**
+     * Default FIELD DATA block for Coastal Water FO2B sheets.
+     */
+    public static function coastalFieldDataTemplate(): string
+    {
+        return <<<'TXT'
+FIELD DATA:
+a) Temperature –
+b) Dissolved Oxygen -
+c) Time of Sampling -
+d) Other field data will be available upon request
+(Field Sampling Logbook)
+TXT;
     }
 
     /**
@@ -774,6 +827,14 @@ Notes:
 TXT;
     }
 
+    /**
+     * Designer/print default NOTE block for FO2B Coastal Water sheet.
+     */
+    public static function fo2CoastalNotesText(): string
+    {
+        return self::fo2AbstractedNotesText();
+    }
+
     public static function fo2ReferencesText(): string
     {
         return <<<'TXT'
@@ -784,7 +845,7 @@ TXT;
 
     public static function fo2LabConditionsText(string $variant = 'full'): string
     {
-        // Full WW/River and Abstracted both print Temp/Humidity + NA under the matrix.
+        // Full WW/River, Abstracted, and Coastal print Temp/Humidity + NA under the matrix.
         return <<<'TXT'
 Laboratory Conditions during the conduct of test: Temp =      °C ; Humidity =      %
 NA – Not Applicable for specified water body .
@@ -796,7 +857,14 @@ TXT;
      */
     public static function wastewaterPhysicoFormCode(?string $description): string
     {
-        return self::isWastewaterAbstractedKind($description) ? 'LSP-7.8-FO2A' : 'LSP-7.8-FO2';
+        if (self::isWastewaterAbstractedKind($description)) {
+            return 'LSP-7.8-FO2A';
+        }
+        if (self::isWastewaterCoastalKind($description)) {
+            return 'LSP-7.8-FO2B';
+        }
+
+        return 'LSP-7.8-FO2';
     }
 
     /**
@@ -887,6 +955,7 @@ TXT;
             'WW-07' => 'Oil and Grease (mg/L)',
             'WW-06' => 'Nitrate as NO3-N (mg/L)',
             'WW-01' => 'Ammonia as NH3-N (mg/L)',
+            'WW-15' => '*Nitrite (mg/L)',
             'WW-09' => 'Phosphate (mg/L)',
             'WW-04' => 'Color (TCU)',
             'WW-10' => 'Surfactants (mg/L)',
@@ -907,14 +976,26 @@ TXT;
         }
 
         return match ($code) {
-            'WW-14', 'WW-12', 'SA-25', 'SA-17', 'WW-07', 'WW-10', 'SA-06' => 'Date/Time of Analysis',
+            'WW-14', 'WW-12', 'SA-25', 'SA-17', 'WW-07', 'WW-10', 'SA-06', 'WW-15' => 'Date/Time of Analysis',
             'WW-08', 'WW-05', 'WW-02', 'WW-06', 'WW-01', 'WW-09', 'WW-04', 'WW-03', 'WW-11', 'SA-19' => 'Time of Analysis',
             default => null,
         };
     }
 
     /**
-     * Whether the analysis type is on the FO2 / FO2A wastewater physico panel.
+     * Matrix caption for FO2 family sheets (Issue 18 Time vs Date/Time map).
+     */
+    public static function wastewaterPhysicoAnalysisCaption(?string $code, ?string $sampleDescription = null): ?string
+    {
+        if ($code === null || $code === '') {
+            return null;
+        }
+
+        return self::wastewaterPhysicoIssue18AnalysisCaption($code);
+    }
+
+    /**
+     * Whether the analysis type is on the FO2 / FO2A / FO2B wastewater physico panel.
      */
     public static function isWastewaterPhysicoPanelCode(?string $code): bool
     {
@@ -922,7 +1003,7 @@ TXT;
             return false;
         }
 
-        return in_array($code, self::wastewaterPhysicoIssue18TypeCodes(), true);
+        return in_array($code, self::wastewaterPhysicoPanelTypeCodes(), true);
     }
 
     /**
@@ -937,7 +1018,7 @@ TXT;
         }
 
         return match ($code) {
-            'WW-09', 'WW-11', 'SA-06' => '*',
+            'WW-09', 'WW-11', 'SA-06', 'WW-15' => '*',
             'WW-12', 'SA-25', 'SA-17' => '**',
             'WW-04', 'WW-10', 'WW-03', 'SA-19' => '***',
             default => null,
@@ -1019,7 +1100,7 @@ TXT;
                 'official' => 'LSP 7.8 FO2',
                 'revision' => '17/Issue 18',
                 'effective' => '09/16/2026',
-                'type_codes' => self::wastewaterPhysicoIssue18TypeCodes(),
+                'type_codes' => self::wastewaterPhysicoPanelTypeCodes(),
                 'source_pdf' => 'PC Wastewater result Form Issue 18 09012026 blank.pdf',
             ],
             'ww_physico_abstracted' => [
@@ -1028,7 +1109,16 @@ TXT;
                 'official' => 'LSP 7.8 FO2',
                 'revision' => '17/Issue 18',
                 'effective' => '09/16/2026',
-                'type_codes' => self::wastewaterPhysicoIssue18TypeCodes(),
+                'type_codes' => self::wastewaterPhysicoPanelTypeCodes(),
+                'source_pdf' => 'PC Wastewater result Form Issue 18 09012026 blank.pdf',
+            ],
+            'ww_physico_coastal' => [
+                'form_code' => 'LSP-7.8-FO2B',
+                'name' => 'Physico-Chemical Test Results — Coastal Water',
+                'official' => 'LSP 7.8 FO2',
+                'revision' => '17/Issue 18',
+                'effective' => '09/16/2026',
+                'type_codes' => self::wastewaterPhysicoPanelTypeCodes(),
                 'source_pdf' => 'PC Wastewater result Form Issue 18 09012026 blank.pdf',
             ],
             'proximate' => [

@@ -11,6 +11,7 @@ return [
     'LSP-7.8-FO5' => 'result_fo5_form_fields',
     'LSP-7.8-FO2' => 'result_ww_physico_form_fields',
     'LSP-7.8-FO2A' => 'result_ww_physico_abstracted_form_fields',
+    'LSP-7.8-FO2B' => 'result_ww_physico_coastal_form_fields',
     'LSP-7.8-FO37' => 'result_dw_physico_form_fields',
     'LSP-7.8-FO3' => 'result_dw_old_fo3_form_fields',
     'LSP-7.8-FO26' => 'result_fo26_form_fields',
