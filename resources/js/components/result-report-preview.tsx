@@ -362,7 +362,11 @@ export default function ResultReportPreview({
                 'Content-Type': 'application/json',
                 ...(token ? { 'X-XSRF-TOKEN': token } : {}),
             },
-            body: JSON.stringify(values),
+            body: JSON.stringify({
+                ...values,
+                ...(activeSampleId != null ? { sample_id: activeSampleId } : {}),
+                ...(activeFormId != null ? { form_id: activeFormId } : {}),
+            }),
         });
 
         const payload = (await response.json().catch(() => null)) as {

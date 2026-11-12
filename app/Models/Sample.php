@@ -20,6 +20,7 @@ class Sample extends Model
         'remarks',
         'sort_order',
         'submitted_for_review_at',
+        'submitted_form_ids',
         'released_at',
     ];
 
@@ -28,6 +29,7 @@ class Sample extends Model
         return [
             'quantity' => 'decimal:2',
             'submitted_for_review_at' => 'datetime',
+            'submitted_form_ids' => 'array',
             'released_at' => 'datetime',
         ];
     }

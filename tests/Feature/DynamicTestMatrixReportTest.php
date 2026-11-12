@@ -524,7 +524,7 @@ class DynamicTestMatrixReportTest extends TestCase
         $this->assertNotNull($matrix);
         $this->assertSame('ww_fo2_matrix', $matrix->name);
         $this->assertEqualsWithDelta(28.475, (float) $matrix->x, 0.01);
-        $this->assertEqualsWithDelta(62.272, (float) $matrix->y, 0.01);
+        $this->assertEqualsWithDelta(63.272, (float) $matrix->y, 0.01);
         $this->assertEqualsWithDelta(159.492, (float) $matrix->width, 0.01);
         $keys = collect($matrix->table_config['columns'] ?? [])->pluck('key')->all();
         $this->assertSame(['test', 'method', 'result'], $keys);
@@ -534,7 +534,7 @@ class DynamicTestMatrixReportTest extends TestCase
         $customer = $revision->fields()->where('name', 'results.customer')->first();
         $this->assertNotNull($customer);
         $this->assertEqualsWithDelta(60.0, (float) $customer->x, 0.01);
-        $this->assertEqualsWithDelta(32.7, (float) $customer->y, 0.01);
+        $this->assertEqualsWithDelta(34.2, (float) $customer->y, 0.01);
 
         // Flowing footer (FO3 pattern): single WW/River block + 4th Certified slot.
         // Abstracted water uses separate form LSP-7.8-FO2A.
@@ -547,12 +547,28 @@ class DynamicTestMatrixReportTest extends TestCase
         $certified2 = $revision->fields()->where('name', 'results.analyst_name_4')->first();
         $this->assertNotNull($certified2);
         $this->assertSame('ww_fo2_matrix', $certified2->options['anchor']['below'] ?? null);
+        $this->assertSame('fo2_form_meta', $certified2->options['anchor']['above'] ?? null);
+
+        foreach ([
+            'fo2_label_reviewed',
+            'results.analyst_name',
+            'results.analyst_name_2',
+            'results.analyst_name_3',
+            'results.analyst_name_4',
+        ] as $signatoryField) {
+            $field = $revision->fields()->where('name', $signatoryField)->first();
+            $this->assertNotNull($field, $signatoryField);
+            $anchor = is_array($field->options['anchor'] ?? null) ? $field->options['anchor'] : [];
+            $this->assertSame('ww_fo2_matrix', $anchor['below'] ?? null, $signatoryField);
+            $this->assertSame('fo2_form_meta', $anchor['above'] ?? null, $signatoryField);
+            $this->assertGreaterThan(0, (float) ($anchor['above_offset_mm'] ?? 0), $signatoryField);
+        }
 
         $rows = \App\Support\DynamicTestMatrix::previewRowsForForm($form->fresh(['analysisPackage', 'analysisTypes']));
         $this->assertSame('Lab pH', $rows[0]['test']);
         $this->assertSame('Time of Analysis:', $rows[0]['test_detail']);
         $this->assertSame('4500-H+ B – Electrometric Method', $rows[0]['method']);
-        $this->assertSame('Chloride (mg/L)', $rows[16]['test']);
+        $this->assertSame('*Chloride (mg/L)', $rows[16]['test']);
         $this->assertSame('Date/Time of Analysis:', $rows[16]['test_detail']);
         $this->assertSame('4500-Cl- B – Argentometric Method', $rows[16]['method']);
 

@@ -653,9 +653,25 @@ class AnalysisResultReportResolver
             return true;
         }
 
-        if ($analyses->every(
+        if ($analyses->isNotEmpty() && $analyses->every(
             fn (JobOrderAnalysis $line) => (int) $line->assigned_to === (int) $user->id,
         )) {
+            return true;
+        }
+
+        $qualifiedTypeIds = $user->analysisTypes()
+            ->pluck('analysis_types.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (
+            $analyses->isNotEmpty()
+            && $qualifiedTypeIds !== []
+            && $analyses->every(
+                fn (JobOrderAnalysis $line) => $line->analysis_type_id
+                    && in_array((int) $line->analysis_type_id, $qualifiedTypeIds, true),
+            )
+        ) {
             return true;
         }
 

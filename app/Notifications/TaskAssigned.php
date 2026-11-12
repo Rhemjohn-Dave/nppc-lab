@@ -30,7 +30,7 @@ class TaskAssigned extends Notification
             'analysis_id' => $this->analysis->id,
             'reference_no' => $this->jobOrder->reference_no,
             'analysis_name' => $this->analysis->name,
-            'message' => "{$this->analysis->name} on {$this->jobOrder->reference_no} was suggested for you. Any qualified analyst may encode it.",
+            'message' => "{$this->analysis->name} on {$this->jobOrder->reference_no} is available for analysts assigned to that test type.",
             'href' => '/analyst?job='.$this->jobOrder->id,
         ];
     }

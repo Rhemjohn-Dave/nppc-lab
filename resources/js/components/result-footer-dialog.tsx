@@ -92,7 +92,7 @@ export default function ResultFooterPanel({
     return (
         <form
             onSubmit={submit}
-            className="flex max-h-[min(85vh,40rem)] w-full flex-col overflow-hidden rounded-lg border bg-white shadow-sm"
+            className="flex h-full max-h-[min(90vh,40rem)] w-full min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-white shadow-sm"
         >
             <div className="shrink-0 border-b px-5 pt-4 pb-3">
                 <h2 className="font-heading text-base font-semibold text-nppc-900 sm:text-lg">
@@ -104,7 +104,7 @@ export default function ResultFooterPanel({
                 </p>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-5 py-4 pb-5">
                 {error ? (
                     <p
                         className="border-l-2 border-rose-300 py-1 pl-2 text-xs font-medium text-rose-700"
@@ -218,7 +218,7 @@ export default function ResultFooterPanel({
                 ) : null}
             </div>
 
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t bg-slate-50/80 px-5 py-3">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t bg-slate-50 px-5 py-3">
                 {onReset ? (
                     <Button
                         type="button"

@@ -34,7 +34,7 @@ class LabWorkflowTest extends TestCase
             'customer_email' => 'jane@example.com',
             'customer_contact' => '09171234567',
             'samples' => [
-                ['description' => 'Fertilizer lot A', 'matrix' => 'Solid'],
+                ['description' => 'Wastewater', 'matrix' => 'Liquid', 'classification' => 'Wastewater'],
             ],
             'analysis_type_ids' => [$type->id],
         ])->assertRedirect();
@@ -84,7 +84,7 @@ class LabWorkflowTest extends TestCase
         $this->assertSame(JobOrderStatus::InAnalysis, $job->status);
 
         $line->refresh();
-        $this->assertSame($analyst->id, $line->assigned_to);
+        $this->assertNull($line->assigned_to);
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/draft", [
@@ -95,6 +95,7 @@ class LabWorkflowTest extends TestCase
             ->assertRedirect();
 
         $line->refresh();
+        $this->assertSame($analyst->id, $line->assigned_to);
         $this->assertSame(JobOrderAnalysisStatus::InProgress, $line->status);
         $this->assertSame('12.4', $line->result_value);
 
@@ -167,7 +168,7 @@ class LabWorkflowTest extends TestCase
             'customer_email' => 'sam@example.com',
             'customer_contact' => '09170000000',
             'samples' => [
-                ['description' => 'Water sample', 'matrix' => 'Liquid'],
+                ['description' => 'Wastewater', 'matrix' => 'Liquid', 'classification' => 'Wastewater'],
             ],
             'analysis_type_ids' => [$type->id],
         ])->assertRedirect();
@@ -240,7 +241,7 @@ class LabWorkflowTest extends TestCase
             'customer_name' => 'No Email Customer',
             'customer_contact' => '09171234567',
             'samples' => [
-                ['description' => 'Sample A', 'matrix' => 'Solid'],
+                ['description' => 'Wastewater', 'matrix' => 'Liquid', 'classification' => 'Wastewater'],
             ],
             'analysis_type_ids' => [$type->id],
         ])->assertRedirect();
@@ -261,7 +262,7 @@ class LabWorkflowTest extends TestCase
                 'customer_email' => 'not-an-email',
                 'customer_contact' => '09171234567',
                 'samples' => [
-                    ['description' => 'Sample A', 'matrix' => 'Solid'],
+                    ['description' => 'Wastewater', 'matrix' => 'Liquid', 'classification' => 'Wastewater'],
                 ],
                 'analysis_type_ids' => [$type->id],
             ])
@@ -421,7 +422,7 @@ class LabWorkflowTest extends TestCase
             'customer_email' => 'guard@example.com',
             'customer_contact' => '09170000000',
             'samples' => [
-                ['description' => 'Guard sample', 'matrix' => 'Liquid'],
+                ['description' => 'Wastewater', 'matrix' => 'Liquid', 'classification' => 'Wastewater'],
             ],
             'analysis_type_ids' => [$type->id],
         ])->assertRedirect();
@@ -442,6 +443,14 @@ class LabWorkflowTest extends TestCase
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
+
+        $this->actingAs($analyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'TR-001',
+            ])
+            ->assertOk();
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
@@ -486,7 +495,7 @@ class LabWorkflowTest extends TestCase
             'customer_name' => 'Post Release Edit',
             'customer_email' => 'post-release@example.com',
             'samples' => [
-                ['description' => 'Water', 'matrix' => 'Liquid'],
+                ['description' => 'Wastewater', 'matrix' => 'Liquid', 'classification' => 'Wastewater'],
             ],
             'analysis_type_ids' => [$type->id],
         ])->assertRedirect();
@@ -507,6 +516,14 @@ class LabWorkflowTest extends TestCase
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
+
+        $this->actingAs($analyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'TR-001',
+            ])
+            ->assertOk();
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", $this->completeResultPayload([
@@ -633,7 +650,7 @@ class LabWorkflowTest extends TestCase
             'customer_name' => 'Consolidate Customer',
             'customer_email' => 'consolidate@example.com',
             'samples' => [
-                ['description' => 'Wastewater', 'matrix' => 'Liquid'],
+                ['description' => 'Wastewater', 'matrix' => 'Liquid', 'classification' => 'Wastewater'],
             ],
             'package_ids' => [$package->id],
         ])->assertRedirect();
@@ -717,7 +734,7 @@ class LabWorkflowTest extends TestCase
             'customer_email' => $email,
             'customer_contact' => '09170000000',
             'samples' => [
-                ['description' => 'Finished sample', 'matrix' => 'Liquid'],
+                ['description' => 'Wastewater', 'matrix' => 'Liquid', 'classification' => 'Wastewater'],
             ],
             'analysis_type_ids' => [$type->id],
         ])->assertRedirect();
@@ -738,6 +755,14 @@ class LabWorkflowTest extends TestCase
         $this->actingAs($receiving)
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
+
+        $this->actingAs($analyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'TR-001',
+            ])
+            ->assertOk();
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [

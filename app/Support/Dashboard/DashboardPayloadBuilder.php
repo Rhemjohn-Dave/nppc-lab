@@ -471,13 +471,13 @@ class DashboardPayloadBuilder
                 ->all();
 
         if (! $isAdmin) {
-            $openQuery->where(function ($query) use ($user, $qualifiedTypeIds) {
-                $query->where('assigned_to', $user->id);
-                if ($qualifiedTypeIds !== []) {
-                    $query->orWhereIn('analysis_type_id', $qualifiedTypeIds);
-                }
-            });
-            $completedQuery->where('assigned_to', $user->id);
+            if ($qualifiedTypeIds === []) {
+                $openQuery->whereRaw('0 = 1');
+                $completedQuery->whereRaw('0 = 1');
+            } else {
+                $openQuery->whereIn('analysis_type_id', $qualifiedTypeIds);
+                $completedQuery->whereIn('analysis_type_id', $qualifiedTypeIds);
+            }
         }
 
         $assignedCount = (clone $openQuery)
@@ -505,10 +505,19 @@ class DashboardPayloadBuilder
             ->limit(5)
             ->pluck('job_order_id');
 
-        $tasks = JobOrderAnalysis::query()
+        $tasksQuery = JobOrderAnalysis::query()
             ->with(['jobOrder.samples', 'assignee:id,name'])
-            ->whereIn('job_order_id', $myJobIds)
-            ->get();
+            ->whereIn('job_order_id', $myJobIds);
+
+        if (! $isAdmin) {
+            if ($qualifiedTypeIds === []) {
+                $tasksQuery->whereRaw('0 = 1');
+            } else {
+                $tasksQuery->whereIn('analysis_type_id', $qualifiedTypeIds);
+            }
+        }
+
+        $tasks = $tasksQuery->get();
 
         $groups = [];
         foreach ($myJobIds as $jobId) {
@@ -537,9 +546,7 @@ class DashboardPayloadBuilder
                     ])->values()->all(),
                 ],
                 'tasks' => $jobTasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin, $qualifiedTypeIds) {
-                    $isMine = $isAdmin || (int) $task->assigned_to === (int) $user->id;
                     $canWork = $isAdmin
-                        || $isMine
                         || (
                             $task->analysis_type_id
                             && in_array((int) $task->analysis_type_id, $qualifiedTypeIds, true)
@@ -552,7 +559,7 @@ class DashboardPayloadBuilder
                         'status_label' => $task->status->label(),
                         'assigned_to' => $task->assigned_to,
                         'assignee_name' => $task->assignee?->name,
-                        'is_mine' => $isMine,
+                        'is_mine' => $canWork,
                         'can_work' => $canWork,
                         'category_label' => $task->resolvedCategoryLabel(),
                         'job_order' => [

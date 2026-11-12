@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\AnalysisCategory;
 use App\Models\AnalysisType;
 use App\Models\User;
-use App\Services\AnalystAssignmentPicker;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -14,18 +13,12 @@ use Inertia\Response;
 
 class AssignmentAdminController extends Controller
 {
-    public function __construct(
-        private readonly AnalystAssignmentPicker $picker,
-    ) {}
-
     public function index(): Response
     {
         $analysts = User::role('analyst')
             ->with('analysisTypes:id')
             ->orderBy('name')
             ->get(['id', 'name', 'email']);
-
-        $openLoads = $this->picker->openLoads();
 
         $categories = AnalysisCategory::query()
             ->where('is_active', true)
@@ -45,7 +38,6 @@ class AssignmentAdminController extends Controller
             'name' => $analyst->name,
             'email' => $analyst->email,
             'analysis_type_ids' => $analyst->analysisTypes->pluck('id')->values()->all(),
-            'active_tasks' => (int) ($openLoads[(int) $analyst->id] ?? 0),
         ]);
 
         $groups = $categories->map(function (AnalysisCategory $category) use ($types) {

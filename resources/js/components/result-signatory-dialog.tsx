@@ -76,7 +76,7 @@ export default function ResultSignatoryPanel({
     return (
         <form
             onSubmit={submit}
-            className="flex max-h-[min(85vh,36rem)] w-full flex-col overflow-hidden rounded-lg border bg-white shadow-sm"
+            className="flex h-full max-h-[min(90vh,40rem)] w-full min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-white shadow-sm"
         >
             <div className="shrink-0 border-b px-5 pt-4 pb-3">
                 <h2 className="font-heading text-base font-semibold text-nppc-900 sm:text-lg">

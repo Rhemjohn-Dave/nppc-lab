@@ -25,6 +25,9 @@ export type ReportSummary = {
     message?: string | null;
     can_preview: boolean;
     can_print?: boolean;
+    sample_id?: number | null;
+    form_id?: number | null;
+    control_number?: string | null;
 };
 
 export type AnalystTask = {
@@ -111,6 +114,16 @@ export type ResultFooterConfig = {
     can_edit?: boolean;
 };
 
+export type ConsolidationReport = {
+    form_id?: number | null;
+    title?: string;
+    can_submit: boolean;
+    can_preview?: boolean;
+    preview_url?: string | null;
+    submitted?: boolean;
+    missing: string[];
+};
+
 export type ConsolidationSample = {
     id: number;
     sample_code?: string | null;
@@ -118,10 +131,12 @@ export type ConsolidationSample = {
     control_number?: string | null;
     can_submit: boolean;
     can_preview?: boolean;
+    form_id?: number | null;
     preview_url?: string | null;
     submitted: boolean;
     released: boolean;
     missing: string[];
+    reports?: ConsolidationReport[];
 };
 
 export type Consolidation = {
@@ -130,6 +145,7 @@ export type Consolidation = {
     customer_name: string;
     can_submit: boolean;
     can_preview?: boolean;
+    form_id?: number | null;
     preview_url?: string | null;
     preview_message?: string | null;
     missing: string[];

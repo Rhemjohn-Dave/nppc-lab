@@ -183,6 +183,7 @@ export default function AnalystIndex({
     const [sampleCompletePending, setSampleCompletePending] = useState<{
         jobId: number;
         sampleId: number | null;
+        formId: number | null;
     } | null>(null);
     const [sampleCompleteProcessing, setSampleCompleteProcessing] =
         useState(false);
@@ -203,6 +204,9 @@ export default function AnalystIndex({
         number | null
     >(null);
     const [submitSignatorySampleId, setSubmitSignatorySampleId] = useState<
+        number | null
+    >(null);
+    const [submitSignatoryFormId, setSubmitSignatoryFormId] = useState<
         number | null
     >(null);
     const [submitSignatoryError, setSubmitSignatoryError] = useState<
@@ -895,19 +899,30 @@ export default function AnalystIndex({
         }
 
         const sampleId = active.sample_id ?? null;
-        const jobTasks = jobWorkableTasks().filter((task) =>
-            sampleId == null
-                ? task.sample_id == null
-                : Number(task.sample_id) === Number(sampleId),
-        );
+        const formId = active.report?.form_id ?? null;
+        const jobTasks = jobWorkableTasks().filter((task) => {
+            if (sampleId == null) {
+                return task.sample_id == null;
+            }
+            if (Number(task.sample_id) !== Number(sampleId)) {
+                return false;
+            }
+            if (formId == null) {
+                return true;
+            }
+
+            return Number(task.report?.form_id ?? 0) === Number(formId);
+        });
         const scopeTasks =
             jobTasks.length > 0 ? jobTasks : jobWorkableTasks();
         const missing = missingJobAssays(scopeTasks);
         if (missing.length > 0) {
             setSampleCompleteError(
-                sampleId != null
-                    ? `Encode all results for this sample before completing: ${missing.join(', ')}.`
-                    : `Encode all results before completing this job order: ${missing.join(', ')}.`,
+                formId != null
+                    ? `Encode all results for this result sheet before completing: ${missing.join(', ')}.`
+                    : sampleId != null
+                      ? `Encode all results for this sample before completing: ${missing.join(', ')}.`
+                      : `Encode all results before completing this job order: ${missing.join(', ')}.`,
             );
             return;
         }
@@ -916,12 +931,25 @@ export default function AnalystIndex({
         setSampleCompletePending({
             jobId: selectedGroup.job.id,
             sampleId,
+            formId,
         });
 
         const consolidation = consolidationsById.get(selectedGroup.job.id);
+        const sampleRow = consolidation?.samples?.find(
+            (row) => Number(row.id) === Number(sampleId),
+        );
+        const reportRow =
+            formId != null
+                ? sampleRow?.reports?.find(
+                      (row) => Number(row.form_id) === Number(formId),
+                  )
+                : null;
         const canPreview = Boolean(
-            consolidation?.can_preview ||
-                scopeTasks.some((t) => t.report?.can_preview),
+            reportRow?.can_preview ||
+                sampleRow?.can_preview ||
+                consolidation?.can_preview ||
+                scopeTasks.some((t) => t.report?.can_preview) ||
+                active.report?.can_preview,
         );
 
         if (!canPreview) {
@@ -929,11 +957,22 @@ export default function AnalystIndex({
             return;
         }
 
-        const previewQuery =
-            sampleId != null ? `?sample_id=${sampleId}` : '';
-        setPreviewUrl(
-            `/analyst/job-orders/${selectedGroup.job.id}/result-report${previewQuery}`,
-        );
+        const previewUrl =
+            reportRow?.preview_url ||
+            sampleRow?.preview_url ||
+            (() => {
+                const params = new URLSearchParams();
+                if (sampleId != null) {
+                    params.set('sample_id', String(sampleId));
+                }
+                if (formId != null) {
+                    params.set('form_id', String(formId));
+                }
+                const query = params.toString();
+
+                return `/analyst/job-orders/${selectedGroup.job.id}/result-report${query ? `?${query}` : ''}`;
+            })();
+        setPreviewUrl(previewUrl);
     }
 
     function requestComplete(event: FormEvent) {
@@ -1093,13 +1132,17 @@ export default function AnalystIndex({
 
         const jobId = sampleCompletePending.jobId;
         const sampleId = sampleCompletePending.sampleId;
+        const formId = sampleCompletePending.formId;
 
         setSampleCompleteProcessing(true);
         setSampleCompleteError(null);
 
         router.post(
             `/analyst/job-orders/${jobId}/complete-sample`,
-            sampleId != null ? { sample_id: sampleId } : {},
+            {
+                ...(sampleId != null ? { sample_id: sampleId } : {}),
+                ...(formId != null ? { form_id: formId } : {}),
+            },
             {
                 preserveScroll: true,
                 onSuccess: () => {
@@ -1149,28 +1192,46 @@ export default function AnalystIndex({
     function proceedSubmitAfterFooter(
         jobId: number,
         sampleId: number | null = null,
+        formId: number | null = null,
     ) {
         const consolidation = consolidationsById.get(jobId);
         if (consolidation?.signatory) {
             setSubmitSignatoryError(null);
             setSubmitSignatoryJobId(jobId);
             setSubmitSignatorySampleId(sampleId);
+            setSubmitSignatoryFormId(formId);
 
             return;
         }
 
         router.post(
             `/analyst/job-orders/${jobId}/submit-for-review`,
-            sampleId != null ? { sample_id: sampleId } : {},
+            {
+                ...(sampleId != null ? { sample_id: sampleId } : {}),
+                ...(formId != null ? { form_id: formId } : {}),
+            },
             { preserveScroll: true },
         );
     }
 
     function submitJob(jobId: number, sampleId: number | null = null) {
         const consolidation = consolidationsById.get(jobId);
-        const resolvedSampleId =
-            sampleId ??
-            consolidation?.samples?.find((sample) => sample.can_submit)?.id ??
+        const readySample =
+            consolidation?.samples?.find((sample) =>
+                sampleId != null
+                    ? Number(sample.id) === Number(sampleId) && sample.can_submit
+                    : sample.can_submit,
+            ) ??
+            consolidation?.samples?.find((sample) => sample.can_submit) ??
+            null;
+        const resolvedSampleId = sampleId ?? readySample?.id ?? null;
+        const readyReport =
+            readySample?.reports?.find((report) => report.can_submit) ?? null;
+        const resolvedFormId =
+            readyReport?.form_id ??
+            readySample?.form_id ??
+            consolidation?.form_id ??
+            active?.report?.form_id ??
             null;
         const footer = consolidation?.footer;
         if (
@@ -1186,7 +1247,7 @@ export default function AnalystIndex({
 
         setSendGateError(null);
         // Lab conditions are captured at encode time — Send to Head goes to signatories only.
-        proceedSubmitAfterFooter(jobId, resolvedSampleId);
+        proceedSubmitAfterFooter(jobId, resolvedSampleId, resolvedFormId);
     }
 
     function openEditFooter(jobId: number) {
@@ -1258,6 +1319,7 @@ export default function AnalystIndex({
                         proceedSubmitAfterFooter(
                             jobId,
                             submitSignatorySampleId,
+                            submitSignatoryFormId,
                         );
                     }
                 },
@@ -1288,12 +1350,16 @@ export default function AnalystIndex({
                 ...(submitSignatorySampleId != null
                     ? { sample_id: submitSignatorySampleId }
                     : {}),
+                ...(submitSignatoryFormId != null
+                    ? { form_id: submitSignatoryFormId }
+                    : {}),
             },
             {
                 preserveScroll: true,
                 onSuccess: () => {
                     setSubmitSignatoryJobId(null);
                     setSubmitSignatorySampleId(null);
+                    setSubmitSignatoryFormId(null);
                 },
                 onError: (formErrors) => {
                     const first =
@@ -1727,7 +1793,7 @@ export default function AnalystIndex({
                         setSampleCompleteError(null);
                     }
                 }}
-                title="Sample not ready"
+                title="Result sheet not ready"
                 description={sampleCompleteError ?? ''}
                 confirmLabel="OK"
                 onConfirm={() => setSampleCompleteError(null)}
@@ -1791,7 +1857,7 @@ export default function AnalystIndex({
                     }
                 }}
             >
-                <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl">
+                <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
                     {footerConfig && (
                         <ResultFooterPanel
                             config={footerConfig}
@@ -1821,6 +1887,7 @@ export default function AnalystIndex({
                     if (!open && !submitSignatorySaving) {
                         setSubmitSignatoryJobId(null);
                         setSubmitSignatorySampleId(null);
+                        setSubmitSignatoryFormId(null);
                         setSubmitSignatoryError(null);
                     }
                 }}
@@ -1840,6 +1907,7 @@ export default function AnalystIndex({
                                 if (!submitSignatorySaving) {
                                     setSubmitSignatoryJobId(null);
                                     setSubmitSignatorySampleId(null);
+                                    setSubmitSignatoryFormId(null);
                                     setSubmitSignatoryError(null);
                                 }
                             }}

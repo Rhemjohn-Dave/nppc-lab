@@ -322,7 +322,7 @@ def build():
             "Review submitted Job Orders from intake",
             "Enter prices and quantities (costing) → awaits Head JO approval",
             "After JO approval: print 3 JO/RFA copies (customer, accounting, Head file)",
-            "Send to analysts — starts analysis; soft assignment by qualification & load",
+            "Send to analysts — starts analysis; Admin Assignments decide who sees each type",
             "After Head releases results: reprint JO for the customer packet",
             "Does not set Ready for pickup — that comes only from result release",
             "Payment / cashier settlement stays outside this system",
@@ -417,7 +417,7 @@ def build():
         "Assignment & signatories",
         [
             "Admin Assignments = who may do which test",
-            "Send to analysts suggests least-busy qualified person",
+            "Send to analysts routes lines by Admin Assignments",
             "Any qualified analyst may encode on a shared PC",
             "Analyst enters name/PRC at Send to Head",
             "Head only Approves JO and Releases results",

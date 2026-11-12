@@ -19,6 +19,7 @@ use App\Notifications\JobOrderJoApproved;
 use App\Notifications\JobOrderPendingReview;
 use App\Notifications\JobOrderSubmitted;
 use App\Notifications\ResultsReleased;
+use App\Support\AnalysisResultReport;
 use App\Support\OfficialAnalysisCatalog;
 use App\Support\ResultFooter;
 use App\Support\ResultSignatories;
@@ -32,7 +33,6 @@ class JobOrderService
 {
     public function __construct(
         private readonly ReferenceNumberService $referenceNumbers,
-        private readonly AnalystAssignmentPicker $assignments,
         private readonly AnalysisResultReportResolver $reports,
         private readonly CustomerEmailService $customerEmails,
     ) {}
@@ -1404,14 +1404,14 @@ class JobOrderService
 
         $jobOrder = DB::transaction(function () use ($jobOrder, $receiver) {
             $jobOrder->load('analyses.analysisType.analysts');
-            $loads = $this->assignments->openLoads();
 
             foreach ($jobOrder->analyses as $analysis) {
-                $analyst = $this->assignments->pick($analysis->analysisType, $loads);
+                $hasAssignees = $analysis->analysisType?->analysts->isNotEmpty() ?? false;
 
                 $analysis->update([
-                    'assigned_to' => $analyst?->id,
-                    'status' => $analyst
+                    // No exclusive owner at send — every Admin→Assignments qualifier sees the line.
+                    'assigned_to' => null,
+                    'status' => $hasAssignees
                         ? JobOrderAnalysisStatus::Assigned
                         : JobOrderAnalysisStatus::Pending,
                 ]);
@@ -1708,22 +1708,35 @@ class JobOrderService
     }
 
     /**
-     * Mark all assays for a sample (or the whole JO when sample_id is null) as completed
-     * using already-drafted result values. Does not submit to Head.
+     * Mark assays for a sample / result sheet as completed using already-drafted values.
+     * Sibling-discipline lines the analyst cannot work are skipped. Does not submit to Head.
      *
      * @return list<JobOrderAnalysis>
      */
-    public function completeSampleAnalyses(JobOrder $jobOrder, User $analyst, ?int $sampleId = null): array
-    {
+    public function completeSampleAnalyses(
+        JobOrder $jobOrder,
+        User $analyst,
+        ?int $sampleId = null,
+        ?int $formId = null,
+    ): array {
         if ($jobOrder->status !== JobOrderStatus::InAnalysis) {
             throw ValidationException::withMessages([
                 'job_order' => 'Only jobs in analysis can complete sample results.',
             ]);
         }
 
-        $jobOrder->loadMissing(['analyses.analysisType', 'analyses.assignee']);
+        $jobOrder->loadMissing(['analyses.analysisType', 'analyses.assignee', 'samples', 'packages', 'packageLinks']);
 
-        if ($sampleId !== null) {
+        if ($formId !== null) {
+            $reports = $this->reports->reportsForJobOrder($jobOrder, $analyst, withValues: false);
+            $report = $this->reports->pickReport($reports, $sampleId, $formId);
+            if (! $report->controlledForm || (int) $report->controlledForm->id !== $formId) {
+                throw ValidationException::withMessages([
+                    'form_id' => 'Result sheet not found on this job order.',
+                ]);
+            }
+            $lines = $report->analyses->values();
+        } elseif ($sampleId !== null) {
             $lines = $jobOrder->analyses
                 ->filter(fn (JobOrderAnalysis $line) => (int) $line->sample_id === $sampleId)
                 ->values();
@@ -1735,16 +1748,21 @@ class JobOrderService
             $lines = $unscoped->isNotEmpty() ? $unscoped : $jobOrder->analyses->values();
         }
 
+        // Never assert sibling types the analyst cannot encode.
+        $lines = $lines
+            ->filter(fn (JobOrderAnalysis $line) => $this->analystCanWorkOn($line, $analyst))
+            ->values();
+
         if ($lines->isEmpty()) {
             throw ValidationException::withMessages([
-                'sample_id' => 'No assays found for this sample.',
+                'sample_id' => $formId !== null
+                    ? 'No assays on this result sheet are assigned to you.'
+                    : 'No assays found for this sample.',
             ]);
         }
 
         $missing = [];
         foreach ($lines as $line) {
-            $this->assertAnalystCanWorkOn($line, $analyst);
-
             if ($line->isSamplePreparation()) {
                 continue;
             }
@@ -1777,9 +1795,11 @@ class JobOrderService
 
         if ($missing !== []) {
             throw ValidationException::withMessages([
-                'assays' => ($sampleId === null
-                    ? 'Encode all results before completing this job order: '
-                    : 'Encode all results before completing this sample: ').implode(', ', $missing).'.',
+                'assays' => ($formId !== null
+                    ? 'Encode all results for this result sheet before completing: '
+                    : ($sampleId === null
+                        ? 'Encode all results before completing this job order: '
+                        : 'Encode all results before completing this sample: ')).implode(', ', $missing).'.',
             ]);
         }
 
@@ -1840,7 +1860,12 @@ class JobOrderService
         User $analyst,
         ?array $signatories = null,
         ?int $sampleId = null,
+        ?int $formId = null,
     ): JobOrder {
+        if ($formId !== null) {
+            return $this->submitFormForReview($jobOrder, $analyst, $formId, $sampleId, $signatories);
+        }
+
         if ($sampleId !== null) {
             return $this->submitSampleForReview($jobOrder, $analyst, $sampleId, $signatories);
         }
@@ -1882,16 +1907,173 @@ class JobOrderService
             $analyst,
             $signatories,
             sampleId: null,
+            formId: null,
         );
         $updates['status'] = JobOrderStatus::PendingReview;
 
         $jobOrder->update($updates);
 
         $now = now();
+        $allReports = $this->reports->reportsForJobOrder($jobOrder, $analyst, withValues: false);
         foreach ($jobOrder->samples as $sample) {
-            if ($sample->submitted_for_review_at === null) {
-                $sample->update(['submitted_for_review_at' => $now]);
+            $formIds = $allReports
+                ->filter(fn (AnalysisResultReport $report) => (int) ($report->sampleId ?? 0) === (int) $sample->id)
+                ->map(fn (AnalysisResultReport $report) => (int) ($report->controlledForm?->id ?? 0))
+                ->filter(fn (int $id) => $id > 0)
+                ->unique()
+                ->values()
+                ->all();
+
+            $sample->update([
+                'submitted_for_review_at' => $sample->submitted_for_review_at ?? $now,
+                'submitted_form_ids' => $formIds !== []
+                    ? $formIds
+                    : (is_array($sample->submitted_form_ids) ? $sample->submitted_form_ids : []),
+            ]);
+        }
+
+        User::role(['head_analysis', 'admin'])->get()->each(
+            fn (User $user) => $user->notify(new JobOrderPendingReview($jobOrder))
+        );
+
+        $fresh = $jobOrder->fresh(['analyses.assignee', 'packages', 'samples']) ?? $jobOrder;
+        LabQueueUpdated::notify([
+            LabQueueUpdated::SCOPE_HEAD,
+            LabQueueUpdated::SCOPE_ANALYST,
+        ], $fresh->id);
+
+        return $fresh;
+    }
+
+    /**
+     * Send one result sheet (controlled form) to Head; sibling sheets on the sample may stay open.
+     *
+     * @param  list<array{name?: mixed, prc_id?: mixed}>|null  $signatories
+     */
+    public function submitFormForReview(
+        JobOrder $jobOrder,
+        User $analyst,
+        int $formId,
+        ?int $sampleId = null,
+        ?array $signatories = null,
+    ): JobOrder {
+        if ($jobOrder->status !== JobOrderStatus::InAnalysis) {
+            throw ValidationException::withMessages([
+                'job_order' => 'Only jobs still in analysis can be sent to Head.',
+            ]);
+        }
+
+        $jobOrder->load(['analyses.assignee', 'analyses.analysisType', 'packages', 'samples']);
+
+        $reports = $this->reports->reportsForJobOrder($jobOrder, $analyst, withValues: false);
+        $report = $this->reports->pickReport($reports, $sampleId, $formId);
+
+        if (! $report->controlledForm || (int) $report->controlledForm->id !== $formId) {
+            throw ValidationException::withMessages([
+                'form_id' => 'Result sheet not found on this job order.',
+            ]);
+        }
+
+        if ($sampleId !== null && (int) ($report->sampleId ?? 0) !== $sampleId) {
+            throw ValidationException::withMessages([
+                'sample_id' => 'That result sheet does not belong to the selected sample.',
+            ]);
+        }
+
+        $resolvedSampleId = $report->sampleId !== null ? (int) $report->sampleId : $sampleId;
+        if ($resolvedSampleId === null) {
+            throw ValidationException::withMessages([
+                'sample_id' => 'Select the sample for this result sheet.',
+            ]);
+        }
+
+        $sample = $jobOrder->samples->firstWhere('id', $resolvedSampleId);
+        if ($sample === null) {
+            throw ValidationException::withMessages([
+                'sample_id' => 'Sample not found on this job order.',
+            ]);
+        }
+
+        if ($sample->released_at !== null) {
+            throw ValidationException::withMessages([
+                'sample_id' => 'This sample was already released.',
+            ]);
+        }
+
+        if (! $this->reports->userCanAccessCombined($report->analyses, $analyst, $jobOrder)
+            && ! $analyst->hasRole('admin')
+        ) {
+            throw ValidationException::withMessages([
+                'job_order' => 'You are not assigned to this result sheet.',
+            ]);
+        }
+
+        $submittedFormIds = array_values(array_map(
+            'intval',
+            is_array($sample->submitted_form_ids) ? $sample->submitted_form_ids : [],
+        ));
+        if (in_array($formId, $submittedFormIds, true)) {
+            throw ValidationException::withMessages([
+                'form_id' => 'This result sheet was already sent to Head.',
+            ]);
+        }
+
+        $lines = $report->analyses->values();
+        if ($lines->isEmpty()) {
+            throw ValidationException::withMessages([
+                'form_id' => 'No assays found on this result sheet.',
+            ]);
+        }
+
+        $incomplete = $lines->reject(fn (JobOrderAnalysis $line) => $this->lineHasResult($line));
+        if ($incomplete->isNotEmpty()) {
+            $names = $incomplete->pluck('name')->filter()->implode(', ');
+
+            throw ValidationException::withMessages([
+                'job_order' => 'Encode all results for this result sheet before sending to Head'
+                    .($names !== '' ? ': '.$names : '.'),
+            ]);
+        }
+
+        foreach ($lines as $line) {
+            if ($line->isSamplePreparation() && $line->status !== JobOrderAnalysisStatus::Completed) {
+                $line->update([
+                    'status' => JobOrderAnalysisStatus::Completed,
+                    'completed_at' => now(),
+                    'assigned_to' => $line->assigned_to ?? $analyst->id,
+                ]);
             }
+        }
+
+        $updates = $this->applySubmitSignatories(
+            $jobOrder,
+            $analyst,
+            $signatories,
+            sampleId: $resolvedSampleId,
+            formId: $formId,
+            reportForm: $report->controlledForm,
+        );
+
+        $submittedFormIds[] = $formId;
+        $submittedFormIds = array_values(array_unique($submittedFormIds));
+
+        $samplePayload = [
+            'submitted_form_ids' => $submittedFormIds,
+        ];
+        if ($sample->submitted_for_review_at === null) {
+            $samplePayload['submitted_for_review_at'] = now();
+        }
+        $sample->update($samplePayload);
+
+        $jobOrder->unsetRelation('samples');
+        $jobOrder->load('samples');
+
+        if ($this->allSampleReportsSubmitted($jobOrder, $analyst)) {
+            $updates['status'] = JobOrderStatus::PendingReview;
+        }
+
+        if ($updates !== []) {
+            $jobOrder->update($updates);
         }
 
         User::role(['head_analysis', 'admin'])->get()->each(
@@ -1934,7 +2116,28 @@ class JobOrderService
             ]);
         }
 
-        if ($sample->submitted_for_review_at !== null) {
+        $alreadySubmitted = is_array($sample->submitted_form_ids) && $sample->submitted_form_ids !== [];
+        if ($sample->submitted_for_review_at !== null && $alreadySubmitted) {
+            // Allow finishing remaining sheets via form_id; whole-sample path only once.
+            $reports = $this->reports->reportsForJobOrder($jobOrder, $analyst, withValues: false)
+                ->filter(fn (AnalysisResultReport $report) => (int) ($report->sampleId ?? 0) === $sampleId
+                    && $report->controlledForm);
+            $submitted = array_map('intval', $sample->submitted_form_ids);
+            $pending = $reports->reject(
+                fn (AnalysisResultReport $report) => in_array((int) $report->controlledForm->id, $submitted, true),
+            );
+            if ($pending->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'form_id' => 'Send each remaining result sheet separately (include form_id).',
+                ]);
+            }
+
+            throw ValidationException::withMessages([
+                'sample_id' => 'This sample was already sent to Head.',
+            ]);
+        }
+
+        if ($sample->submitted_for_review_at !== null && ! $alreadySubmitted) {
             throw ValidationException::withMessages([
                 'sample_id' => 'This sample was already sent to Head.',
             ]);
@@ -1975,13 +2178,25 @@ class JobOrderService
             $analyst,
             $signatories,
             sampleId: $sampleId,
+            formId: null,
         );
 
-        $sample->update(['submitted_for_review_at' => now()]);
+        $formIds = $this->reports->reportsForJobOrder($jobOrder, $analyst, withValues: false)
+            ->filter(fn (AnalysisResultReport $report) => (int) ($report->sampleId ?? 0) === $sampleId)
+            ->map(fn (AnalysisResultReport $report) => (int) ($report->controlledForm?->id ?? 0))
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $sample->update([
+            'submitted_for_review_at' => now(),
+            'submitted_form_ids' => $formIds,
+        ]);
         $jobOrder->unsetRelation('samples');
         $jobOrder->load('samples');
 
-        if ($jobOrder->samples->every(fn ($row) => $row->submitted_for_review_at !== null)) {
+        if ($this->allSampleReportsSubmitted($jobOrder, $analyst)) {
             $updates['status'] = JobOrderStatus::PendingReview;
         }
 
@@ -2011,9 +2226,11 @@ class JobOrderService
         User $analyst,
         ?array $signatories,
         ?int $sampleId,
+        ?int $formId = null,
+        mixed $reportForm = null,
     ): array {
         $updates = [];
-        $resultForm = $this->reports->matchingControlledForm($jobOrder);
+        $resultForm = $reportForm ?? $this->reports->matchingControlledForm($jobOrder);
         if ($resultForm === null) {
             return $updates;
         }
@@ -2042,10 +2259,20 @@ class JobOrderService
                     fn ($report) => (int) ($report->sampleId ?? 0) === $sampleId
                 ),
             )
+            ->when(
+                $formId !== null,
+                fn ($reports) => $reports->filter(
+                    fn ($report) => (int) ($report->controlledForm?->id ?? 0) === $formId
+                ),
+            )
             ->map(fn ($report) => $report->controlledForm)
             ->filter()
             ->unique(fn ($form) => $form->form_code)
             ->values();
+
+        if ($requiredForms->isEmpty() && $reportForm !== null) {
+            $requiredForms = collect([$reportForm]);
+        }
 
         $missing = ResultSignatories::missingFormCodes(
             $updates['result_signatories'] ?? $stored,
@@ -2060,6 +2287,48 @@ class JobOrderService
         }
 
         return $updates;
+    }
+
+    /**
+     * True when every sample has every resolved result sheet listed in submitted_form_ids
+     * (or has no controlled reports and already has submitted_for_review_at).
+     */
+    private function allSampleReportsSubmitted(JobOrder $jobOrder, User $user): bool
+    {
+        $jobOrder->loadMissing('samples');
+        if ($jobOrder->samples->isEmpty()) {
+            return true;
+        }
+
+        $reports = $this->reports->reportsForJobOrder($jobOrder, $user, withValues: false);
+
+        foreach ($jobOrder->samples as $sample) {
+            $sampleReports = $reports->filter(
+                fn (AnalysisResultReport $report) => (int) ($report->sampleId ?? 0) === (int) $sample->id
+                    && $report->controlledForm,
+            );
+            $submitted = array_values(array_map(
+                'intval',
+                is_array($sample->submitted_form_ids) ? $sample->submitted_form_ids : [],
+            ));
+
+            if ($sampleReports->isEmpty()) {
+                if ($sample->submitted_for_review_at === null) {
+                    return false;
+                }
+
+                continue;
+            }
+
+            foreach ($sampleReports as $report) {
+                $id = (int) $report->controlledForm->id;
+                if (! in_array($id, $submitted, true)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     public function userCanSubmitForReview(JobOrder $jobOrder, User $user): bool
@@ -2109,9 +2378,21 @@ class JobOrderService
             return;
         }
 
-        $assignees = $jobOrder->analyses->pluck('assigned_to')->filter()->unique();
+        $qualifiedTypeIds = $user->analysisTypes()
+            ->pluck('analysis_types.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
 
-        if (! $assignees->contains($user->id)) {
+        $canSubmit = $jobOrder->analyses->contains(function (JobOrderAnalysis $line) use ($user, $qualifiedTypeIds) {
+            if ((int) $line->assigned_to === (int) $user->id) {
+                return true;
+            }
+
+            return $line->analysis_type_id
+                && in_array((int) $line->analysis_type_id, $qualifiedTypeIds, true);
+        });
+
+        if (! $canSubmit) {
             throw ValidationException::withMessages([
                 'job_order' => 'You are not assigned to this job.',
             ]);
@@ -2129,21 +2410,80 @@ class JobOrderService
             ->latest('id')
             ->limit(40)
             ->get()
-            ->filter(fn (JobOrder $job) => $this->userCanSubmitForReview($job, $user))
+            ->filter(function (JobOrder $job) use ($user) {
+                if ($this->userCanSubmitForReview($job, $user)) {
+                    return true;
+                }
+
+                if ($user->hasRole('admin')) {
+                    return true;
+                }
+
+                $reports = $this->reports->reportsForJobOrder($job, $user, withValues: false);
+
+                return $reports->contains(
+                    fn (AnalysisResultReport $report) => $this->reports->userCanAccessCombined(
+                        $report->analyses,
+                        $user,
+                        $job,
+                    ),
+                );
+            })
             ->values();
 
         return $jobs->map(function (JobOrder $job) use ($user) {
+            $reports = $this->reports->reportsForJobOrder($job, $user, withValues: false);
             $sampleCount = $job->samples->count();
-            $sampleRows = $job->samples->values()->map(function ($sample, int $index) use ($job, $sampleCount) {
+            $sampleRows = $job->samples->values()->map(function ($sample, int $index) use ($job, $sampleCount, $reports, $user) {
                 $lines = $job->analyses
                     ->filter(fn (JobOrderAnalysis $line) => (int) $line->sample_id === (int) $sample->id)
                     ->values();
-                $incomplete = $lines->reject(fn (JobOrderAnalysis $line) => $this->lineHasResult($line));
-                $submitted = $sample->submitted_for_review_at !== null;
+                $submittedFormIds = array_values(array_map(
+                    'intval',
+                    is_array($sample->submitted_form_ids) ? $sample->submitted_form_ids : [],
+                ));
                 $released = $sample->released_at !== null;
-                $sampleComplete = $lines->isNotEmpty() && $incomplete->isEmpty();
-                // Preview stays available after Send to Head as long as this sample's assays are complete.
-                $canPreviewSample = $sampleComplete;
+
+                $accessibleReports = $reports
+                    ->filter(fn (AnalysisResultReport $report) => (int) ($report->sampleId ?? 0) === (int) $sample->id)
+                    ->filter(fn (AnalysisResultReport $report) => $user->hasRole('admin')
+                        || $this->reports->userCanAccessCombined($report->analyses, $user, $job))
+                    ->values();
+
+                $reportRows = $accessibleReports->map(function (AnalysisResultReport $report) use ($job, $sample, $submittedFormIds, $released) {
+                    $formId = (int) ($report->controlledForm?->id ?? 0);
+                    $formSubmitted = $formId > 0 && in_array($formId, $submittedFormIds, true);
+                    $incomplete = $report->analyses->reject(
+                        fn (JobOrderAnalysis $line) => $this->lineHasResult($line),
+                    );
+                    $sheetComplete = $report->analyses->isNotEmpty() && $incomplete->isEmpty();
+                    $canPreview = $report->canPreview() || $sheetComplete;
+                    $canSubmit = ! $released && ! $formSubmitted && $sheetComplete && $formId > 0;
+                    $query = http_build_query(array_filter([
+                        'sample_id' => $sample->id,
+                        'form_id' => $formId > 0 ? $formId : null,
+                    ]));
+
+                    return [
+                        'form_id' => $formId > 0 ? $formId : null,
+                        'title' => $report->title,
+                        'can_submit' => $canSubmit,
+                        'can_preview' => $canPreview,
+                        'preview_url' => $canPreview
+                            ? "/analyst/job-orders/{$job->id}/result-report".($query !== '' ? "?{$query}" : '')
+                            : null,
+                        'submitted' => $formSubmitted,
+                        'missing' => $incomplete->pluck('name')->values()->all(),
+                    ];
+                })->values()->all();
+
+                $myIncomplete = collect($reportRows)->flatMap(fn (array $row) => $row['missing'])->unique()->values()->all();
+                $canSubmitSample = collect($reportRows)->contains(fn (array $row) => $row['can_submit'] === true);
+                $canPreviewSample = collect($reportRows)->contains(fn (array $row) => $row['can_preview'] === true);
+                $readyReport = collect($reportRows)->first(
+                    fn (array $row) => $row['can_submit'] === true || $row['can_preview'] === true,
+                );
+                $submitted = $sample->submitted_for_review_at !== null;
 
                 return [
                     'id' => $sample->id,
@@ -2154,14 +2494,18 @@ class JobOrderService
                         $index,
                         $sampleCount,
                     ),
-                    'can_submit' => ! $submitted && $sampleComplete,
+                    'can_submit' => $canSubmitSample,
                     'can_preview' => $canPreviewSample,
-                    'preview_url' => $canPreviewSample
-                        ? "/analyst/job-orders/{$job->id}/result-report?sample_id={$sample->id}"
-                        : null,
+                    'form_id' => $readyReport['form_id'] ?? null,
+                    'preview_url' => $readyReport['preview_url']
+                        ?? ($canPreviewSample
+                            ? "/analyst/job-orders/{$job->id}/result-report?sample_id={$sample->id}"
+                            : null),
                     'submitted' => $submitted,
                     'released' => $released,
-                    'missing' => $incomplete->pluck('name')->values()->all(),
+                    'missing' => $myIncomplete,
+                    'reports' => $reportRows,
+                    'line_count' => $lines->count(),
                 ];
             })->values()->all();
 
@@ -2171,31 +2515,38 @@ class JobOrderService
             $anySampleReady = collect($sampleRows)->contains(fn (array $row) => $row['can_submit'] === true);
             $allLinesReady = $job->analyses->every(fn (JobOrderAnalysis $line) => $this->lineHasResult($line));
 
-            $incompleteNames = $job->analyses
-                ->reject(fn (JobOrderAnalysis $line) => $this->lineHasResult($line))
-                ->pluck('name')
+            $incompleteNames = collect($sampleRows)
+                ->flatMap(fn (array $row) => $row['missing'])
+                ->unique()
                 ->values()
                 ->all();
 
-            $summary = $this->reports->forJobOrder($job, $user, withValues: false)->summary();
+            $anyReportPreview = $reports->contains(fn (AnalysisResultReport $report) => $report->canPreview());
             $anySamplePreview = collect($sampleRows)->contains(fn (array $row) => $row['can_preview'] === true);
-            $previewUrl = "/analyst/job-orders/{$job->id}/result-report";
+            $readySample = collect($sampleRows)->first(
+                fn (array $row) => $row['can_submit'] === true || $row['can_preview'] === true,
+            );
+            $previewUrl = $readySample['preview_url']
+                ?? "/analyst/job-orders/{$job->id}/result-report";
 
             return [
                 'id' => $job->id,
                 'reference_no' => $job->reference_no,
                 'customer_name' => $job->customer_name,
-                'can_submit' => $anySampleReady || ($sampleRows === [] && $allLinesReady),
-                // Allow preview when any sample sheet is ready (not only when every sample is complete).
-                'can_preview' => (bool) ($summary['can_preview'] || $anySamplePreview),
-                'preview_message' => $summary['message'],
+                'can_submit' => $anySampleReady
+                    || ($sampleRows === [] && $allLinesReady && $this->userCanSubmitForReview($job, $user)),
+                'can_preview' => $anyReportPreview || $anySamplePreview,
+                'preview_message' => null,
                 'preview_url' => $previewUrl,
+                'form_id' => $readySample['form_id'] ?? null,
                 'missing' => $incompleteNames,
                 'review_notes' => $job->review_notes,
                 'signatory' => $this->consolidationSignatoryPayload($job),
                 'footer' => $this->consolidationFooterPayload($job),
                 'samples' => $sampleRows,
-                'unscoped_can_submit' => $unscoped->isNotEmpty() && $unscopedIncomplete->isEmpty(),
+                'unscoped_can_submit' => $unscoped->isNotEmpty()
+                    && $unscopedIncomplete->isEmpty()
+                    && $this->userCanSubmitForReview($job, $user),
                 'lines' => $job->analyses->map(fn (JobOrderAnalysis $line) => [
                     'id' => $line->id,
                     'sample_id' => $line->sample_id,
@@ -2437,6 +2788,30 @@ class JobOrderService
         }
     }
 
+    private function analystCanWorkOn(JobOrderAnalysis $analysis, User $analyst): bool
+    {
+        $analysis->loadMissing(['jobOrder', 'analysisType']);
+
+        $jobStatus = $analysis->jobOrder?->status;
+        $allowed = [
+            JobOrderStatus::InAnalysis,
+            JobOrderStatus::PendingReview,
+            JobOrderStatus::ReadyForPickup,
+        ];
+
+        if (! in_array($jobStatus, $allowed, true)) {
+            return false;
+        }
+
+        if ($analyst->hasRole('admin')) {
+            return true;
+        }
+
+        $typeId = $analysis->analysis_type_id;
+
+        return (bool) ($typeId && $analyst->analysisTypes()->where('analysis_types.id', $typeId)->exists());
+    }
+
     private function assertAnalystCanWorkOn(JobOrderAnalysis $analysis, User $analyst): void
     {
         $analysis->loadMissing(['jobOrder', 'analysisType']);
@@ -2454,16 +2829,7 @@ class JobOrderService
             ]);
         }
 
-        if ($analyst->hasRole('admin')) {
-            return;
-        }
-
-        if ((int) $analysis->assigned_to === (int) $analyst->id) {
-            return;
-        }
-
-        $typeId = $analysis->analysis_type_id;
-        if ($typeId && $analyst->analysisTypes()->where('analysis_types.id', $typeId)->exists()) {
+        if ($this->analystCanWorkOn($analysis, $analyst)) {
             return;
         }
 
@@ -2681,7 +3047,10 @@ class JobOrderService
                     fn (JobOrderAnalysis $line) => $this->lineHasResult($line)
                 );
                 if (! $stillComplete) {
-                    $sample->update(['submitted_for_review_at' => null]);
+                    $sample->update([
+                        'submitted_for_review_at' => null,
+                        'submitted_form_ids' => null,
+                    ]);
                 }
             }
 

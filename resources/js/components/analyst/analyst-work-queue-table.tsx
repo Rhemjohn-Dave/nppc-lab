@@ -218,10 +218,11 @@ export default function AnalystWorkQueueTable({
                             const consolidation = consolidationsById.get(
                                 job.id,
                             );
-                            const readySampleId =
+                            const readySample =
                                 consolidation?.samples?.find(
                                     (sample) => sample.can_submit,
-                                )?.id ?? null;
+                                ) ?? null;
+                            const readySampleId = readySample?.id ?? null;
                             const canSendToHead = Boolean(
                                 readySampleId != null ||
                                     consolidation?.unscoped_can_submit ||
@@ -232,16 +233,40 @@ export default function AnalystWorkQueueTable({
                                     (sample) =>
                                         sample.can_preview && sample.preview_url,
                                 ) ?? null;
+                            const taskPreview = tasks.find(
+                                (task) => task.report?.can_preview,
+                            );
+                            const taskPreviewQuery = (() => {
+                                if (!taskPreview?.report) {
+                                    return '';
+                                }
+                                const params = new URLSearchParams();
+                                if (taskPreview.sample_id != null) {
+                                    params.set(
+                                        'sample_id',
+                                        String(taskPreview.sample_id),
+                                    );
+                                }
+                                if (taskPreview.report.form_id != null) {
+                                    params.set(
+                                        'form_id',
+                                        String(taskPreview.report.form_id),
+                                    );
+                                }
+                                const query = params.toString();
+
+                                return query ? `?${query}` : '';
+                            })();
                             const previewUrl =
                                 readyPreviewSample?.preview_url ||
                                 consolidation?.preview_url ||
-                                (tasks[0]?.report?.can_preview
-                                    ? `/analyst/job-orders/${job.id}/result-report`
+                                (taskPreview?.report?.can_preview
+                                    ? `/analyst/job-orders/${job.id}/result-report${taskPreviewQuery}`
                                     : null);
                             const canPreview = Boolean(
                                 readyPreviewSample?.can_preview ||
                                     consolidation?.can_preview ||
-                                    tasks[0]?.report?.can_preview ||
+                                    taskPreview?.report?.can_preview ||
                                     tasks.some(
                                         (task) =>
                                             task.status === 'completed' &&

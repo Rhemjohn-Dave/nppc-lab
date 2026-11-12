@@ -169,6 +169,20 @@ class MatrixAnchorBelowTest extends TestCase
         $this->assertSame('ww_fo2_matrix', $reviewedAnchor['below'] ?? null);
         $this->assertSame('fo2_form_meta', $reviewedAnchor['above'] ?? null);
         $this->assertGreaterThan(0, (float) ($reviewedAnchor['above_offset_mm'] ?? 0));
+
+        foreach ([
+            'results.analyst_name',
+            'results.analyst_name_2',
+            'results.analyst_name_3',
+            'results.analyst_name_4',
+        ] as $signatoryField) {
+            $field = $revision->fields->firstWhere('name', $signatoryField);
+            $this->assertNotNull($field, $signatoryField);
+            $anchor = is_array($field->options['anchor'] ?? null) ? $field->options['anchor'] : [];
+            $this->assertSame('ww_fo2_matrix', $anchor['below'] ?? null, $signatoryField);
+            $this->assertSame('fo2_form_meta', $anchor['above'] ?? null, $signatoryField);
+            $this->assertGreaterThan(0, (float) ($anchor['above_offset_mm'] ?? 0), $signatoryField);
+        }
     }
 
     public function test_form_meta_is_pinned_above_page_stamp(): void

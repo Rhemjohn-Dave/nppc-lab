@@ -12,7 +12,7 @@ It covers:
 - controlled forms flow
 - technical architecture
 
-Operational rules described here match the lab as of September 2026: Head **JO approval** after costing (before print / send to analysts), package designated analysts, least-busy **soft** assignment when sending to analysts (qualified analysts may encode teammate-suggested lines on shared PCs; encode takes ownership), Send to Head then Head **result** release, wet-sign paper after dates are frozen, Receiving printing JO/RFA copies after JO approval (and reprints after result release), and controlled-form binding for RFA (global), package result sheets, and standalone-test sheets (with package member opt-out printing as `-`). Payment / cashier settlement stays outside LMIS.
+Operational rules described here match the lab as of September 2026: Head **JO approval** after costing (before print / send to analysts), package designated analysts, Admin → Assignments deciding who sees each test type after Send to analysts (all assignees for a type see that line; encode takes ownership), Send to Head then Head **result** release, wet-sign paper after dates are frozen, Receiving printing JO/RFA copies after JO approval (and reprints after result release), and controlled-form binding for RFA (global), package result sheets, and standalone-test sheets (with package member opt-out printing as `-`). Payment / cashier settlement stays outside LMIS.
 
 ---
 
@@ -24,7 +24,7 @@ The NPPC Laboratory Management System is used to manage the complete laboratory 
 In simple terms, the system helps the laboratory:
 - receive customer requests
 - record samples and requested analyses (including analysis packages)
-- assign work fairly among analysts who are qualified for each test
+- route each test to the analysts assigned for that type
 - track progress of laboratory testing
 - preview official result overlays on screen
 - print Request for Analysis (RFA) and result forms at the right time
@@ -72,7 +72,7 @@ They are responsible for:
 Receiving is the bridge between intake and laboratory processing. JO/RFA print unlocks after Head approves the Job Order (`jo_approved`). Payment proof ("receipt") is handled outside LMIS. Ready for pickup is never set by RFA print.
 
 ### 3. Analyst
-Analysts encode the laboratory work suggested to them or available via their Admin Assignments qualifications.
+Analysts encode only the laboratory work for analysis types checked for them in Admin → Assignments.
 
 They are responsible for:
 - viewing analyses assigned to them (per test)
@@ -86,7 +86,7 @@ They are responsible for:
 
 Print and download of the official result sheet stay off until Head releases. Preview stays on so the designated analyst can check the overlay before sending. Head **return** still sends lines back into the analysis queue when a full re-encode cycle is needed; routine value/signatory fixes before print do not require return.
 
-Analysts encode lines suggested to them or any open line for types they are qualified for (Admin → Assignments), after Receiving has sent the job to analysts. First encode takes ownership of the line; later corrections keep that assignee.
+Analysts encode only the test types checked for them in Admin → Assignments, after Receiving has sent the job to analysts. If two analysts share a type, both see that line. First encode takes ownership of the line; later corrections keep that assignee.
 
 ### 4. Head Analysis
 Head Analysis has **two distinct checkpoints**:
@@ -247,14 +247,14 @@ Payment (cashier / billing) stays **outside** LMIS after print.
 Receiving prints 3 JO copies (customer, accounting, Head file), then clicks **Send to analysts** from the **Receiving queue** (or from the open Job Order). Samples were already captured at intake; this step:
 - records lab-acceptance time (`received_at` / Receipt time on result sheets, Asia/Manila)
 - moves the job to In analysis
-- **suggests each test line** to a qualified analyst (soft `assigned_to`)
+- marks each test line **Assigned** when at least one analyst is checked for that type in Admin → Assignments (otherwise Pending); `assigned_to` stays empty until someone encodes
 
-Assignment uses Admin → Assignments. Among people checked for that test type, the line is **suggested** to whoever has the **fewest open tasks** (`assigned_to`). Within the same send, counts update after each line so a multi-test package is spread when more than one person can do those tests. If nobody is qualified, the line stays unassigned. The package signatory is **not** used at this step.
+Assignment uses Admin → Assignments only. Every analyst checked for a type sees that line on their queue. There is **no** least-busy / open-task load balancing. If nobody is checked for a type, the line stays Pending. The package signatory is **not** used at this step.
 
-`assigned_to` is a soft suggestion for shared lab PCs: any analyst qualified for that analysis type may open and encode the line. The first person who saves a draft or completes it takes ownership (`assigned_to` updates to them). Unqualified analysts stay blocked.
+The first person who saves a draft or completes a line takes ownership (`assigned_to` updates to them). Analysts who are not checked for that type stay blocked and do not see the line.
 
 ### Step 5. Analysts encode results
-Each analyst sees lines suggested to them **and** other open lines for types they are qualified for. Drafts and completes. Completing a line does **not** email the customer and does **not** send the job to Head. An analyst who can work a line on a sample may correct that sample’s description until Head releases the sample; the saved text is what the result sheet prints. Wastewater, River water, and Abstracted water stay those three choices. The same analyst may correct the intake facts that the open result form prints — specimen, water supply or sampling point, who collected the sample, and the sampling or collection time — until that sample is released. On a normal job those values are shared by every result. On a receiving-bulk job, location, sample point, and collection time stay on the sample being edited.
+Each analyst sees **only** lines for types assigned to them. Example: wastewater physico types for Analyst 1 and a microbiological package (`PKG-MIC-NDW`) for Analyst 2 on the same JO → Analyst 1 encodes FO2 lines only, Analyst 2 encodes FO4 package members only; the sample still yields **two** result sheets. Drafts and completes. Completing a line does **not** email the customer and does **not** send the job to Head. An analyst who can work a line on a sample may correct that sample’s description until Head releases the sample; the saved text is what the result sheet prints. Wastewater, River water, and Abstracted water stay those three choices. The same analyst may correct the intake facts that the open result form prints — specimen, water supply or sampling point, who collected the sample, and the sampling or collection time — until that sample is released. On a normal job those values are shared by every result. On a receiving-bulk job, location, sample point, and collection time stay on the sample being edited.
 
 Encode fields:
 - **Result value** is always required.
@@ -262,14 +262,15 @@ Encode fields:
 - **Method** prefills from Procedures (`analysis_types.method`) and stays editable but optional. FO4 coliforms seed as `Multiple Tube Fermentation Technique* 9221, SMEWW`.
 - For physico result sheets **FO2 / FO2A / FO3 / FO37**, **Lab conditions** (temperature °C and humidity %) are required **before** encoding dates/results (not at Send to Head); values print on the sheet. Optional Remarks **Passed** / **Failed** shortcuts apply to **FO3 / FO37** only; **FO2 / FO2A** show Pass/Fail only when the analysis type has **Requires pass/fail** enabled in Procedures. **Send to Head** only collects analyst signatories.
 
-### Step 6. Designated analyst sends to Head
-When every line is complete:
-- the designated package analyst previews the result form on screen
-- they click **Send to Head**
-- the job becomes **Pending review**
-- Head is notified in-app
+### Step 6. Analysts send each result sheet to Head
+When a sample has **multiple** result sheets (package form + uncovered standalone types, or more than one package), each sheet can be previewed and sent independently once **that sheet’s** lines are complete. Sibling sheets on the same sample may still be open. Submit posts `sample_id` + `form_id`; `samples.submitted_form_ids` records which sheets were sent; `submitted_for_review_at` is stamped on the first sheet for that sample so Head can see it early.
 
-If the job has no package, any assigned analyst on that job may send it. Print and download of the official result PDF stay disabled.
+- Analysts who are qualified for every line on a sheet (Admin → Assignments), or the package signatory for a package sheet, may Send that sheet.
+- Whole-sample / whole-JO Send (no `form_id`) still requires every line in scope to be complete; package JOs without `form_id` still require the designated package analyst.
+- The job becomes **Pending review** only when **every** result sheet on **every** sample has been sent.
+- Head is notified in-app on each send.
+
+Print and download of the official result PDF stay disabled until Head release.
 
 ### Step 7. Head reviews and releases results
 Head reviews encoded values. They may return selected lines **before release** (job returns to In analysis). After release, return is locked.
@@ -392,7 +393,7 @@ The system uses the actual uploaded PDF page size (A4, short bond, long/folio). 
 ### Access Behavior
 - `admin` is allowed through role checks across workspaces
 - `receiving` is limited to intake-processing, send to analysts (after JO approval), and JO/RFA print after JO approval
-- `analyst` encodes suggested or qualified open lines (soft assignment; encode takes ownership); package signatory may preview combined overlays and submit for review; official print/download requires `reviewed_at`
+- `analyst` encodes only Admin → Assignments types (encode takes ownership); package signatory may preview combined overlays and submit for review; official print/download requires `reviewed_at`
 - `head_analysis` approves Job Orders after costing, then reviews Pending review jobs and releases results; RFA print routes on Head return 403 (Receiving prints RFA)
 - `accounting` has a read-only **Sales monitor** (`/accounting`) of Head-approved JO billed totals (by `jo_approved_at`); no workflow mutations; payment collection stays outside LMIS
 
@@ -426,10 +427,10 @@ Creates the job order, samples, analysis lines for **selected** tests only (link
 Operational counts and role-specific next steps.
 
 ### 3. Receiving Module
-Prices lines → status `pending_jo_approval`. After Head JO approval, `JobOrderService::receive()` requires `jo_approved`. Assignment uses `AnalystAssignmentPicker`: open-task counts (Assigned / Pending / In progress / Returned on In analysis jobs) among users on `analysis_assignments` for that type; lowest load, then lower user id; in-batch increment. RFA `print`/`pdf` abort unless `canPrintRfa()` (from `jo_approved` onward). Index chip `reviewed` lists `ReadyForPickup` jobs with `reviewed_at`. Copies via `?copies=` (1–20, default 3) with labels Customer / Accounting / Head file.
+Prices lines → status `pending_jo_approval`. After Head JO approval, `JobOrderService::receive()` requires `jo_approved`. Each analysis line becomes Assigned when `analysis_assignments` has at least one analyst for that type (`assigned_to` null until encode); otherwise Pending. RFA `print`/`pdf` abort unless `canPrintRfa()` (from `jo_approved` onward). Index chip `reviewed` lists `ReadyForPickup` jobs with `reviewed_at`. Copies via `?copies=` (1–20, default 3) with labels Customer / Accounting / Head file.
 
 ### 4. Analyst Module
-Queue includes lines suggested to the user (`assigned_to`) and other open lines for types on their Admin Assignments matrix (`can_work`). Draft/complete takes ownership. Package signatory (or admin) may view combined report JSON for preview. `can_preview` when the overlay is complete; `can_print` only when `reviewed_at` is set. Combined PDF `?print=1` and non-inline individual PDF download are forbidden until print is allowed. `submitForReview` may take optional `sample_id` on multi-sample JOs (`submitSampleForReview`): that sample’s lines must be complete; other samples stay encodable and the JO remains `in_analysis` until every sample is submitted. Omitting `sample_id` still requires all lines complete (whole-JO path). Package signatory (or any assignee if no package) gates submit. After release, `releasedResultPrintsFor()` lists jobs the signatory may print.
+Queue lists only lines whose `analysis_type_id` is on the user’s Admin Assignments matrix (`can_work` / `is_mine`). Draft/complete takes ownership. Task `report` comes from `forAnalysis` (that line’s sheet). Package signatory (or admin) may view combined report JSON for preview. `can_preview` when the overlay is complete; `can_print` only when `reviewed_at` is set. Combined PDF `?print=1` and non-inline individual PDF download are forbidden until print is allowed. `submitForReview` may take optional `sample_id` and/or `form_id`: with `form_id`, only that result sheet’s lines must be complete (`submitFormForReview`); sibling sheets stay open and `samples.submitted_form_ids` tracks sent sheets. With `sample_id` only, all lines on that sample must be complete. Omitting both still requires all lines complete (whole-JO path). Scoped `form_id` submit uses `userCanAccessCombined` on that sheet; unscoped package JOs still require the designated package analyst. JO becomes `pending_review` when every sample has every sheet submitted. After release, `releasedResultPrintsFor()` lists jobs the signatory may print.
 
 ### 5. Head Analysis Module
 Sidebar parent **Head Analysis** with children **JO approval** (`/head/jo`) and **Results** (`/head/results`). JO chips: awaiting / approved (download JO PDF). Results chips: awaiting release / released today (preview/download result overlay). Queues `pending_jo_approval` for **Approve JO** (`approveJobOrder` / batch). Results queue includes `pending_review` **and** `in_analysis` jobs that have at least one unreleased submitted sample. `sign()` accepts optional `sample_id` to release one sample; full release (`ready_for_pickup`, `reviewed_at`, `reviewed_by`, `ResultsReadyMail`, in-app `ResultsReleased`) runs only when every sample has `released_at`. Return (before that sample’s release) clears selected results back to In analysis, may clear that sample’s `submitted_for_review_at`, clears `result_signatories` when appropriate, and notifies the line assignee via `AnalysisReturned`. After the JO is fully released, return is blocked. Head RFA **print** aborts (Receiving prints); Head may **download** JO/result PDFs for review. Head **pdf** serves the controlled JO/RFA overlay. On result release, Head reviews the **analysis result** controlled form (`result-report` / `combined-pdf`): `can_preview` when the overlay is ready (before release); `can_print` / `?print=1` only after `reviewed_at`. RFA is not the released-results document.
@@ -465,10 +466,10 @@ Receiving updates line prices. Before JO approval, Receiving may add/remove pack
 `JobOrderService::approveJobOrder()`. Status `jo_approved`. `jo_approved_at` / `jo_approved_by` set. Notifies Receiving (and admin) via `JobOrderJoApproved`. Unlocks JO print and send to analysts.
 
 ### 4. Send to analysts (code: `receive`)
-UI label **Send to analysts**. Suggests each line via picker (soft `assigned_to`) and sets status `in_analysis`. Does **not** overwrite `received_at` if already stamped at pricing (fallback only if null). `TaskAssigned` soft-suggestion notifications. Only allowed from `jo_approved`.
+UI label **Send to analysts**. Marks each line Assigned when the type has Admin → Assignments qualifiers (`assigned_to` null until encode) and sets status `in_analysis`. Does **not** overwrite `received_at` if already stamped at pricing (fallback only if null). Only allowed from `jo_approved`.
 
 ### 5. Encode
-Line statuses: pending → assigned → in_progress → completed (or returned). Soft assignment: qualified analysts may encode teammate-suggested lines; draft/complete takes ownership and emits `LabQueueUpdated` for analyst boards.
+Line statuses: pending → assigned → in_progress → completed (or returned). Queue visibility follows Admin → Assignments only; draft/complete takes ownership and emits `LabQueueUpdated` for analyst boards.
 
 ### 6. Submit for review
 `JobOrderService::submitForReview()` (optional `sample_id` → `submitSampleForReview`). Sets `samples.submitted_for_review_at`. Status stays `in_analysis` until every sample is submitted, then `pending_review`. `JobOrderPendingReview` notifications. No customer email.
@@ -525,7 +526,6 @@ Operational screens paginate on the server, debounce search, keep PDF previews l
 ### Service-Driven Logic
 Domain logic lives in services, for example:
 - `JobOrderService` — intake (including package member opt-out), receive, encode, submit, release
-- `AnalystAssignmentPicker` — least-open-queue soft suggestion at send; qualified override + ownership on encode
 - `AnalysisResultReportResolver` — package-first then standalone form match; signatory preview access
 - `ControlledFormService` — form create/update, bindings, uniqueness
 - `FieldValueResolver` / `ControlledPdfFiller` — overlay values (including `-` for waived slots)
@@ -557,7 +557,6 @@ Lab print timestamps use `config('app.lab_timezone')` / `NPPC_LAB_TIMEZONE` (`As
 - `app/Http/Middleware/HandleInertiaRequests.php`
 - `app/Support/HistoryAccess.php`
 - `app/Services/JobOrderService.php`
-- `app/Services/AnalystAssignmentPicker.php`
 - `app/Services/AnalysisResultReportResolver.php`
 - `app/Support/AnalysisResultReport.php`
 

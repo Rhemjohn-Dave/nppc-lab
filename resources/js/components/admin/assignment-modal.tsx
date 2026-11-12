@@ -28,7 +28,6 @@ export type AssignmentAnalyst = {
     name: string;
     email: string;
     analysis_type_ids: number[];
-    active_tasks: number;
 };
 
 export type AssignmentProcedure = {

@@ -84,18 +84,13 @@ class AnalystController extends Controller
                 ->all();
 
         if (! $isAdmin) {
-            $openQuery->where(function ($query) use ($user, $qualifiedTypeIds) {
-                $query->where('assigned_to', $user->id);
-                if ($qualifiedTypeIds !== []) {
-                    $query->orWhereIn('analysis_type_id', $qualifiedTypeIds);
-                }
-            });
-            $completedQuery->where(function ($query) use ($user, $qualifiedTypeIds) {
-                $query->where('assigned_to', $user->id);
-                if ($qualifiedTypeIds !== []) {
-                    $query->orWhereIn('analysis_type_id', $qualifiedTypeIds);
-                }
-            });
+            if ($qualifiedTypeIds === []) {
+                $openQuery->whereRaw('0 = 1');
+                $completedQuery->whereRaw('0 = 1');
+            } else {
+                $openQuery->whereIn('analysis_type_id', $qualifiedTypeIds);
+                $completedQuery->whereIn('analysis_type_id', $qualifiedTypeIds);
+            }
         }
 
         if ($dayRange !== null) {
@@ -206,38 +201,36 @@ class AnalystController extends Controller
 
         $pageJobIds = $jobs->getCollection()->pluck('id');
 
-        // Include every line on page jobs so analysts can see teammate suggestions.
-        $tasks = JobOrderAnalysis::query()
+        // Only lines this analyst is assigned to (Admin → Assignments), not teammate types.
+        $tasksQuery = JobOrderAnalysis::query()
             ->with(['jobOrder.samples', 'analysisType', 'assignee:id,name'])
-            ->whereIn('job_order_id', $pageJobIds)
+            ->whereIn('job_order_id', $pageJobIds);
+
+        if (! $isAdmin) {
+            if ($qualifiedTypeIds === []) {
+                $tasksQuery->whereRaw('0 = 1');
+            } else {
+                $tasksQuery->whereIn('analysis_type_id', $qualifiedTypeIds);
+            }
+        }
+
+        $tasks = $tasksQuery
             ->get()
-            ->sortBy(function (JobOrderAnalysis $task) use ($user, $isAdmin) {
-                $isMine = $isAdmin || (int) $task->assigned_to === (int) $user->id;
+            ->sortBy(function (JobOrderAnalysis $task) {
                 $returned = $task->status === JobOrderAnalysisStatus::Returned ? 0 : 1;
-                $mineRank = $isMine ? 0 : 1;
 
                 return sprintf(
-                    '%d-%d-%s-%s',
+                    '%d-%s-%s',
                     $returned,
-                    $mineRank,
                     $task->jobOrder->reference_no,
                     $task->name,
                 );
             })
             ->values();
 
-        $reportByJobSample = [];
+        $reportByTaskId = [];
         foreach ($tasks as $task) {
-            $jobId = (int) $task->job_order_id;
-            $sampleKey = $task->sample_id !== null ? (int) $task->sample_id : 0;
-            $cacheKey = $jobId.':'.$sampleKey;
-            if (! isset($reportByJobSample[$cacheKey])) {
-                $allReports = $this->reports->reportsForJobOrder($task->jobOrder, $user, withValues: false);
-                $resolved = $task->sample_id !== null
-                    ? $this->reports->pickReport($allReports, (int) $task->sample_id, null)
-                    : $this->reports->forJobOrder($task->jobOrder, $user, withValues: false);
-                $reportByJobSample[$cacheKey] = $resolved;
-            }
+            $reportByTaskId[(int) $task->id] = $this->reports->forAnalysis($task, $user, withValues: false);
         }
 
         $editableSampleIds = [];
@@ -253,9 +246,9 @@ class AnalystController extends Controller
             }
         }
 
-        $tasks = $tasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin, $qualifiedTypeIds, $reportByJobSample, $editableSampleIds) {
-            $isMine = $isAdmin || (int) $task->assigned_to === (int) $user->id;
+        $tasks = $tasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin, $qualifiedTypeIds, $reportByTaskId, $editableSampleIds) {
             $canWork = $this->userCanWorkLine($user, $task, $qualifiedTypeIds);
+            $isMine = $canWork;
 
             $samples = $task->jobOrder->samples->values();
             $sampleCount = $samples->count();
@@ -332,7 +325,7 @@ class AnalystController extends Controller
                 'is_mine' => $isMine,
                 'can_work' => $canWork,
                 'report' => $this->taskReportSummary(
-                    ($resolvedReport = $reportByJobSample[(int) $task->job_order_id.':'.($task->sample_id !== null ? (int) $task->sample_id : 0)] ?? null) instanceof AnalysisResultReport
+                    ($resolvedReport = $reportByTaskId[(int) $task->id] ?? null) instanceof AnalysisResultReport
                         ? $resolvedReport->summary()
                         : null,
                     $task->jobOrder,
@@ -579,17 +572,29 @@ class AnalystController extends Controller
     {
         $data = $request->validate([
             'sample_id' => ['nullable', 'integer'],
+            'form_id' => ['nullable', 'integer', 'exists:controlled_forms,id'],
         ]);
 
         $sampleId = isset($data['sample_id']) ? (int) $data['sample_id'] : null;
+        $formId = isset($data['form_id']) ? (int) $data['form_id'] : null;
 
         $completed = $this->jobOrders->completeSampleAnalyses(
             $jobOrder,
             $request->user(),
             $sampleId,
+            $formId,
         );
 
         $count = count($completed);
+
+        if ($formId !== null) {
+            return back()->with(
+                'success',
+                $count === 1
+                    ? 'Result sheet assay marked complete.'
+                    : "{$count} assays on this result sheet marked complete.",
+            );
+        }
 
         if ($sampleId === null) {
             return back()->with(
@@ -612,19 +617,29 @@ class AnalystController extends Controller
     {
         $data = $request->validate([
             'sample_id' => ['nullable', 'integer', 'exists:samples,id'],
+            'form_id' => ['nullable', 'integer', 'exists:controlled_forms,id'],
             'signatories' => ['nullable', 'array', 'min:1', 'max:4'],
             'signatories.*.name' => ['nullable', 'string', 'max:180'],
             'signatories.*.prc_id' => ['nullable', 'string', 'max:60'],
         ]);
 
         $sampleId = isset($data['sample_id']) ? (int) $data['sample_id'] : null;
+        $formId = isset($data['form_id']) ? (int) $data['form_id'] : null;
 
         $this->jobOrders->submitForReview(
             $jobOrder,
             $request->user(),
             $data['signatories'] ?? null,
             $sampleId,
+            $formId,
         );
+
+        if ($formId !== null) {
+            return back()->with(
+                'success',
+                "Result sheet on {$jobOrder->reference_no} sent to Head for signature.",
+            );
+        }
 
         if ($sampleId !== null) {
             $sample = $jobOrder->samples()->find($sampleId);
@@ -819,7 +834,38 @@ class AnalystController extends Controller
         $user = $request->user();
         abort_unless($user !== null, 403);
 
-        $resolved = $this->reports->forJobOrder($jobOrder, $user);
+        $jobOrder->loadMissing(['analyses', 'samples', 'packages']);
+
+        $data = $request->validate([
+            'temperature_c' => ['nullable', 'string', 'max:40'],
+            'humidity_pct' => ['nullable', 'string', 'max:40'],
+            'test_report_no' => ['nullable', 'string', 'max:80'],
+            'lab_conditions' => ['nullable', 'string', 'max:2000'],
+            'references' => ['nullable', 'string', 'max:4000'],
+            'notes' => ['nullable', 'string', 'max:8000'],
+            'reset' => ['sometimes', 'boolean'],
+            'sample_id' => ['nullable', 'integer'],
+            'form_id' => ['nullable', 'integer'],
+        ]);
+
+        $sampleId = isset($data['sample_id']) ? (int) $data['sample_id'] : null;
+        $formId = isset($data['form_id']) ? (int) $data['form_id'] : null;
+
+        $allReports = $this->reports->reportsForJobOrder($jobOrder, $user, withValues: false);
+        // Mixed WW+micro JOs list FO4 first; forJobOrder would 403 the WW analyst.
+        // Prefer the sheet being edited, else any footer-capable sheet this user can access.
+        if ($formId || $sampleId) {
+            $resolved = $this->reports->pickReport($allReports, $sampleId, $formId);
+        } else {
+            $resolved = $allReports->first(
+                fn (AnalysisResultReport $report) => ResultFooter::formSupportsFooter($report->controlledForm)
+                    && (
+                        $user->hasRole('admin')
+                        || $this->reports->userCanAccessCombined($report->analyses, $user, $jobOrder)
+                    ),
+            ) ?? $this->reports->forJobOrder($jobOrder, $user);
+        }
+
         abort_unless(
             $this->reports->userCanAccessCombined($resolved->analyses, $user, $jobOrder)
             || $user->hasRole('admin'),
@@ -833,16 +879,6 @@ class AnalystController extends Controller
             422,
             'Lab conditions apply only to FO2 / FO2A / FO3 / FO37 physico result sheets.',
         );
-
-        $data = $request->validate([
-            'temperature_c' => ['nullable', 'string', 'max:40'],
-            'humidity_pct' => ['nullable', 'string', 'max:40'],
-            'test_report_no' => ['nullable', 'string', 'max:80'],
-            'lab_conditions' => ['nullable', 'string', 'max:2000'],
-            'references' => ['nullable', 'string', 'max:4000'],
-            'notes' => ['nullable', 'string', 'max:8000'],
-            'reset' => ['sometimes', 'boolean'],
-        ]);
 
         if (($data['reset'] ?? false) === true) {
             $jobOrder->update(['result_footer' => null]);
@@ -987,16 +1023,26 @@ class AnalystController extends Controller
             });
 
         if (! $isAdmin) {
-            $query->where(function ($outer) use ($user) {
+            $qualifiedTypeIds = $user->analysisTypes()
+                ->pluck('analysis_types.id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            $query->where(function ($outer) use ($user, $qualifiedTypeIds) {
                 $outer->where(function ($packageBound) use ($user) {
                     $packageBound->whereHas('packages')
                         ->whereHas('packages', function ($packages) use ($user) {
                             $packages->where('analysis_packages.signatory_user_id', $user->id);
                         });
-                })->orWhere(function ($typesOnly) use ($user) {
+                })->orWhere(function ($typesOnly) use ($user, $qualifiedTypeIds) {
                     $typesOnly->whereDoesntHave('packages')
-                        ->whereHas('analyses', function ($analyses) use ($user) {
-                            $analyses->where('assigned_to', $user->id);
+                        ->whereHas('analyses', function ($analyses) use ($user, $qualifiedTypeIds) {
+                            $analyses->where(function ($inner) use ($user, $qualifiedTypeIds) {
+                                $inner->where('assigned_to', $user->id);
+                                if ($qualifiedTypeIds !== []) {
+                                    $inner->orWhereIn('analysis_type_id', $qualifiedTypeIds);
+                                }
+                            });
                         });
                 });
             });
@@ -1050,7 +1096,7 @@ class AnalystController extends Controller
     {
         abort_unless($user instanceof User, 403);
 
-        if ($user->hasRole('admin') || (int) $analysis->assigned_to === (int) $user->id) {
+        if ($user->hasRole('admin') || $this->userCanWorkLine($user, $analysis)) {
             return;
         }
 
@@ -1076,9 +1122,14 @@ class AnalystController extends Controller
             return;
         }
 
+        $qualifiedTypeIds = $user->analysisTypes()
+            ->pluck('analysis_types.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
         abort_unless(
             $jobOrder->analyses->contains(
-                fn (JobOrderAnalysis $line) => (int) $line->assigned_to === (int) $user->id,
+                fn (JobOrderAnalysis $line) => $this->userCanWorkLine($user, $line, $qualifiedTypeIds),
             ),
             403,
         );
@@ -1143,17 +1194,13 @@ class AnalystController extends Controller
     }
 
     /**
-     * Same rule as the queue `can_work` flag: suggested assignee, or qualified for the type.
+     * Same rule as the queue `can_work` flag: Admin → Assignments for the analysis type.
      *
      * @param  list<int>|null  $qualifiedTypeIds
      */
     private function userCanWorkLine(User $user, JobOrderAnalysis $line, ?array $qualifiedTypeIds = null): bool
     {
         if ($user->hasRole('admin')) {
-            return true;
-        }
-
-        if ((int) $line->assigned_to === (int) $user->id) {
             return true;
         }
 

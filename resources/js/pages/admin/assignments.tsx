@@ -88,34 +88,20 @@ export default function AdminAssignments({ analysts, groups }: Props) {
             <LimsWorkspace className="gap-4">
                 <WorkspaceHeader
                     title="Assignments"
-                    description="Manage analyst test assignments and workload."
-                    actions={
-                        <Badge
-                            variant="outline"
-                            className="border-sky-200 bg-sky-50 text-[10px] font-medium text-sky-800"
-                        >
-                            Workload Auto-Balancer
-                        </Badge>
-                    }
+                    description="Choose which analysis types each analyst can see and encode after Receiving sends a job."
                 />
 
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                     <QueueKpi
                         label="Analysts"
                         value={analysts.length}
-                        hint="active"
+                        hint="accounts"
                     />
                     <QueueKpi
                         label="Procedures"
                         value={totalProcedures}
                         hint="assignable"
                         tone="info"
-                    />
-                    <QueueKpi
-                        label="Dispatch"
-                        value="Least-busy"
-                        hint="Sample Receiving"
-                        tone="success"
                     />
                 </div>
 
@@ -185,7 +171,6 @@ export default function AdminAssignments({ analysts, groups }: Props) {
                                     <th className="px-4 py-2.5">
                                         Assigned procedures
                                     </th>
-                                    <th className="px-4 py-2.5">Active tasks</th>
                                     <th className="px-4 py-2.5">Status</th>
                                     <th className="px-4 py-2.5 text-right">
                                         Action
@@ -245,9 +230,6 @@ export default function AdminAssignments({ analysts, groups }: Props) {
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-3 tabular-nums text-slate-800">
-                                                {analyst.active_tasks}
-                                            </td>
                                             <td className="px-4 py-3">
                                                 <Badge
                                                     variant="outline"
@@ -285,7 +267,7 @@ export default function AdminAssignments({ analysts, groups }: Props) {
                                 {filteredAnalysts.length === 0 ? (
                                     <tr>
                                         <td
-                                            colSpan={5}
+                                            colSpan={4}
                                             className="px-4 py-10 text-center text-sm text-slate-500"
                                         >
                                             {analysts.length === 0
@@ -337,24 +319,14 @@ export default function AdminAssignments({ analysts, groups }: Props) {
                                                         : 'Inactive'}
                                                 </Badge>
                                             </div>
-                                            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                                                <div>
-                                                    <p className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
-                                                        Assigned
-                                                    </p>
-                                                    <p className="mt-0.5 tabular-nums text-slate-900">
-                                                        {assigned} /{' '}
-                                                        {totalProcedures}
-                                                    </p>
-                                                </div>
-                                                <div>
-                                                    <p className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
-                                                        Active tasks
-                                                    </p>
-                                                    <p className="mt-0.5 tabular-nums text-slate-900">
-                                                        {analyst.active_tasks}
-                                                    </p>
-                                                </div>
+                                            <div className="mt-3 text-sm">
+                                                <p className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+                                                    Assigned
+                                                </p>
+                                                <p className="mt-0.5 tabular-nums text-slate-900">
+                                                    {assigned} /{' '}
+                                                    {totalProcedures}
+                                                </p>
                                             </div>
                                             <Button
                                                 type="button"

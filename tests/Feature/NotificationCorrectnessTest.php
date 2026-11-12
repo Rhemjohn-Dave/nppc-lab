@@ -31,13 +31,8 @@ class NotificationCorrectnessTest extends TestCase
         $line = $job->analyses()->firstOrFail();
 
         Notification::assertNotSentTo($analyst, TaskAssigned::class);
-        $this->assertSame($analyst->id, $line->assigned_to);
-
-        $notification = new TaskAssigned($job, $line);
-        $message = (string) ($notification->toArray($analyst)['message'] ?? '');
-
-        $this->assertTrue(str_contains($message, 'suggested for you'));
-        $this->assertTrue(str_contains($message, 'Any qualified analyst may encode it'));
+        $this->assertNull($line->assigned_to);
+        $this->assertTrue($analyst->analysisTypes()->where('analysis_types.id', $type->id)->exists());
     }
 
     public function test_return_sends_analysis_returned_not_task_assigned(): void
@@ -51,6 +46,14 @@ class NotificationCorrectnessTest extends TestCase
 
         $job = $this->intakePriceApproveReceive($receiving, [$type->id], 'Return Customer', 'return@example.com');
         $line = $job->analyses()->firstOrFail();
+
+        $this->actingAs($analyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'TR-001',
+            ])
+            ->assertOk();
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
@@ -98,6 +101,14 @@ class NotificationCorrectnessTest extends TestCase
 
         $job = $this->intakePriceApproveReceive($receiving, [$type->id], 'Release Customer', 'release@example.com');
         $line = $job->analyses()->firstOrFail();
+
+        $this->actingAs($analyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'TR-001',
+            ])
+            ->assertOk();
 
         $this->actingAs($analyst)
             ->post("/analyst/tasks/{$line->id}/complete", [
@@ -156,7 +167,7 @@ class NotificationCorrectnessTest extends TestCase
             'customer_email' => $email,
             'customer_contact' => '09170000000',
             'samples' => [
-                ['description' => 'Sample', 'matrix' => 'Solid'],
+                ['description' => 'Wastewater', 'matrix' => 'Liquid', 'classification' => 'Wastewater'],
             ],
             'analysis_type_ids' => $typeIds,
         ])->assertRedirect();

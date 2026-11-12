@@ -191,20 +191,28 @@ export default function PdfPreviewDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="fixed top-[5vh] left-1/2 z-50 flex max-h-[90vh] w-[calc(100%-2rem)] max-w-6xl -translate-x-1/2 translate-y-0 flex-col gap-3 overflow-hidden sm:max-w-6xl data-[state=open]:zoom-in-95">
-                <DialogHeader>
+            <DialogContent
+                className={
+                    bodyOverride
+                        ? 'fixed top-[5vh] left-1/2 z-50 flex h-[90vh] max-h-[90vh] w-[calc(100%-2rem)] max-w-6xl -translate-x-1/2 translate-y-0 flex-col gap-3 overflow-hidden sm:max-w-6xl data-[state=open]:zoom-in-95'
+                        : 'fixed top-[5vh] left-1/2 z-50 flex max-h-[90vh] w-[calc(100%-2rem)] max-w-6xl -translate-x-1/2 translate-y-0 flex-col gap-3 overflow-hidden sm:max-w-6xl data-[state=open]:zoom-in-95'
+                }
+            >
+                <DialogHeader className="shrink-0">
                     <DialogTitle>{resolvedTitle}</DialogTitle>
                     {description && (
                         <DialogDescription>{description}</DialogDescription>
                     )}
                 </DialogHeader>
 
-                {toolbar}
+                {toolbar ? <div className="shrink-0">{toolbar}</div> : null}
 
-                <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-slate-100">
+                <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-slate-100">
                     {bodyOverride ? (
-                        <div className="flex min-h-[min(60vh,520px)] items-center justify-center p-4">
-                            {bodyOverride}
+                        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 sm:p-4">
+                            <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-1 flex-col">
+                                {bodyOverride}
+                            </div>
                         </div>
                     ) : (
                         <>
@@ -234,7 +242,7 @@ export default function PdfPreviewDialog({
                     )}
                 </div>
 
-                <DialogFooter className="gap-2 sm:justify-between">
+                <DialogFooter className="shrink-0 gap-2 sm:justify-between">
                     <div className="flex flex-wrap items-center gap-3">
                         <Button
                             type="button"

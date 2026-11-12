@@ -26,7 +26,11 @@ class AnalystReadyToSubmitFilterTest extends TestCase
             'customer_email' => 'ready-for-head@example.com',
             'customer_contact' => '09170000000',
             'samples' => [
-                ['description' => 'River water', 'matrix' => 'Liquid'],
+                [
+                    'description' => 'Wastewater',
+                    'matrix' => 'Liquid',
+                    'classification' => 'Wastewater',
+                ],
             ],
             'analysis_type_ids' => [$type->id],
         ])->assertRedirect();
@@ -50,6 +54,14 @@ class AnalystReadyToSubmitFilterTest extends TestCase
 
         $line->refresh();
         $worker = $line->assignee ?? $analyst;
+
+        $this->actingAs($worker)
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'TR-001',
+            ])
+            ->assertOk();
 
         $this->actingAs($worker)
             ->post("/analyst/tasks/{$line->id}/complete", $this->completeResultPayload([

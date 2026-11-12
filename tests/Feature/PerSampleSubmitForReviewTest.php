@@ -131,7 +131,11 @@ class PerSampleSubmitForReviewTest extends TestCase
             'customer_email' => 'single-submit@example.com',
             'customer_contact' => '09170000000',
             'samples' => [
-                ['description' => 'Only sample', 'matrix' => 'Liquid'],
+                [
+                    'description' => 'Wastewater',
+                    'matrix' => 'Liquid',
+                    'classification' => 'Wastewater',
+                ],
             ],
             'analysis_type_ids' => [$type->id],
         ])->assertRedirect();
@@ -195,13 +199,15 @@ class PerSampleSubmitForReviewTest extends TestCase
             'customer_contact' => '09170000000',
             'samples' => [
                 [
-                    'description' => 'Sample A',
+                    'description' => 'Wastewater',
                     'matrix' => 'Liquid',
+                    'classification' => 'Wastewater',
                     'analysis_type_ids' => [$type->id],
                 ],
                 [
-                    'description' => 'Sample B',
+                    'description' => 'River water',
                     'matrix' => 'Liquid',
+                    'classification' => 'Wastewater',
                     'analysis_type_ids' => [$type->id],
                 ],
             ],

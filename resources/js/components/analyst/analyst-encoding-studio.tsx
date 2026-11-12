@@ -195,10 +195,6 @@ export default function AnalystEncodingStudio({
     const activeConsolidationSample = consolidation?.samples?.find(
         (sample) => Number(sample.id) === Number(activeSampleId),
     );
-    const sampleAlreadyAtHead = Boolean(
-        activeConsolidationSample?.submitted ||
-            activeSample?.submitted_for_review,
-    );
     const activeReleasedSample = releasedPrint?.samples?.find(
         (sample) => Number(sample.id) === Number(activeSampleId),
     );
@@ -218,34 +214,61 @@ export default function AnalystEncodingStudio({
                 task.is_sample_preparation === true ||
                 task.status === 'completed',
         );
-    const canSend = Boolean(
-        !sampleAlreadyAtHead &&
-            (activeConsolidationSample?.can_submit ||
-                (activeSampleId != null
-                    ? sampleFullyCompleted
-                    : consolidation?.unscoped_can_submit ||
-                      consolidation?.can_submit ||
-                      sampleFullyCompleted)),
+    const activeFormId = active?.report?.form_id ?? null;
+    const activeReportRow =
+        activeFormId != null
+            ? activeConsolidationSample?.reports?.find(
+                  (row) => Number(row.form_id) === Number(activeFormId),
+              )
+            : null;
+    const sheetAlreadyAtHead = Boolean(
+        activeReleasedSample?.released ||
+            activeReportRow?.submitted ||
+            (activeFormId == null &&
+                (activeConsolidationSample?.submitted ||
+                    activeSample?.submitted_for_review)),
     );
+    const canSend = Boolean(
+        !sheetAlreadyAtHead &&
+            (activeReportRow?.can_submit ||
+                activeConsolidationSample?.can_submit ||
+                consolidation?.unscoped_can_submit ||
+                (activeFormId == null &&
+                    (consolidation?.can_submit || sampleFullyCompleted))),
+    );
+    const taskPreviewQuery = (() => {
+        const params = new URLSearchParams();
+        if (activeSampleId != null) {
+            params.set('sample_id', String(activeSampleId));
+        }
+        if (activeFormId != null) {
+            params.set('form_id', String(activeFormId));
+        }
+        const query = params.toString();
+
+        return query ? `?${query}` : '';
+    })();
     const previewUrl =
+        activeReportRow?.preview_url ||
         (activeSampleId != null
             ? activeConsolidationSample?.preview_url ||
               activeReleasedSample?.preview_url ||
-              `/analyst/job-orders/${job.id}/result-report?sample_id=${activeSampleId}`
+              `/analyst/job-orders/${job.id}/result-report${taskPreviewQuery}`
             : null) ||
         consolidation?.preview_url ||
         releasedPrint?.preview_url ||
         (tasks[0]
-            ? `/analyst/job-orders/${job.id}/result-report`
+            ? `/analyst/job-orders/${job.id}/result-report${taskPreviewQuery}`
             : null);
-    // Overlay preview needs Completed lines (not drafts). Show the button once the
-    // sample is fully encoded so analysts know the next step is Save & Complete.
+    // Overlay preview needs Completed lines on this result sheet (not drafts).
     const canPreview = Boolean(
         previewUrl &&
-            (activeConsolidationSample?.can_preview ||
+            (activeReportRow?.can_preview ||
+                active?.report?.can_preview ||
+                activeConsolidationSample?.can_preview ||
                 activeReleasedSample?.can_preview ||
                 sampleFullyCompleted ||
-                sampleAlreadyAtHead ||
+                sheetAlreadyAtHead ||
                 consolidation?.can_preview ||
                 releasedPrint?.can_preview),
     );
@@ -768,7 +791,7 @@ export default function AnalystEncodingStudio({
                         {sampleFullyEncoded ||
                         sampleFullyCompleted ||
                         canSend ||
-                        sampleAlreadyAtHead ? (
+                        sheetAlreadyAtHead ? (
                             <div className="flex flex-col items-end gap-1">
                                 {sendGateError ? (
                                     <p
@@ -778,7 +801,7 @@ export default function AnalystEncodingStudio({
                                         {sendGateError}
                                     </p>
                                 ) : null}
-                                {sampleAlreadyAtHead && !canSend ? (
+                                {sheetAlreadyAtHead && !canSend ? (
                                     <p className="max-w-xs text-right text-[11px] font-medium text-emerald-800">
                                         This sample is already with Head.
                                     </p>

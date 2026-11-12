@@ -531,7 +531,11 @@ class AnalysisResultPdfTest extends TestCase
             'customer_email' => 'combined-result@example.com',
             'customer_contact' => '09170000888',
             'samples' => [
-                ['description' => 'River water', 'matrix' => 'Liquid'],
+                [
+                    'description' => 'Wastewater',
+                    'matrix' => 'Liquid',
+                    'classification' => 'Wastewater',
+                ],
             ],
             'analysis_type_ids' => $typeIds,
         ])->assertRedirect();
