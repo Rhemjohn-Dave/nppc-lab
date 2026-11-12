@@ -340,6 +340,7 @@ class AnalystController extends Controller
                     'customer_name' => $task->jobOrder->customer_name,
                     'company_name' => $task->jobOrder->company_name,
                     'classification' => $task->jobOrder->classification,
+                    'sampling_site' => $task->jobOrder->sampling_site,
                     'sample_storage_temp' => $task->jobOrder->sample_storage_temp,
                     'field_data' => $task->jobOrder->field_data,
                     'status' => $task->jobOrder->status->value,
@@ -418,7 +419,9 @@ class AnalystController extends Controller
 
         $data = $request->validate([
             'sample_id' => ['required', 'integer'],
+            'form_id' => ['nullable', 'integer'],
             'wastewater_source' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'sampling_site' => ['sometimes', 'nullable', 'string', 'max:255'],
             'specimen' => ['sometimes', 'nullable', 'string', 'max:255'],
             'sample_collected_by' => ['sometimes', 'nullable', 'string', 'max:255'],
             'sampling_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
@@ -435,8 +438,16 @@ class AnalystController extends Controller
         abort_unless($this->userCanEditSampleDescription($user, $sample), 403);
 
         $reports = $this->reports->reportsForJobOrder($jobOrder, $user, withValues: false);
-        $resolved = $this->reports->pickReport($reports, (int) $sample->id, null);
-        $allowed = collect(ResultSheetFacts::forReport($resolved))->pluck('key');
+        // Mixed FO2+FO4 samples list FO4 first; union keys from every sheet for this sample
+        // so FO2-only facts (sampling_site) still save when the WW sheet plots them.
+        $sampleReports = $reports->filter(
+            fn (AnalysisResultReport $report) => $report->sampleId === null
+                || (int) $report->sampleId === (int) $sample->id,
+        );
+        $allowed = $sampleReports
+            ->flatMap(fn (AnalysisResultReport $report) => collect(ResultSheetFacts::forReport($report))->pluck('key'))
+            ->unique()
+            ->values();
 
         if ($jobOrder->is_receiving_bulk) {
             $parsed = BulkSampleRemarks::parse($sample->remarks);
@@ -456,7 +467,7 @@ class AnalystController extends Controller
         }
 
         $updates = [];
-        foreach (['wastewater_source', 'specimen', 'sample_collected_by'] as $column) {
+        foreach (['wastewater_source', 'sampling_site', 'specimen', 'sample_collected_by'] as $column) {
             if (! $allowed->contains($column) || ! array_key_exists($column, $data)) {
                 continue;
             }
@@ -789,9 +800,20 @@ class AnalystController extends Controller
         $formId = isset($data['form_id']) ? (int) $data['form_id'] : null;
 
         $allReports = $this->reports->reportsForJobOrder($jobOrder, $user, withValues: false);
-        $resolved = $formId || $sampleId
-            ? $this->reports->pickReport($allReports, $sampleId, $formId)
-            : $this->reports->forJobOrder($jobOrder, $user);
+        // Mixed WW+micro JOs list FO4 first; forJobOrder would 403 the WW analyst.
+        // Prefer the sheet being edited, else any sheet this user can access.
+        if ($formId || $sampleId) {
+            $resolved = $this->reports->pickReport($allReports, $sampleId, $formId);
+            $canAccessPicked = $user->hasRole('admin')
+                || $this->reports->userCanAccessCombined($resolved->analyses, $user, $jobOrder);
+            if (! $canAccessPicked) {
+                $resolved = $this->accessibleSignatoryReport($allReports, $user, $jobOrder)
+                    ?? $resolved;
+            }
+        } else {
+            $resolved = $this->accessibleSignatoryReport($allReports, $user, $jobOrder)
+                ?? $this->reports->forJobOrder($jobOrder, $user);
+        }
 
         abort_unless(
             $this->reports->userCanAccessCombined($resolved->analyses, $user, $jobOrder)
@@ -825,6 +847,7 @@ class AnalystController extends Controller
                 $resolved->controlledForm,
                 "/analyst/job-orders/{$jobOrder->id}/result-signatories",
                 $resolved->analyses,
+                $resolved->sampleId,
             ),
         ]);
     }
@@ -1163,6 +1186,29 @@ class AnalystController extends Controller
     }
 
     /**
+     * Prefer a previewable sheet the user can access (mixed FO2+FO4 JOs).
+     *
+     * @param  \Illuminate\Support\Collection<int, AnalysisResultReport>  $reports
+     */
+    private function accessibleSignatoryReport(
+        \Illuminate\Support\Collection $reports,
+        User $user,
+        JobOrder $jobOrder,
+    ): ?AnalysisResultReport {
+        $accessible = $reports->filter(function (AnalysisResultReport $report) use ($user, $jobOrder) {
+            if ($report->controlledForm === null) {
+                return false;
+            }
+
+            return $user->hasRole('admin')
+                || $this->reports->userCanAccessCombined($report->analyses, $user, $jobOrder);
+        });
+
+        return $accessible->first(fn (AnalysisResultReport $report) => $report->canPreview())
+            ?? $accessible->first();
+    }
+
+    /**
      * @return array{signatory?: array<string, mixed>, footer?: array<string, mixed>}
      */
     private function signatoryManifestExtra(JobOrder $jobOrder, AnalysisResultReport $resolved, ?string $saveUrl): array
@@ -1177,6 +1223,7 @@ class AnalystController extends Controller
                 $resolved->controlledForm,
                 $saveUrl,
                 $resolved->analyses,
+                $resolved->sampleId,
             ),
         ];
 

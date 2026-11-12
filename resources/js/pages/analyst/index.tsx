@@ -1461,6 +1461,9 @@ export default function AnalystIndex({
                 body: JSON.stringify({
                     signatories,
                     ...(config.form_id != null ? { form_id: config.form_id } : {}),
+                    ...(config.sample_id != null
+                        ? { sample_id: config.sample_id }
+                        : {}),
                 }),
             });
 

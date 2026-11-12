@@ -18,6 +18,7 @@ export type ResultSignatoryConfig = {
     save_url?: string | null;
     form_code?: string | null;
     form_id?: number | null;
+    sample_id?: number | null;
 };
 
 type Props = {

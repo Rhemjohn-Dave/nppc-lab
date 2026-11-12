@@ -1,5 +1,5 @@
 import { Bold, Copy, Trash2 } from 'lucide-react';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -8,11 +8,16 @@ import { Separator } from '@/components/ui/separator';
 import type { DataSource, DesignerField } from '@/lib/controlled-forms';
 import {
     fieldAnchor,
+    patchFieldAnchor,
     fieldBold,
     fieldListIndentMm,
     fieldListStyle,
     fieldStaticText,
+    minAnchorOffsetMm,
     patchFieldOptions,
+    sharedAnchorBelow,
+    shiftFieldFlow,
+    textLineHeightMm,
     toggleInlineBoldSelection,
 } from '@/lib/controlled-forms';
 import { defaultTableColumns } from '@/components/form-designer/utils';
@@ -35,6 +40,10 @@ type Props = {
     onDelete: () => void;
     matrixPreviewRows?: Array<Record<string, string>>;
     matrixDefaultConfig?: MatrixTableConfig | null;
+    onUpdateMapped?: (
+        mapField: (field: DesignerField, id: string) => Partial<DesignerField>,
+        recordHistory?: boolean,
+    ) => void;
 };
 
 function sharedAppearanceValue(
@@ -48,6 +57,16 @@ function sharedAppearanceValue(
     const first = String(fields[0][key] ?? '');
 
     return fields.every((field) => String(field[key] ?? '') === first) ? first : '';
+}
+
+function sharedHeightMm(fields: DesignerField[]): string {
+    if (fields.length === 0) {
+        return '';
+    }
+
+    const first = Number(fields[0].height);
+
+    return fields.every((field) => Number(field.height) === first) ? String(first) : '';
 }
 
 const TABLE_COLUMN_OPTIONS: Record<string, string[]> = {
@@ -73,18 +92,137 @@ export default function PropertiesPanel({
     matrixCellSelection = null,
     onClearMatrixCell,
     onUpdate,
+    onUpdateMapped,
     onDuplicate,
     onDelete,
     matrixPreviewRows,
     matrixDefaultConfig = null,
 }: Props) {
     const staticTextRef = useRef<HTMLTextAreaElement | null>(null);
+    const [stackGapMm, setStackGapMm] = useState(1);
 
     if (selectedCount > 1) {
         const fontSize = sharedAppearanceValue(selectedFields, 'font_size');
         const fontFamily = sharedAppearanceValue(selectedFields, 'font_family');
         const alignment = sharedAppearanceValue(selectedFields, 'alignment');
         const fontColor = sharedAppearanceValue(selectedFields, 'font_color');
+        const heightMm = sharedHeightMm(selectedFields);
+        const pageNumber = selectedFields[0]?.page_number ?? 1;
+        const matrixAnchors = pageFields.filter(
+            (field) =>
+                field.field_type === 'dynamic_test_matrix' &&
+                field.page_number === pageNumber,
+        );
+        const sharedBelow = sharedAnchorBelow(selectedFields);
+        const minOffset = minAnchorOffsetMm(selectedFields);
+        const belowMixed =
+            selectedFields.some((field) => fieldAnchor(field) !== null) &&
+            sharedBelow === null &&
+            !selectedFields.every((field) => fieldAnchor(field) === null);
+
+        function applyGroupBelow(below: string) {
+            if (!onUpdateMapped) {
+                return;
+            }
+            onUpdateMapped((field) => {
+                const current = fieldAnchor(field);
+                if (below === '') {
+                    return {
+                        options: patchFieldOptions(field.options, { anchor: null }),
+                    };
+                }
+                const next = patchFieldAnchor(current, {
+                    below,
+                    offset_mm: current?.offset_mm ?? minOffset ?? 3,
+                });
+
+                return {
+                    options: patchFieldOptions(field.options, { anchor: next }),
+                };
+            }, true);
+        }
+
+        function applyGroupOffset(nextOffset: number) {
+            if (!onUpdateMapped || minOffset === null || !Number.isFinite(nextOffset)) {
+                return;
+            }
+            const delta = nextOffset - minOffset;
+            if (Math.abs(delta) < 0.0001) {
+                return;
+            }
+            onUpdateMapped((field) => shiftFieldFlow(field, delta));
+        }
+
+        function spaceStack() {
+            if (!onUpdateMapped) {
+                return;
+            }
+            const gapMm = Number.isFinite(stackGapMm) ? Math.max(0, stackGapMm) : 0;
+            const ordered = [...selectedFields].sort((a, b) => a.y - b.y || a.x - b.x);
+            if (ordered.length < 2) {
+                return;
+            }
+            const top = ordered[0];
+            const sharedBelowName = sharedAnchorBelow(ordered);
+            const topAnchor = fieldAnchor(top);
+            const syncOffsets =
+                sharedBelowName !== null &&
+                topAnchor !== null &&
+                ordered.every((field) => fieldAnchor(field) !== null);
+            const positions = new Map<
+                string,
+                { y: number; height: number; offset_mm?: number }
+            >();
+            let cursorY = top.y;
+            let cursorOffset = syncOffsets ? topAnchor.offset_mm : null;
+
+            for (let index = 0; index < ordered.length; index += 1) {
+                const field = ordered[index];
+                const lineH = textLineHeightMm(field.font_size);
+                if (index === 0) {
+                    positions.set(field.name, {
+                        y: field.y,
+                        height: lineH,
+                        ...(cursorOffset !== null ? { offset_mm: cursorOffset } : {}),
+                    });
+                } else {
+                    cursorY = Math.round((cursorY + gapMm) * 1000) / 1000;
+                    if (cursorOffset !== null) {
+                        cursorOffset = Math.round((cursorOffset + gapMm) * 1000) / 1000;
+                    }
+                    positions.set(field.name, {
+                        y: cursorY,
+                        height: lineH,
+                        ...(cursorOffset !== null ? { offset_mm: cursorOffset } : {}),
+                    });
+                }
+                cursorY = Math.round((cursorY + lineH) * 1000) / 1000;
+                if (cursorOffset !== null) {
+                    cursorOffset = Math.round((cursorOffset + lineH) * 1000) / 1000;
+                }
+            }
+
+            onUpdateMapped((field) => {
+                const next = positions.get(field.name);
+                if (!next) {
+                    return {};
+                }
+                const current = fieldAnchor(field);
+                if (current && next.offset_mm !== undefined) {
+                    return {
+                        y: next.y,
+                        height: next.height,
+                        options: patchFieldOptions(field.options, {
+                            anchor: patchFieldAnchor(current, {
+                                offset_mm: next.offset_mm,
+                            }),
+                        }),
+                    };
+                }
+
+                return { y: next.y, height: next.height };
+            }, true);
+        }
 
         return (
             <aside className="flex h-full min-h-0 flex-col bg-white">
@@ -104,6 +242,28 @@ export default function PropertiesPanel({
                         <p className="text-xs leading-relaxed text-muted-foreground">
                             Changes apply to every selected field. Empty means mixed values.
                         </p>
+                        <div>
+                            <Label htmlFor="multi-height">Height (mm)</Label>
+                            <Input
+                                id="multi-height"
+                                type="number"
+                                min={0.5}
+                                step="0.1"
+                                disabled={!canEdit}
+                                placeholder="Mixed"
+                                value={heightMm}
+                                onChange={(event) => {
+                                    const value = Number(event.target.value);
+
+                                    if (!Number.isFinite(value) || event.target.value === '') {
+                                        return;
+                                    }
+
+                                    onUpdate({ height: Math.max(0.5, value) });
+                                }}
+                                onBlur={() => onUpdate({}, true)}
+                            />
+                        </div>
                         <div>
                             <Label htmlFor="multi-font-size">Font size</Label>
                             <Input
@@ -177,6 +337,89 @@ export default function PropertiesPanel({
                                 </p>
                             )}
                         </div>
+                    </section>
+
+                    <Separator />
+
+                    <section className="space-y-2">
+                        <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+                            Flow under matrix
+                        </p>
+                        <p className="text-[11px] leading-snug text-muted-foreground">
+                            Gap is between text lines; field heights are fitted to the font.
+                        </p>
+                        <Label htmlFor="multi-anchor-below">Anchor below matrix</Label>
+                        <select
+                            id="multi-anchor-below"
+                            className="h-9 w-full rounded-md border bg-white px-2 text-sm"
+                            disabled={!canEdit || matrixAnchors.length === 0 || !onUpdateMapped}
+                            value={sharedBelow ?? ''}
+                            onChange={(event) => applyGroupBelow(event.target.value)}
+                        >
+                            <option value="">
+                                {belowMixed ? 'Mixed' : 'None (fixed Y)'}
+                            </option>
+                            {matrixAnchors.map((matrix) => (
+                                <option key={matrix.name} value={matrix.name}>
+                                    {matrix.label || matrix.name}
+                                </option>
+                            ))}
+                        </select>
+                        {minOffset !== null ? (
+                            <div>
+                                <Label htmlFor="multi-anchor-offset">
+                                    Offset below table (mm)
+                                </Label>
+                                <Input
+                                    id="multi-anchor-offset"
+                                    type="number"
+                                    step="0.1"
+                                    disabled={!canEdit || !onUpdateMapped}
+                                    value={minOffset}
+                                    onChange={(event) => {
+                                        const value = Number(event.target.value);
+                                        if (!Number.isFinite(value)) {
+                                            return;
+                                        }
+                                        applyGroupOffset(value);
+                                    }}
+                                    onBlur={() => onUpdateMapped?.((field) => ({}), true)}
+                                />
+                            </div>
+                        ) : (
+                            <p className="text-[11px] text-muted-foreground">
+                                Set an anchor below a matrix to edit group offset.
+                            </p>
+                        )}
+                        <div>
+                            <Label htmlFor="multi-stack-gap">Space between fields (mm)</Label>
+                            <Input
+                                id="multi-stack-gap"
+                                type="number"
+                                min={0}
+                                step="0.1"
+                                disabled={!canEdit || !onUpdateMapped}
+                                value={stackGapMm}
+                                onChange={(event) => {
+                                    const value = Number(event.target.value);
+                                    if (!Number.isFinite(value)) {
+                                        return;
+                                    }
+                                    setStackGapMm(Math.max(0, value));
+                                }}
+                            />
+                        </div>
+                        {canEdit && onUpdateMapped ? (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="w-full"
+                                onClick={spaceStack}
+                            >
+                                Space stack
+                            </Button>
+                        ) : null}
                     </section>
 
                     <Separator />
@@ -389,12 +632,10 @@ export default function PropertiesPanel({
                                                     anchor:
                                                         below === ''
                                                             ? null
-                                                            : {
-                                                                  below,
-                                                                  offset_mm:
-                                                                      anchor?.offset_mm ??
-                                                                      3,
-                                                              },
+                                                            : patchFieldAnchor(
+                                                                  anchor,
+                                                                  { below },
+                                                              ),
                                                 },
                                             ),
                                         },
@@ -425,13 +666,15 @@ export default function PropertiesPanel({
                                                 options: patchFieldOptions(
                                                     selected.options,
                                                     {
-                                                        anchor: {
-                                                            below: anchor.below,
-                                                            offset_mm: Number(
-                                                                event.target
-                                                                    .value,
-                                                            ),
-                                                        },
+                                                        anchor: patchFieldAnchor(
+                                                            anchor,
+                                                            {
+                                                                offset_mm: Number(
+                                                                    event.target
+                                                                        .value,
+                                                                ),
+                                                            },
+                                                        ),
                                                     },
                                                 ),
                                             })

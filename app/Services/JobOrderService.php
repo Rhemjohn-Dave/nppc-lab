@@ -2541,8 +2541,8 @@ class JobOrderService
                 'form_id' => $readySample['form_id'] ?? null,
                 'missing' => $incompleteNames,
                 'review_notes' => $job->review_notes,
-                'signatory' => $this->consolidationSignatoryPayload($job),
-                'footer' => $this->consolidationFooterPayload($job),
+                'signatory' => $this->consolidationSignatoryPayload($job, $user),
+                'footer' => $this->consolidationFooterPayload($job, $user),
                 'samples' => $sampleRows,
                 'unscoped_can_submit' => $unscoped->isNotEmpty()
                     && $unscopedIncomplete->isEmpty()
@@ -2562,32 +2562,35 @@ class JobOrderService
     }
 
     /**
+     * Signatory dialog for the sheet this analyst can access (not package FO4-first).
+     *
      * @return array<string, mixed>|null
      */
-    private function consolidationSignatoryPayload(JobOrder $job): ?array
+    private function consolidationSignatoryPayload(JobOrder $job, User $user): ?array
     {
-        $form = $this->reports->matchingControlledForm($job);
+        $report = $this->accessibleResultReportForUser($job, $user);
+        $form = $report?->controlledForm;
         if ($form === null) {
             return null;
         }
 
-        $payload = ResultSignatories::manifestPayload(
+        // Submit posts signatories with send-to-head; save_url is only for later edits.
+        return ResultSignatories::manifestPayload(
             $job,
             $form,
             "/analyst/job-orders/{$job->id}/result-signatories",
-            $job->analyses,
+            $report->analyses,
+            $report->sampleId,
         );
-
-        // Submit posts signatories with send-to-head; save_url is only for later edits.
-        return $payload;
     }
 
     /**
      * @return array<string, mixed>|null
      */
-    private function consolidationFooterPayload(JobOrder $job): ?array
+    private function consolidationFooterPayload(JobOrder $job, User $user): ?array
     {
-        $form = $this->reports->matchingControlledForm($job);
+        $report = $this->accessibleResultReportForUser($job, $user, requireFooter: true);
+        $form = $report?->controlledForm;
         if ($form === null || ! ResultFooter::formSupportsFooter($form)) {
             return null;
         }
@@ -2597,6 +2600,32 @@ class JobOrderService
             $form,
             "/analyst/job-orders/{$job->id}/result-footer",
         );
+    }
+
+    /**
+     * Prefer a previewable sheet the user can access on mixed FO2+FO4 job orders.
+     */
+    private function accessibleResultReportForUser(
+        JobOrder $job,
+        User $user,
+        bool $requireFooter = false,
+    ): ?AnalysisResultReport {
+        $reports = $this->reports->reportsForJobOrder($job, $user, withValues: false);
+
+        $accessible = $reports->filter(function (AnalysisResultReport $report) use ($user, $job, $requireFooter) {
+            if ($report->controlledForm === null) {
+                return false;
+            }
+            if ($requireFooter && ! ResultFooter::formSupportsFooter($report->controlledForm)) {
+                return false;
+            }
+
+            return $user->hasRole('admin')
+                || $this->reports->userCanAccessCombined($report->analyses, $user, $job);
+        });
+
+        return $accessible->first(fn (AnalysisResultReport $report) => $report->canPreview())
+            ?? $accessible->first();
     }
 
     /**
@@ -2643,7 +2672,8 @@ class JobOrderService
             $reports = $this->reports->reportsForJobOrder($job, $user, withValues: false);
             $summary = $this->reports->forJobOrder($job, $user, withValues: false)->summary();
             $anyPreview = $reports->contains(fn ($report) => $report->canPreview());
-            $form = $this->reports->matchingControlledForm($job);
+            $accessible = $this->accessibleResultReportForUser($job, $user);
+            $form = $accessible?->controlledForm;
             $previewUrl = "/analyst/job-orders/{$job->id}/result-report";
             $samplePreviews = $job->samples->values()->map(function ($sample) use ($job, $reports) {
                 $report = $reports->first(
@@ -2680,7 +2710,8 @@ class JobOrderService
                         $job,
                         $form,
                         "/analyst/job-orders/{$job->id}/result-signatories",
-                        $job->analyses,
+                        $accessible?->analyses ?? $job->analyses,
+                        $accessible?->sampleId,
                     )
                     : null,
                 'footer' => $form && ResultFooter::formSupportsFooter($form)

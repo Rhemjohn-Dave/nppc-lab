@@ -134,6 +134,7 @@ export default function EncodingContextRail({
                                       key={fact.key}
                                       jobId={job.id}
                                       sampleId={sample.id!}
+                                      formId={active.report?.form_id ?? null}
                                       fact={fact}
                                       canEdit={Boolean(
                                           active.can_edit_result_facts,

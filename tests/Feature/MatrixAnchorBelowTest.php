@@ -155,7 +155,7 @@ class MatrixAnchorBelowTest extends TestCase
         $this->assertNotNull($meta);
         $metaAnchor = is_array($meta->options['anchor'] ?? null) ? $meta->options['anchor'] : [];
         $this->assertSame('ww_fo2_matrix', $metaAnchor['below'] ?? null);
-        $this->assertEqualsWithDelta(90.0, (float) ($metaAnchor['offset_mm'] ?? 0), 0.01);
+        $this->assertEqualsWithDelta(87.0, (float) ($metaAnchor['offset_mm'] ?? 0), 0.01);
 
         $notes = $revision->fields->firstWhere('name', 'fo2_notes');
         $this->assertNotNull($notes);
@@ -169,6 +169,13 @@ class MatrixAnchorBelowTest extends TestCase
         $this->assertSame('ww_fo2_matrix', $reviewedAnchor['below'] ?? null);
         $this->assertSame('fo2_form_meta', $reviewedAnchor['above'] ?? null);
         $this->assertGreaterThan(0, (float) ($reviewedAnchor['above_offset_mm'] ?? 0));
+
+        $notesEnd = (float) ($notesAnchor['offset_mm'] ?? 0) + (float) $notes->height;
+        $this->assertGreaterThanOrEqual(
+            $notesEnd,
+            (float) ($reviewedAnchor['offset_mm'] ?? 0),
+            'Reviewed-by must clear the notes band (offset >= notes offset + height).',
+        );
 
         foreach ([
             'results.analyst_name',
@@ -288,6 +295,9 @@ class MatrixAnchorBelowTest extends TestCase
         $this->assertIsFloat($bottomY);
         $this->assertGreaterThan($y, $bottomY);
         $this->assertLessThan($y + $designerBoxH, $bottomY);
+        // Leftover designer-box capacity must stay open so anchors sit under the
+        // last row (filler whites out blank-PDF empty rows in that band).
+        $this->assertGreaterThan(40.0, ($y + $designerBoxH) - $bottomY);
 
         $apply = new ReflectionMethod($filler, 'applyAnchorBelow');
         $apply->setAccessible(true);

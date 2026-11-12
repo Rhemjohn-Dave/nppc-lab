@@ -235,20 +235,41 @@ class ResultSignatories
     public static function defaults(JobOrder $jobOrder, ?ControlledForm $form = null, ?Collection $orderedAnalyses = null): array
     {
         $slots = self::slotsFor($form, $jobOrder);
-        if ($form?->form_code === 'LSP-7.8-FO28') {
-            return array_slice([
+        $designer = self::designerStaticSlots($form, $slots);
+
+        $fo28Fallback = $form?->form_code === 'LSP-7.8-FO28'
+            ? array_slice([
                 ['name' => 'Ma. Antoniela C. Lanaca, RChT', 'prc_id' => '0000761'],
                 ['name' => 'Wendy A. Tayson, RCh, MEnE', 'prc_id' => '15131'],
-            ], 0, $slots);
+            ], 0, $slots)
+            : null;
+
+        if ($fo28Fallback !== null) {
+            $merged = [];
+            for ($i = 0; $i < $slots; $i++) {
+                $merged[] = [
+                    'name' => $designer[$i]['name'] !== ''
+                        ? $designer[$i]['name']
+                        : ($fo28Fallback[$i]['name'] ?? ''),
+                    'prc_id' => $designer[$i]['prc_id'] !== null
+                        ? $designer[$i]['prc_id']
+                        : ($fo28Fallback[$i]['prc_id'] ?? null),
+                ];
+            }
+
+            return $merged;
         }
 
         $names = self::candidateNames($jobOrder, $orderedAnalyses);
         $defaults = [];
 
         if ($slots === 1) {
+            $assigneeName = $names === []
+                ? ''
+                : (count($names) === 1 ? $names[0] : implode(', ', $names));
             $defaults[] = [
-                'name' => $names === [] ? '' : (count($names) === 1 ? $names[0] : implode(', ', $names)),
-                'prc_id' => null,
+                'name' => $designer[0]['name'] !== '' ? $designer[0]['name'] : $assigneeName,
+                'prc_id' => $designer[0]['prc_id'],
             ];
 
             return $defaults;
@@ -256,12 +277,147 @@ class ResultSignatories
 
         for ($i = 0; $i < $slots; $i++) {
             $defaults[] = [
-                'name' => $names[$i] ?? '',
-                'prc_id' => null,
+                'name' => $designer[$i]['name'] !== ''
+                    ? $designer[$i]['name']
+                    : ($names[$i] ?? ''),
+                'prc_id' => $designer[$i]['prc_id'],
             ];
         }
 
         return $defaults;
+    }
+
+    /**
+     * Name/PRC static text from the active Form Designer revision (results.analyst_*).
+     *
+     * @return list<array{name: string, prc_id: string|null}>
+     */
+    public static function designerStaticSlots(?ControlledForm $form, ?int $slots = null): array
+    {
+        $count = max(1, min(4, $slots ?? self::slotsFor($form)));
+        $empty = array_fill(0, $count, ['name' => '', 'prc_id' => null]);
+
+        if ($form === null) {
+            return $empty;
+        }
+
+        $revision = $form->activeRevision();
+        if ($revision === null) {
+            return $empty;
+        }
+
+        $revision->loadMissing('fields');
+        $byKey = [];
+        foreach ($revision->fields as $field) {
+            $key = trim((string) ($field->data_source_key ?: $field->name));
+            if ($key === '') {
+                continue;
+            }
+            $byKey[$key] = $field;
+        }
+
+        $nameKeys = [
+            'results.analyst_name',
+            'results.analyst_name_2',
+            'results.analyst_name_3',
+            'results.analyst_name_4',
+        ];
+        $prcKeys = [
+            'results.analyst_prc',
+            'results.analyst_prc_2',
+            'results.analyst_prc_3',
+            'results.analyst_prc_4',
+        ];
+        $licenseKeys = self::fo2LicenseKeysForForm($form);
+
+        $rows = [];
+        for ($i = 0; $i < $count; $i++) {
+            $name = self::fieldStaticText($byKey[$nameKeys[$i]] ?? null);
+            $prc = self::normalizePrcStatic(self::fieldStaticText($byKey[$prcKeys[$i]] ?? null));
+            if ($prc === null && isset($licenseKeys[$i])) {
+                $prc = self::parseLicenseNumber(
+                    self::fieldStaticText($byKey[$licenseKeys[$i]] ?? null),
+                );
+            }
+
+            $rows[] = [
+                'name' => $name,
+                'prc_id' => $prc,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * FO2 / FO2A license chrome fields mapped to dialog slot order.
+     *
+     * @return list<string>
+     */
+    private static function fo2LicenseKeysForForm(?ControlledForm $form): array
+    {
+        return match ($form?->form_code) {
+            'LSP-7.8-FO2A' => [
+                'fo2_lic_reviewed',
+                'fo2_lic_certified',
+                'fo2_lic_noted',
+            ],
+            'LSP-7.8-FO2' => [
+                'fo2_lic_reviewed',
+                'fo2_lic_noted',
+                'fo2_lic_certified_1',
+                'fo2_lic_certified_2',
+            ],
+            default => [],
+        };
+    }
+
+    private static function fieldStaticText(mixed $field): string
+    {
+        if ($field === null) {
+            return '';
+        }
+
+        $options = is_array($field->options ?? null) ? $field->options : [];
+        $raw = trim((string) ($options['static_text'] ?? ''));
+        if ($raw === '') {
+            return '';
+        }
+
+        return trim(InlineBoldMarkup::strip($raw));
+    }
+
+    private static function normalizePrcStatic(string $text): ?string
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return null;
+        }
+
+        // Pure / mostly-numeric PRC stored on results.analyst_prc*.
+        if (preg_match('/^\d{4,}$/', $text) === 1) {
+            return $text;
+        }
+
+        return self::parseLicenseNumber($text);
+    }
+
+    private static function parseLicenseNumber(string $text): ?string
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return null;
+        }
+
+        if (preg_match('/License\s*#\s*(\d+)/i', $text, $match) === 1) {
+            return $match[1];
+        }
+
+        if (preg_match('/\bPRC(?:\s+License)?(?:\s+No\.?)?\s*[#:]?\s*(\d+)/i', $text, $match) === 1) {
+            return $match[1];
+        }
+
+        return null;
     }
 
     /**
@@ -368,6 +524,7 @@ class ResultSignatories
         ?ControlledForm $form,
         ?string $saveUrl = null,
         ?Collection $orderedAnalyses = null,
+        ?int $sampleId = null,
     ): array {
         $stored = is_array($jobOrder->result_signatories) ? $jobOrder->result_signatories : null;
         $confirmed = self::isConfirmedForForm($stored, $form);
@@ -385,6 +542,7 @@ class ResultSignatories
             'signatories' => array_values($rows),
             'form_code' => $form?->form_code,
             'form_id' => $form?->id,
+            'sample_id' => $sampleId,
             'save_url' => $canEdit ? $saveUrl : null,
         ];
     }

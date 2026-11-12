@@ -19,6 +19,10 @@ class ResultSheetFacts
             'keys' => ['results.water_supply', 'results.sampling_point'],
             'type' => 'text',
         ],
+        'sampling_site' => [
+            'keys' => ['job_orders.sampling_site', 'sampling_site'],
+            'type' => 'text',
+        ],
         'specimen' => [
             'keys' => ['results.specimen'],
             'type' => 'text',
@@ -74,7 +78,16 @@ class ResultSheetFacts
         $revision->loadMissing('fields');
         $labelsByName = [];
         foreach ($revision->fields as $field) {
-            $labelsByName[(string) $field->name] = trim((string) ($field->label ?: $field->name));
+            $label = trim((string) ($field->label ?: $field->name));
+            if ($label === '') {
+                continue;
+            }
+            $name = (string) $field->name;
+            $labelsByName[$name] = $label;
+            $dataSource = trim((string) ($field->data_source_key ?? ''));
+            if ($dataSource !== '' && ! isset($labelsByName[$dataSource])) {
+                $labelsByName[$dataSource] = $label;
+            }
         }
 
         $sample = self::reportSample($report);
@@ -164,6 +177,7 @@ class ResultSheetFacts
 
         $stored = match ($key) {
             'wastewater_source' => $jobOrder->wastewater_source,
+            'sampling_site' => $jobOrder->sampling_site,
             'specimen' => $jobOrder->specimen,
             'sample_collected_by' => $jobOrder->sample_collected_by,
             default => null,

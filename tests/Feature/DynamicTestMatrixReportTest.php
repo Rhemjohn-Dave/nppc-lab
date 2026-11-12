@@ -523,8 +523,8 @@ class DynamicTestMatrixReportTest extends TestCase
         $matrix = $revision->fields()->where('field_type', 'dynamic_test_matrix')->first();
         $this->assertNotNull($matrix);
         $this->assertSame('ww_fo2_matrix', $matrix->name);
-        $this->assertEqualsWithDelta(28.475, (float) $matrix->x, 0.01);
-        $this->assertEqualsWithDelta(63.272, (float) $matrix->y, 0.01);
+        $this->assertEqualsWithDelta(28.204, (float) $matrix->x, 0.01);
+        $this->assertEqualsWithDelta(74.945, (float) $matrix->y, 0.01);
         $this->assertEqualsWithDelta(159.492, (float) $matrix->width, 0.01);
         $keys = collect($matrix->table_config['columns'] ?? [])->pluck('key')->all();
         $this->assertSame(['test', 'method', 'result'], $keys);
@@ -533,8 +533,8 @@ class DynamicTestMatrixReportTest extends TestCase
 
         $customer = $revision->fields()->where('name', 'results.customer')->first();
         $this->assertNotNull($customer);
-        $this->assertEqualsWithDelta(60.0, (float) $customer->x, 0.01);
-        $this->assertEqualsWithDelta(34.2, (float) $customer->y, 0.01);
+        $this->assertEqualsWithDelta(74.0, (float) $customer->x, 0.01);
+        $this->assertEqualsWithDelta(41.5, (float) $customer->y, 0.01);
 
         // Flowing footer (FO3 pattern): single WW/River block + 4th Certified slot.
         // Abstracted water uses separate form LSP-7.8-FO2A.
@@ -548,6 +548,10 @@ class DynamicTestMatrixReportTest extends TestCase
         $this->assertNotNull($certified2);
         $this->assertSame('ww_fo2_matrix', $certified2->options['anchor']['below'] ?? null);
         $this->assertSame('fo2_form_meta', $certified2->options['anchor']['above'] ?? null);
+
+        $notes = $revision->fields()->where('name', 'fo2_notes')->first();
+        $this->assertNotNull($notes);
+        $notesEnd = (float) ($notes->options['anchor']['offset_mm'] ?? 0) + (float) $notes->height;
 
         foreach ([
             'fo2_label_reviewed',
@@ -563,6 +567,13 @@ class DynamicTestMatrixReportTest extends TestCase
             $this->assertSame('fo2_form_meta', $anchor['above'] ?? null, $signatoryField);
             $this->assertGreaterThan(0, (float) ($anchor['above_offset_mm'] ?? 0), $signatoryField);
         }
+
+        $reviewed = $revision->fields()->where('name', 'fo2_label_reviewed')->first();
+        $this->assertNotNull($reviewed);
+        $this->assertGreaterThanOrEqual(
+            $notesEnd,
+            (float) ($reviewed->options['anchor']['offset_mm'] ?? 0),
+        );
 
         $rows = \App\Support\DynamicTestMatrix::previewRowsForForm($form->fresh(['analysisPackage', 'analysisTypes']));
         $this->assertSame('Lab pH', $rows[0]['test']);

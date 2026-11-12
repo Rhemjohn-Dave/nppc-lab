@@ -125,8 +125,8 @@ class ControlledDocumentGenerator
         array $values,
         bool $persist,
     ): array {
-        if (! $revision->hasCanonicalPdf()) {
-            throw new RuntimeException('The active revision has no canonical PDF.');
+        if (! $revision->canGenerateWithoutCanonical()) {
+            throw new RuntimeException('The active revision has no canonical PDF or blank-page size.');
         }
 
         $binary = $this->filler->fill($revision, $values);

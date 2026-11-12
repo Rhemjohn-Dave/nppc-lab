@@ -53,6 +53,9 @@ export type ControlledRevisionSummary = {
 export type FieldAnchor = {
     below: string;
     offset_mm: number;
+    /** Clamp toward form-meta (FO2/FO3/FO37); preserved when Designer edits below/offset. */
+    above?: string;
+    above_offset_mm?: number;
 };
 
 export type DesignerField = {
@@ -92,8 +95,105 @@ export function fieldAnchor(field: DesignerField): FieldAnchor | null {
     }
     const offsetRaw = (raw as { offset_mm?: unknown }).offset_mm;
     const offset_mm = typeof offsetRaw === 'number' && Number.isFinite(offsetRaw) ? offsetRaw : 0;
+    const above = String((raw as { above?: unknown }).above ?? '').trim();
+    const aboveOffsetRaw = (raw as { above_offset_mm?: unknown }).above_offset_mm;
+    const above_offset_mm =
+        typeof aboveOffsetRaw === 'number' && Number.isFinite(aboveOffsetRaw)
+            ? aboveOffsetRaw
+            : undefined;
 
-    return { below, offset_mm };
+    return {
+        below,
+        offset_mm,
+        ...(above !== '' ? { above } : {}),
+        ...(above_offset_mm !== undefined ? { above_offset_mm } : {}),
+    };
+}
+
+/** Keep above/above_offset_mm when Designer only edits below or offset. */
+export function patchFieldAnchor(
+    current: FieldAnchor | null,
+    patch: { below?: string; offset_mm?: number },
+): FieldAnchor | null {
+    const below = (patch.below ?? current?.below ?? '').trim();
+    if (below === '') {
+        return null;
+    }
+
+    return {
+        below,
+        offset_mm:
+            typeof patch.offset_mm === 'number' && Number.isFinite(patch.offset_mm)
+                ? patch.offset_mm
+                : (current?.offset_mm ?? 3),
+        ...(current?.above ? { above: current.above } : {}),
+        ...(current?.above_offset_mm !== undefined
+            ? { above_offset_mm: current.above_offset_mm }
+            : {}),
+    };
+}
+
+/** Shared matrix name when every selected field anchors below the same matrix; null if mixed/none. */
+export function sharedAnchorBelow(fields: DesignerField[]): string | null {
+    if (fields.length === 0) {
+        return null;
+    }
+
+    const first = fieldAnchor(fields[0])?.below ?? '';
+    if (first === '') {
+        return null;
+    }
+
+    return fields.every((field) => (fieldAnchor(field)?.below ?? '') === first)
+        ? first
+        : null;
+}
+
+/** Lowest offset_mm among anchored fields in the selection; null if none are anchored. */
+export function minAnchorOffsetMm(fields: DesignerField[]): number | null {
+    let min: number | null = null;
+    for (const field of fields) {
+        const anchor = fieldAnchor(field);
+        if (!anchor) {
+            continue;
+        }
+        min = min === null ? anchor.offset_mm : Math.min(min, anchor.offset_mm);
+    }
+
+    return min;
+}
+
+/**
+ * Printed single-line rhythm in mm (matches ControlledPdfFiller multiline lineHeight).
+ */
+export function textLineHeightMm(fontSize: number): number {
+    const size = Number.isFinite(fontSize) ? fontSize : 11;
+
+    return Math.max(3, Math.round(size * 0.42 * 1000) / 1000);
+}
+
+/**
+ * Shift a field's flow offset and designer Y together (preserves above clamp).
+ * Unanchored fields still move on the canvas via y.
+ */
+export function shiftFieldFlow(
+    field: DesignerField,
+    deltaMm: number,
+): Pick<DesignerField, 'y' | 'options'> {
+    const nextY = Math.round((field.y + deltaMm) * 1000) / 1000;
+    const current = fieldAnchor(field);
+    if (!current) {
+        return { y: nextY, options: field.options };
+    }
+
+    const nextAnchor = patchFieldAnchor(current, {
+        offset_mm: Math.round((current.offset_mm + deltaMm) * 1000) / 1000,
+    });
+
+    return {
+        y: nextY,
+        options: patchFieldOptions(field.options, { anchor: nextAnchor }),
+    };
 }
 
 export function fieldStaticText(field: DesignerField): string {

@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 type Props = {
     jobId: number;
     sampleId: number;
+    formId?: number | null;
     fact: ResultFact;
     canEdit: boolean;
 };
@@ -16,12 +17,14 @@ type Props = {
 export default function ResultFactEditor({
     jobId,
     sampleId,
+    formId = null,
     fact,
     canEdit,
 }: Props) {
     const [editing, setEditing] = useState(false);
     const form = useForm({
         sample_id: sampleId,
+        form_id: formId,
         value: fact.value,
         time: fact.time ?? '',
     });
@@ -30,13 +33,14 @@ export default function ResultFactEditor({
         setEditing(false);
         form.setData({
             sample_id: sampleId,
+            form_id: formId,
             value: fact.value,
             time: fact.time ?? '',
         });
         form.clearErrors();
         // Reset when the printed fact changes after a successful save.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sampleId, fact.key, fact.value, fact.time]);
+    }, [sampleId, formId, fact.key, fact.value, fact.time]);
 
     const shown =
         fact.type === 'datetime'
@@ -47,22 +51,26 @@ export default function ResultFactEditor({
         const value = form.data.value.trim();
         const time = form.data.time.trim();
         form.transform(() => {
+            const scope = {
+                sample_id: sampleId,
+                ...(formId != null ? { form_id: formId } : {}),
+            };
             if (fact.type === 'datetime') {
                 return {
-                    sample_id: sampleId,
+                    ...scope,
                     sampling_date: value || null,
                     sampling_time: time || null,
                 };
             }
             if (fact.type === 'time') {
                 return {
-                    sample_id: sampleId,
+                    ...scope,
                     collected_time: value || null,
                 };
             }
 
             return {
-                sample_id: sampleId,
+                ...scope,
                 [fact.key]: value || null,
             };
         });
@@ -108,6 +116,7 @@ export default function ResultFactEditor({
                         onClick={() => {
                             form.setData({
                                 sample_id: sampleId,
+                                form_id: formId,
                                 value: fact.value,
                                 time: fact.time ?? '',
                             });
@@ -199,6 +208,7 @@ export default function ResultFactEditor({
                     onClick={() => {
                         form.setData({
                             sample_id: sampleId,
+                            form_id: formId,
                             value: fact.value,
                             time: fact.time ?? '',
                         });

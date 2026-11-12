@@ -80,6 +80,7 @@ export type AnalystTask = {
         customer_name: string;
         company_name?: string | null;
         classification?: string | null;
+        sampling_site?: string | null;
         sample_storage_temp?: string | null;
         field_data?: string | null;
         status?: string;

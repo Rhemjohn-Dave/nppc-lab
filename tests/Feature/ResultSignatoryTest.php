@@ -3,10 +3,12 @@
 namespace Tests\Feature;
 
 use App\Enums\ControlledFormCategory;
+use App\Models\AnalysisPackage;
 use App\Models\AnalysisType;
 use App\Models\ControlledForm;
 use App\Models\JobOrder;
 use App\Models\User;
+use App\Services\AnalysisResultReportResolver;
 use App\Services\FieldValueResolver;
 use App\Support\ResultSignatories;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -145,6 +147,58 @@ class ResultSignatoryTest extends TestCase
                         '0.signatory.save_url',
                         "/analyst/job-orders/{$job->id}/result-signatories",
                     )
+                    ->etc()));
+    }
+
+    public function test_consolidation_prefills_signatories_from_designer_static_text(): void
+    {
+        Storage::fake('local');
+        $this->seed();
+
+        [$form, $job, $analyst] = $this->prepareCompletedCombinedJob(release: false);
+        $revision = $form->activeRevision();
+        $this->assertNotNull($revision);
+
+        $nameField = $revision->fields()
+            ->where(function ($query) {
+                $query->where('data_source_key', 'results.analyst_name')
+                    ->orWhere('name', 'results.analyst_name');
+            })
+            ->first();
+
+        if ($nameField === null) {
+            $nameField = $revision->fields()->create([
+                'name' => 'results.analyst_name',
+                'label' => 'Analyst',
+                'field_type' => 'text',
+                'page_number' => 1,
+                'x' => 10,
+                'y' => 10,
+                'width' => 60,
+                'height' => 5,
+                'font_size' => 9,
+                'data_source_key' => 'results.analyst_name',
+                'z_order' => 1,
+                'options' => [],
+            ]);
+        }
+
+        $nameField->update([
+            'options' => array_merge(
+                is_array($nameField->options) ? $nameField->options : [],
+                ['static_text' => 'Designer Prefill Analyst'],
+            ),
+        ]);
+
+        $this->actingAs($analyst)
+            ->get('/analyst')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('analyst/index')
+                ->has('consolidations', fn ($consolidations) => $consolidations
+                    ->where('0.id', $job->id)
+                    ->where('0.signatory.confirmed', false)
+                    ->where('0.signatory.signatories.0.name', 'Designer Prefill Analyst')
                     ->etc()));
     }
 
@@ -323,6 +377,152 @@ class ResultSignatoryTest extends TestCase
         $this->assertTrue($form->analyst_require_prc);
     }
 
+    public function test_ww_analyst_can_save_signatories_on_mixed_fo2_fo4_job_without_form_id(): void
+    {
+        Storage::fake('local');
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $wwAnalyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+        $microAnalyst = User::where('email', 'analyst2@nppc.local')->firstOrFail();
+        $package = AnalysisPackage::query()->where('code', 'PKG-MIC-NDW')->firstOrFail();
+        $wwType = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
+        $microTypeIds = $package->analysisTypes()->pluck('analysis_types.id')->map(fn ($id) => (int) $id)->all();
+
+        $wwAnalyst->analysisTypes()->sync([$wwType->id]);
+        $microAnalyst->analysisTypes()->sync($microTypeIds);
+        $package->forceFill(['signatory_user_id' => $microAnalyst->id])->save();
+
+        $selectedTypeIds = array_values(array_unique(array_merge($microTypeIds, [(int) $wwType->id])));
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'Signatory Mixed Customer',
+            'customer_email' => 'signatory-mixed@example.com',
+            'customer_contact' => '09170000000',
+            'samples' => [
+                [
+                    'description' => 'Wastewater',
+                    'matrix' => 'Liquid',
+                    'classification' => 'Wastewater',
+                    'package_ids' => [$package->id],
+                    'analysis_type_ids' => $selectedTypeIds,
+                ],
+            ],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+
+        $this->actingAs($receiving)
+            ->patch("/receiving/{$job->id}/pricing", [
+                'lines' => $job->analyses->map(fn ($line) => [
+                    'id' => $line->id,
+                    'unit_price' => 100,
+                    'quantity' => 1,
+                ])->all(),
+            ])
+            ->assertRedirect();
+
+        $this->approveJobOrder($job);
+
+        $this->actingAs($receiving)
+            ->post("/receiving/{$job->id}/receive")
+            ->assertRedirect('/receiving');
+
+        $job->refresh();
+        $wwLine = $job->analyses->first(
+            fn ($line) => (int) $line->analysis_type_id === (int) $wwType->id,
+        );
+        $microLines = $job->analyses
+            ->filter(fn ($line) => in_array((int) $line->analysis_type_id, $microTypeIds, true))
+            ->values();
+
+        $this->assertNotNull($wwLine);
+
+        foreach ($microLines as $line) {
+            $this->actingAs($microAnalyst)
+                ->post("/analyst/tasks/{$line->id}/complete", [
+                    'performed_at' => '2026-07-29T15:00',
+                    'result_value' => '<1.1',
+                    'result_method' => 'Standard Method',
+                    'result_unit' => 'MPN/100ml',
+                    'result_remarks' => 'Ok',
+                ])
+                ->assertRedirect();
+        }
+
+        $this->actingAs($wwAnalyst)
+            ->post("/analyst/tasks/{$wwLine->id}/complete", [
+                'performed_at' => '2026-07-29T15:00',
+                'result_value' => '7.1',
+                'result_method' => 'Electrometric',
+                'result_unit' => '',
+                'result_remarks' => 'Ok',
+            ])
+            ->assertRedirect();
+
+        $resolver = app(AnalysisResultReportResolver::class);
+        $reports = $resolver->reportsForJobOrder(
+            $job->fresh(['samples', 'analyses', 'packages', 'packageLinks']),
+            $wwAnalyst,
+            withValues: false,
+        );
+        $this->assertSame('unavailable', $reports->first()?->kind);
+
+        $wwReport = $reports->first(
+            fn ($report) => $report->analyses->contains(
+                fn ($line) => (int) $line->id === (int) $wwLine->id,
+            ),
+        );
+        $this->assertNotNull($wwReport?->controlledForm);
+        $this->assertSame('LSP-7.8-FO2', $wwReport->controlledForm->form_code);
+
+        $this->actingAs($wwAnalyst)
+            ->get('/analyst')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('analyst/index')
+                ->has('consolidations', fn ($consolidations) => $consolidations
+                    ->where('0.id', $job->id)
+                    ->where('0.signatory.form_code', 'LSP-7.8-FO2')
+                    ->where('0.signatory.slots', 4)
+                    ->where('0.signatory.form_id', $wwReport->controlledForm->id)
+                    ->etc()));
+
+        // FO4 lists first; save without form_id must still target FO2 for the WW analyst.
+        $this->actingAs($wwAnalyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-signatories", [
+                'signatories' => [
+                    ['name' => 'Reviewed WW', 'prc_id' => '111111'],
+                    ['name' => 'Noted WW', 'prc_id' => '222222'],
+                    ['name' => 'Cert1 WW', 'prc_id' => '333333'],
+                    ['name' => 'Cert2 WW', 'prc_id' => '444444'],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('signatory.form_code', 'LSP-7.8-FO2')
+            ->assertJsonPath('signatory.slots', 4)
+            ->assertJsonPath('signatory.confirmed', true);
+
+        // Wrong FO4 form_id must fall back to the accessible FO2 sheet.
+        $microFormId = (int) ($reports->first()?->controlledForm?->id ?? 0);
+        $this->assertNotSame(0, $microFormId);
+        $this->assertNotSame((int) $wwReport->controlledForm->id, $microFormId);
+
+        $this->actingAs($wwAnalyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-signatories", [
+                'form_id' => $microFormId,
+                'signatories' => [
+                    ['name' => 'Reviewed WW 2', 'prc_id' => '111111'],
+                    ['name' => 'Noted WW 2', 'prc_id' => '222222'],
+                    ['name' => 'Cert1 WW 2', 'prc_id' => '333333'],
+                    ['name' => 'Cert2 WW 2', 'prc_id' => '444444'],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('signatory.form_code', 'LSP-7.8-FO2')
+            ->assertJsonPath('signatories.0.name', 'Reviewed WW 2');
+    }
+
     /**
      * @return array{0: ControlledForm, 1: JobOrder, 2: User}
      */
@@ -353,11 +553,16 @@ class ResultSignatoryTest extends TestCase
         $this->post('/intake/job-orders', [
             'customer_name' => 'Signatory Customer',
             'customer_email' => 'signatory@example.com',
+            'customer_contact' => '09170000000',
             'samples' => [
-                ['description' => 'Water', 'matrix' => 'Liquid'],
+                [
+                    'description' => 'Water',
+                    'matrix' => 'Liquid',
+                    'classification' => 'Non-Drinking Water',
+                    'analysis_type_ids' => [$total->id, $thermo->id],
+                ],
             ],
-            'analysis_type_ids' => [$total->id, $thermo->id],
-        ])->assertRedirect();
+        ])->assertRedirect()->assertSessionDoesntHaveErrors();
 
         $job = JobOrder::query()->latest('id')->firstOrFail();
 

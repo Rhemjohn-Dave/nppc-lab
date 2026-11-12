@@ -339,6 +339,39 @@ export default function FormDesigner({
         }
     }
 
+    /** Apply a per-field patch to every selected field (one history entry). */
+    function updateSelectedMapped(
+        mapField: (field: DesignerField, id: string) => Partial<DesignerField>,
+        recordHistory = false,
+    ) {
+        const ids = new Set(selectedIdsRef.current);
+
+        if (ids.size === 0) {
+            return;
+        }
+
+        const next = fieldsRef.current.map((field, index) => {
+            const id = clientId(field, index);
+
+            if (!ids.has(id)) {
+                return field;
+            }
+
+            const patch = mapField(field, id);
+
+            return Object.keys(patch).length > 0 ? { ...field, ...patch } : field;
+        });
+
+        fieldsRef.current = next;
+        setFields(next);
+        setJustSaved(false);
+
+        if (recordHistory) {
+            setHistory((items) => [...items.slice(0, historyIndex + 1), cloneFields(next)].slice(-50));
+            setHistoryIndex((value) => value + 1);
+        }
+    }
+
     function updateMatrixTableConfig(
         config: MatrixTableConfig,
         recordHistory = false,
@@ -1616,6 +1649,7 @@ export default function FormDesigner({
                             matrixDefaultConfig={matrix_default_config}
                             onClearMatrixCell={() => setMatrixCellSelection(null)}
                             onUpdate={updateSelected}
+                            onUpdateMapped={updateSelectedMapped}
                             onDuplicate={duplicateSelected}
                             onDelete={deleteSelected}
                         />

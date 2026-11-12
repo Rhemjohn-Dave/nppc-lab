@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AnalysisPackage;
+use App\Models\AnalysisType;
 use App\Models\ControlledForm;
 use App\Models\JobOrder;
 use App\Models\User;
@@ -199,5 +200,161 @@ class AnalystResultFactsTest extends TestCase
         $this->assertSame('Site B', $bagB['results.water_supply']);
         $this->assertSame('Tap', $bagB['results.sampling_point']);
         $this->assertSame('November 5, 2026 (9:45AM)', $bagB['results.collection_datetime']);
+    }
+
+    public function test_fo2_analyst_can_edit_sampling_site_from_specimen_log(): void
+    {
+        $this->seed();
+
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+        $analyst->analysisTypes()->syncWithoutDetaching([$type->id]);
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'Sampling Site Customer',
+            'customer_email' => 'site@example.com',
+            'customer_contact' => '09170000000',
+            'sampling_site' => 'Intake gate',
+            'samples' => [
+                [
+                    'description' => 'Wastewater',
+                    'matrix' => 'Liquid',
+                    'classification' => 'Wastewater',
+                    'analysis_type_ids' => [$type->id],
+                ],
+            ],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $sample = $job->samples()->firstOrFail();
+        $this->assertSame('Intake gate', $job->sampling_site);
+
+        $this->actingAs($receiving)
+            ->patch("/receiving/{$job->id}/pricing", [
+                'lines' => $job->analyses->map(fn ($line) => [
+                    'id' => $line->id,
+                    'unit_price' => 100,
+                    'quantity' => 1,
+                ])->all(),
+            ])
+            ->assertRedirect();
+
+        $this->approveJobOrder($job);
+
+        $this->actingAs($receiving)
+            ->post("/receiving/{$job->id}/receive")
+            ->assertRedirect('/receiving');
+
+        $job->analyses()->update(['assigned_to' => $analyst->id]);
+
+        $this->actingAs($analyst)
+            ->get('/analyst?q=Sampling%20Site%20Customer')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->where('tasks', function ($tasks) {
+                $facts = collect($tasks[0]['result_facts'] ?? []);
+                $this->assertTrue($facts->contains(
+                    fn (array $fact): bool => $fact['key'] === 'sampling_site'
+                        && $fact['value'] === 'Intake gate'
+                        && $fact['label'] === 'Sampling Site',
+                ));
+                $this->assertTrue($tasks[0]['can_edit_result_facts'] === true);
+
+                return true;
+            }));
+
+        $this->actingAs($analyst)
+            ->withHeader('referer', 'http://127.0.0.1:8000/analyst?job='.$job->id)
+            ->patch("/analyst/job-orders/{$job->id}/result-facts", [
+                'sample_id' => $sample->id,
+                'sampling_site' => 'Outfall B',
+            ])
+            ->assertRedirect('/analyst?job='.$job->id)
+            ->assertSessionDoesntHaveErrors();
+
+        $this->assertSame('Outfall B', $job->fresh()->sampling_site);
+
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2')->firstOrFail();
+        $revision = $form->activeRevision() ?? $form->revisions()->latest('id')->firstOrFail();
+        $bag = app(FieldValueResolver::class)->forResult(
+            $revision,
+            $job->fresh(['samples', 'analyses']),
+            null,
+            $form,
+        );
+
+        $this->assertSame('Outfall B', $bag['job_orders.sampling_site'] ?? $bag['sampling_site'] ?? null);
+    }
+
+    public function test_mixed_fo2_fo4_job_still_saves_fo2_sampling_site(): void
+    {
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $wwAnalyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+        $microAnalyst = User::where('email', 'analyst2@nppc.local')->firstOrFail();
+        $package = AnalysisPackage::query()->where('code', 'PKG-MIC-NDW')->firstOrFail();
+        $wwType = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
+        $microTypeIds = $package->analysisTypes()->pluck('analysis_types.id')->map(fn ($id) => (int) $id)->all();
+
+        $wwAnalyst->analysisTypes()->sync([$wwType->id]);
+        $microAnalyst->analysisTypes()->sync($microTypeIds);
+        $package->forceFill(['signatory_user_id' => $microAnalyst->id])->save();
+
+        $selectedTypeIds = array_values(array_unique(array_merge($microTypeIds, [(int) $wwType->id])));
+
+        $this->post('/intake/job-orders', [
+            'customer_name' => 'Mixed Site Customer',
+            'customer_email' => 'mixed-site@example.com',
+            'customer_contact' => '09170000000',
+            'sampling_site' => 'Plant intake',
+            'samples' => [
+                [
+                    'description' => 'Wastewater',
+                    'matrix' => 'Liquid',
+                    'classification' => 'Wastewater',
+                    'package_ids' => [$package->id],
+                    'analysis_type_ids' => $selectedTypeIds,
+                ],
+            ],
+        ])->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $sample = $job->samples()->firstOrFail();
+
+        $this->actingAs($receiving)
+            ->patch("/receiving/{$job->id}/pricing", [
+                'lines' => $job->analyses->map(fn ($line) => [
+                    'id' => $line->id,
+                    'unit_price' => 100,
+                    'quantity' => 1,
+                ])->all(),
+            ])
+            ->assertRedirect();
+
+        $this->approveJobOrder($job);
+
+        $this->actingAs($receiving)
+            ->post("/receiving/{$job->id}/receive")
+            ->assertRedirect('/receiving');
+
+        $job->refresh();
+        $wwLine = $job->analyses->first(
+            fn ($line) => (int) $line->analysis_type_id === (int) $wwType->id,
+        );
+        $this->assertNotNull($wwLine);
+        $wwLine->update(['assigned_to' => $wwAnalyst->id]);
+
+        // FO4 lists first for the sample; sampling_site must still persist from FO2 facts.
+        $this->actingAs($wwAnalyst)
+            ->withHeader('referer', 'http://127.0.0.1:8000/analyst?job='.$job->id)
+            ->patch("/analyst/job-orders/{$job->id}/result-facts", [
+                'sample_id' => $sample->id,
+                'sampling_site' => 'Lagoon outfall',
+            ])
+            ->assertRedirect('/analyst?job='.$job->id)
+            ->assertSessionDoesntHaveErrors();
+
+        $this->assertSame('Lagoon outfall', $job->fresh()->sampling_site);
     }
 }

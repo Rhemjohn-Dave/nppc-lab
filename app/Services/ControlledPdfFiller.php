@@ -1165,10 +1165,16 @@ class ControlledPdfFiller
             $currentY += $lineHeight;
         }
 
-        // Stretch-on (Milk/FO2): frame the full designer field box.
-        // Stretch-off (Nitrite): frame content only so leftover capacity is not a giant empty cell.
+        // Stretch-on: frame the full designer field box.
+        // Stretch-off (FO2/FO3/FO37/Nitrite): frame content only, and white-out the
+        // unused designer-box band so blank-PDF empty table rows do not show under
+        // a short list (notes/signatories then sit cleanly under the last row).
         $contentHeight = max(0.0, $currentY - $y);
         $frameHeight = $stretchBody ? $h : $contentHeight;
+        if (! $stretchBody && $h > $contentHeight + 0.5) {
+            $pdf->SetFillColor(255, 255, 255);
+            $pdf->Rect($x, $currentY, $w, $h - $contentHeight, 'F');
+        }
         if ($border && $frameHeight > 0.5) {
             $pdf->SetDrawColor(0, 0, 0);
             $pdf->SetLineWidth(0.15);

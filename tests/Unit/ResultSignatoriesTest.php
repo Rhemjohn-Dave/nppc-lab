@@ -2,8 +2,12 @@
 
 namespace Tests\Unit;
 
+use App\Enums\ControlledFormFieldType;
 use App\Models\ControlledForm;
+use App\Models\ControlledFormField;
 use App\Models\JobOrder;
+use App\Models\JobOrderAnalysis;
+use App\Models\User;
 use App\Support\ResultSignatories;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -142,5 +146,137 @@ class ResultSignatoriesTest extends TestCase
         $this->assertTrue(ResultSignatories::isConfirmedForForm($stored, $fo2));
         $this->assertTrue(ResultSignatories::isConfirmedForForm($stored, $fo2a));
         $this->assertSame([], ResultSignatories::missingFormCodes($stored, [$fo2, $fo2a]));
+    }
+
+    public function test_defaults_prefer_designer_static_text_over_assignees(): void
+    {
+        $this->seed();
+
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2A')->firstOrFail();
+        $revision = $form->activeRevision();
+        $this->assertNotNull($revision);
+
+        $nameField = $revision->fields()
+            ->where('data_source_key', 'results.analyst_name')
+            ->firstOrFail();
+        $nameField->update([
+            'options' => array_merge(
+                is_array($nameField->options) ? $nameField->options : [],
+                ['static_text' => 'Designer Reviewed Name'],
+            ),
+        ]);
+
+        $licField = $revision->fields()
+            ->where('data_source_key', 'fo2_lic_reviewed')
+            ->firstOrFail();
+        $licField->update([
+            'options' => array_merge(
+                is_array($licField->options) ? $licField->options : [],
+                ['static_text' => 'Registered Chemical Technician, License #00761'],
+            ),
+        ]);
+
+        $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+        $job = JobOrder::query()->create([
+            'reference_no' => 'SIG-STATIC-1',
+            'customer_name' => 'Static Prefill',
+            'status' => 'in_analysis',
+        ]);
+        JobOrderAnalysis::query()->create([
+            'job_order_id' => $job->id,
+            'name' => 'pH',
+            'status' => 'assigned',
+            'assigned_to' => $analyst->id,
+            'quantity' => 1,
+            'unit_price' => 100,
+        ]);
+
+        $defaults = ResultSignatories::defaults(
+            $job->fresh(['analyses.assignee', 'packages.signatory']),
+            $form->fresh(),
+        );
+
+        $this->assertSame('Designer Reviewed Name', $defaults[0]['name']);
+        $this->assertSame('00761', $defaults[0]['prc_id']);
+        $this->assertNotSame($analyst->name, $defaults[0]['name']);
+        $this->assertCount(3, $defaults);
+    }
+
+    public function test_defaults_fall_back_to_assignee_when_designer_static_empty(): void
+    {
+        $this->seed();
+
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2')->firstOrFail();
+        $revision = $form->activeRevision();
+        $this->assertNotNull($revision);
+
+        foreach (['results.analyst_name', 'results.analyst_name_2', 'results.analyst_name_3', 'results.analyst_name_4'] as $key) {
+            ControlledFormField::query()
+                ->where('controlled_form_revision_id', $revision->id)
+                ->where(function ($query) use ($key) {
+                    $query->where('data_source_key', $key)->orWhere('name', $key);
+                })
+                ->get()
+                ->each(function (ControlledFormField $field) {
+                    $options = is_array($field->options) ? $field->options : [];
+                    unset($options['static_text']);
+                    $field->update(['options' => $options]);
+                });
+        }
+
+        $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+        $job = JobOrder::query()->create([
+            'reference_no' => 'SIG-ASSIGNEE-1',
+            'customer_name' => 'Assignee Fallback',
+            'status' => 'in_analysis',
+        ]);
+        JobOrderAnalysis::query()->create([
+            'job_order_id' => $job->id,
+            'name' => 'BOD',
+            'status' => 'assigned',
+            'assigned_to' => $analyst->id,
+            'quantity' => 1,
+            'unit_price' => 100,
+        ]);
+
+        $defaults = ResultSignatories::defaults(
+            $job->fresh(['analyses.assignee', 'packages.signatory']),
+            $form->fresh(),
+        );
+
+        $this->assertSame($analyst->name, $defaults[0]['name']);
+        $this->assertNull($defaults[0]['prc_id']);
+    }
+
+    public function test_designer_static_slots_parse_prc_field_and_license_chrome(): void
+    {
+        $this->seed();
+
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2')->firstOrFail();
+        $revision = $form->activeRevision();
+        $this->assertNotNull($revision);
+
+        ControlledFormField::query()->updateOrCreate(
+            [
+                'controlled_form_revision_id' => $revision->id,
+                'data_source_key' => 'results.analyst_prc',
+            ],
+            [
+                'name' => 'results.analyst_prc',
+                'label' => 'PRC 1',
+                'field_type' => ControlledFormFieldType::Text,
+                'page_number' => 1,
+                'x' => 10,
+                'y' => 10,
+                'width' => 40,
+                'height' => 5,
+                'font_size' => 9,
+                'z_order' => 99,
+                'options' => ['static_text' => '998877'],
+            ],
+        );
+
+        $slots = ResultSignatories::designerStaticSlots($form->fresh(), 4);
+        $this->assertSame('998877', $slots[0]['prc_id']);
     }
 }
