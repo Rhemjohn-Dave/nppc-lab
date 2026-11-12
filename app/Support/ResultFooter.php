@@ -134,10 +134,24 @@ class ResultFooter
         ]);
 
         $showFieldData = self::formShowsFieldData($form, $jobOrder);
-        $fieldData = trim((string) ($jobOrder->field_data ?? ''));
-        if ($showFieldData && $fieldData === '') {
-            $fieldData = OfficialAnalysisCatalog::coastalFieldDataTemplate();
-        }
+        $fieldDataRaw = trim((string) ($jobOrder->field_data ?? ''));
+        $fieldComplete = self::isCoastalFieldDataComplete($fieldDataRaw);
+        // Answer boxes stay empty until the analyst has saved complete FIELD DATA.
+        $emptyParts = [
+            'temperature' => '',
+            'dissolved_oxygen' => '',
+            'time_of_sampling' => '',
+            'time_of_sampling_from' => '',
+            'time_of_sampling_to' => '',
+        ];
+        $fieldParts = ($showFieldData && $fieldComplete)
+            ? self::parseCoastalFieldData($fieldDataRaw)
+            : $emptyParts;
+        $fieldDataPreview = $showFieldData
+            ? ($fieldComplete
+                ? $fieldDataRaw
+                : OfficialAnalysisCatalog::coastalFieldDataTemplate())
+            : '';
 
         return [
             'temperature_c' => $temperature,
@@ -147,11 +161,16 @@ class ResultFooter
             'lab_conditions' => $composed !== '' ? $composed : $value('lab_conditions'),
             'references' => $showNotes ? $value('references') : '',
             'notes' => $showNotes ? $value('notes') : '',
-            'field_data' => $showFieldData ? $fieldData : '',
+            'field_data' => $fieldDataPreview,
+            'field_data_temperature' => $fieldParts['temperature'],
+            'field_data_dissolved_oxygen' => $fieldParts['dissolved_oxygen'],
+            'field_data_time_of_sampling' => $fieldParts['time_of_sampling'],
+            'field_data_time_of_sampling_from' => $fieldParts['time_of_sampling_from'],
+            'field_data_time_of_sampling_to' => $fieldParts['time_of_sampling_to'],
             'requires_atmosphere' => $requiresAtmosphere,
             'requires_field_data' => $showFieldData,
             'atmosphere_complete' => self::isAtmosphereComplete($jobOrder, $form),
-            'field_data_complete' => ! $showFieldData || trim((string) ($jobOrder->field_data ?? '')) !== '',
+            'field_data_complete' => ! $showFieldData || $fieldComplete,
             'show_notes_fields' => $showNotes,
             'show_field_data' => $showFieldData,
             'save_url' => $saveUrl,
@@ -169,6 +188,103 @@ class ResultFooter
         $description = trim((string) ($jobOrder?->samples->first()?->description ?? ''));
 
         return OfficialAnalysisCatalog::isWastewaterCoastalKind($description);
+    }
+
+    /**
+     * @return array{
+     *     temperature: string,
+     *     dissolved_oxygen: string,
+     *     time_of_sampling: string,
+     *     time_of_sampling_from: string,
+     *     time_of_sampling_to: string
+     * }
+     */
+    public static function parseCoastalFieldData(?string $text): array
+    {
+        $raw = (string) ($text ?? '');
+
+        $extract = static function (string $label) use ($raw): string {
+            if ($raw === '') {
+                return '';
+            }
+
+            $pattern = '/'.preg_quote($label, '/').'\s*[–\-—:]\s*(.*)$/miu';
+            if (! preg_match($pattern, $raw, $matches)) {
+                return '';
+            }
+
+            return trim((string) ($matches[1] ?? ''));
+        };
+
+        $timeOfSampling = $extract('Time of Sampling');
+        $range = self::parseTimeOfSamplingRange($timeOfSampling);
+
+        return [
+            'temperature' => $extract('Temperature'),
+            'dissolved_oxygen' => $extract('Dissolved Oxygen'),
+            'time_of_sampling' => $timeOfSampling,
+            'time_of_sampling_from' => $range['from'],
+            'time_of_sampling_to' => $range['to'],
+        ];
+    }
+
+    /**
+     * @return array{from: string, to: string}
+     */
+    public static function parseTimeOfSamplingRange(?string $text): array
+    {
+        $raw = trim((string) $text);
+        if ($raw === '') {
+            return ['from' => '', 'to' => ''];
+        }
+
+        if (preg_match('/^(.+?)\s*[–\-—]\s*(.+)$/u', $raw, $matches) === 1) {
+            return [
+                'from' => trim((string) $matches[1]),
+                'to' => trim((string) $matches[2]),
+            ];
+        }
+
+        return ['from' => $raw, 'to' => ''];
+    }
+
+    public static function composeTimeOfSamplingRange(?string $from, ?string $to): string
+    {
+        $start = trim((string) $from);
+        $end = trim((string) $to);
+
+        if ($start !== '' && $end !== '') {
+            return "{$start} – {$end}";
+        }
+
+        return $start !== '' ? $start : $end;
+    }
+
+    public static function composeCoastalFieldData(
+        ?string $temperature,
+        ?string $dissolvedOxygen,
+        ?string $timeOfSampling,
+    ): string {
+        $temp = trim((string) $temperature);
+        $do = trim((string) $dissolvedOxygen);
+        $time = trim((string) $timeOfSampling);
+
+        return "FIELD DATA:\n"
+            ."a) Temperature – {$temp}\n"
+            ."b) Dissolved Oxygen - {$do}\n"
+            ."c) Time of Sampling - {$time}\n"
+            ."d) Other field data will be available upon request\n"
+            .'(Field Sampling Logbook)';
+    }
+
+    public static function isCoastalFieldDataComplete(?string $text): bool
+    {
+        $parts = self::parseCoastalFieldData($text);
+
+        return $parts['temperature'] !== ''
+            && $parts['dissolved_oxygen'] !== ''
+            && $parts['time_of_sampling_from'] !== ''
+            && $parts['time_of_sampling_to'] !== '';
     }
 
     /**

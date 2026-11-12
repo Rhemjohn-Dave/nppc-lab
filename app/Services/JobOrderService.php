@@ -1585,10 +1585,12 @@ class JobOrderService
                     'result_footer' => 'Enter laboratory temperature and humidity before encoding results.',
                 ]);
             }
+            // Coastal FIELD DATA uses the same encode gate as lab atmosphere
+            // (check JO sample kind even when matchingControlledForm prefers another sheet).
             if (ResultFooter::formShowsFieldData($resultForm, $jobOrder)
-                && trim((string) ($jobOrder->field_data ?? '')) === '') {
+                && ! ResultFooter::isCoastalFieldDataComplete($jobOrder->field_data)) {
                 throw ValidationException::withMessages([
-                    'field_data' => 'Enter FIELD DATA for Coastal Water before encoding results.',
+                    'result_footer' => 'Enter FIELD DATA (temperature, dissolved oxygen, time of sampling) in Lab conditions before encoding results.',
                 ]);
             }
         }

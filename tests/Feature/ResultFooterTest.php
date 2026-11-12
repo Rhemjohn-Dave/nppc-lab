@@ -98,13 +98,19 @@ class ResultFooterTest extends TestCase
             ->assertRedirect();
 
         $job = JobOrder::query()->latest('id')->firstOrFail();
-        $this->assertStringContainsString('FIELD DATA:', (string) $job->field_data);
+        // FIELD DATA is analyst Lab-conditions work — not filled at intake.
+        $this->assertTrue(
+            $job->field_data === null || trim((string) $job->field_data) === '',
+        );
 
         $nitrite = AnalysisType::query()->where('code', 'WW-15')->firstOrFail();
         $this->assertTrue($job->analyses()->where('analysis_type_id', $nitrite->id)->exists());
 
         $this->advanceFo2JobToReady($job, [
-            'field_data' => OfficialAnalysisCatalog::coastalFieldDataTemplate()."\nTemp 28C",
+            'field_data_temperature' => '27',
+            'field_data_dissolved_oxygen' => '5.5',
+            'field_data_time_of_sampling_from' => '8:15 AM',
+            'field_data_time_of_sampling_to' => '8:45 AM',
         ]);
 
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
@@ -116,7 +122,10 @@ class ResultFooterTest extends TestCase
                 'temperature_c' => '25',
                 'humidity_pct' => '55',
                 'test_report_no' => 'CW-1',
-                'field_data' => '',
+                'field_data_temperature' => '',
+                'field_data_dissolved_oxygen' => '',
+                'field_data_time_of_sampling_from' => '',
+                'field_data_time_of_sampling_to' => '',
             ])
             ->assertStatus(422);
 
@@ -125,14 +134,23 @@ class ResultFooterTest extends TestCase
                 'temperature_c' => '25',
                 'humidity_pct' => '55',
                 'test_report_no' => 'CW-1',
-                'field_data' => "FIELD DATA:\na) Temperature – 28",
+                'field_data_temperature' => '28',
+                'field_data_dissolved_oxygen' => '6.2',
+                'field_data_time_of_sampling_from' => '9:30 AM',
+                'field_data_time_of_sampling_to' => '10:15 AM',
             ])
             ->assertOk()
             ->assertJsonPath('footer.show_field_data', true)
             ->assertJsonPath('footer.requires_field_data', true)
-            ->assertJsonPath('footer.field_data_complete', true);
+            ->assertJsonPath('footer.field_data_complete', true)
+            ->assertJsonPath('footer.field_data_temperature', '28')
+            ->assertJsonPath('footer.field_data_dissolved_oxygen', '6.2')
+            ->assertJsonPath('footer.field_data_time_of_sampling_from', '9:30 AM')
+            ->assertJsonPath('footer.field_data_time_of_sampling_to', '10:15 AM');
 
         $this->assertStringContainsString('Temperature – 28', (string) $job->fresh()->field_data);
+        $this->assertStringContainsString('Dissolved Oxygen - 6.2', (string) $job->fresh()->field_data);
+        $this->assertStringContainsString('Time of Sampling - 9:30 AM – 10:15 AM', (string) $job->fresh()->field_data);
 
         $bag = app(FieldValueResolver::class)->forResult(
             $fo2b->activeRevision()->load('fields'),

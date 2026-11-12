@@ -662,15 +662,6 @@ export default function IntakeWizard({
     );
     const [otherTests, setOtherTests] = useState('');
 
-    const coastalFieldDataTemplate = [
-        'FIELD DATA:',
-        'a) Temperature –',
-        'b) Dissolved Oxygen -',
-        'c) Time of Sampling -',
-        'd) Other field data will be available upon request',
-        '(Field Sampling Logbook)',
-    ].join('\n');
-
     const wastewaterKinds = options.wastewater_kinds ?? [
         'Wastewater',
         'River water',
@@ -1594,12 +1585,6 @@ export default function IntakeWizard({
                 ),
             );
 
-            if (value === 'Coastal Water') {
-                setFieldData((current) =>
-                    current.trim() === '' ? coastalFieldDataTemplate : current,
-                );
-            }
-
             return;
         }
 
@@ -1836,10 +1821,9 @@ export default function IntakeWizard({
                               (sample) =>
                                   sample.description.trim() === 'Coastal Water',
                           );
+                          // Coastal FIELD DATA is filled by the analyst in Lab conditions.
                           if (hasCoastal) {
-                              return (
-                                  fieldData.trim() || coastalFieldDataTemplate
-                              );
+                              return null;
                           }
 
                           if (sterileBottle) {

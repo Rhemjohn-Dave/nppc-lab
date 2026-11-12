@@ -349,6 +349,11 @@ export default function ResultReportPreview({
         references: string;
         notes: string;
         field_data?: string;
+        field_data_temperature?: string;
+        field_data_dissolved_oxygen?: string;
+        field_data_time_of_sampling?: string;
+        field_data_time_of_sampling_from?: string;
+        field_data_time_of_sampling_to?: string;
     }) {
         if (!footer?.save_url) {
             throw new Error('Footer save URL is missing.');
@@ -402,6 +407,11 @@ export default function ResultReportPreview({
         references: string;
         notes: string;
         field_data?: string;
+        field_data_temperature?: string;
+        field_data_dissolved_oxygen?: string;
+        field_data_time_of_sampling?: string;
+        field_data_time_of_sampling_from?: string;
+        field_data_time_of_sampling_to?: string;
     }) {
         setFooterSaving(true);
         setFooterError(null);

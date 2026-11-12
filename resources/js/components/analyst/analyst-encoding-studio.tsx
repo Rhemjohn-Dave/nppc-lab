@@ -144,6 +144,15 @@ export default function AnalystEncodingStudio({
         consolidation?.footer?.requires_atmosphere ||
             releasedPrint?.footer?.requires_atmosphere,
     );
+    const fieldDataComplete = Boolean(
+        consolidation?.footer?.field_data_complete ??
+            releasedPrint?.footer?.field_data_complete ??
+            true,
+    );
+    const requiresFieldData = Boolean(
+        consolidation?.footer?.requires_field_data ||
+            releasedPrint?.footer?.requires_field_data,
+    );
     // FO2 / FO2A set show_notes_fields; hide Remarks Passed/Failed there.
     // FO3 / FO37 keep the optional remarks shortcuts.
     const isWastewaterFo2Sheet = Boolean(
@@ -152,8 +161,9 @@ export default function AnalystEncodingStudio({
     );
     const remarksPassFail =
         requiresAtmosphere && !isWastewaterFo2Sheet;
-    const encodeBlockedByAtmosphere =
-        requiresAtmosphere && !atmosphereComplete;
+    const encodeBlockedByLabConditions =
+        (requiresAtmosphere && !atmosphereComplete) ||
+        (requiresFieldData && !fieldDataComplete);
     const canEditSignatories = Boolean(
         consolidation?.signatory?.can_edit ||
             releasedPrint?.signatory?.can_edit,
@@ -552,13 +562,30 @@ export default function AnalystEncodingStudio({
                                     </div>
 
                                     <div className="p-3.5 sm:p-4">
-                                        {encodeBlockedByAtmosphere ? (
+                                        {encodeBlockedByLabConditions ? (
                                             <div className="mb-2.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-950">
                                                 <p className="font-semibold">
                                                     Lab conditions required
                                                 </p>
                                                 <p className="mt-0.5">
-                                                    Enter temperature and humidity
+                                                    {requiresAtmosphere &&
+                                                    !atmosphereComplete
+                                                        ? 'Enter temperature, humidity, and Test Report #'
+                                                        : null}
+                                                    {requiresAtmosphere &&
+                                                    !atmosphereComplete &&
+                                                    requiresFieldData &&
+                                                    !fieldDataComplete
+                                                        ? ' and FIELD DATA'
+                                                        : null}
+                                                    {!(
+                                                        requiresAtmosphere &&
+                                                        !atmosphereComplete
+                                                    ) &&
+                                                    requiresFieldData &&
+                                                    !fieldDataComplete
+                                                        ? 'Enter FIELD DATA (temperature, DO, time of sampling)'
+                                                        : null}{' '}
                                                     before encoding dates and
                                                     results.
                                                     {canEditFooter &&
@@ -599,7 +626,7 @@ export default function AnalystEncodingStudio({
                                             formErrors={formErrors}
                                             readOnly={
                                                 readOnly ||
-                                                encodeBlockedByAtmosphere
+                                                encodeBlockedByLabConditions
                                             }
                                             remarksPassFail={remarksPassFail}
                                             analysisError={analysisError}
@@ -736,7 +763,7 @@ export default function AnalystEncodingStudio({
                         ) : null}
                         {active &&
                         !readOnly &&
-                        !encodeBlockedByAtmosphere &&
+                        !encodeBlockedByLabConditions &&
                         !isCompletedLine ? (
                             <Button
                                 type="button"
@@ -771,7 +798,7 @@ export default function AnalystEncodingStudio({
                                 Signatories
                             </Button>
                         ) : null}
-                        {active && !readOnly && !encodeBlockedByAtmosphere ? (
+                        {active && !readOnly && !encodeBlockedByLabConditions ? (
                             <Button
                                 type="submit"
                                 size="sm"

@@ -486,13 +486,15 @@ class IntakeController extends Controller
             }
             $data['samples'] = $samples;
 
+            // Coastal FIELD DATA is entered by the analyst under Lab conditions
+            // (same gate as temperature / humidity) — do not prefill at intake.
             $hasCoastal = collect($samples)->contains(
                 fn ($sample): bool => OfficialAnalysisCatalog::isWastewaterCoastalKind(
                     is_array($sample) ? ($sample['description'] ?? null) : null,
                 ),
             );
-            if ($hasCoastal && trim((string) ($data['field_data'] ?? '')) === '') {
-                $data['field_data'] = OfficialAnalysisCatalog::coastalFieldDataTemplate();
+            if ($hasCoastal) {
+                $data['field_data'] = null;
             }
 
             $usesLegacyJoLevelSelection = array_key_exists('analysis_type_ids', $data)

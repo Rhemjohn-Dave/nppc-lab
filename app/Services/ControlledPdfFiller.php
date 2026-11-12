@@ -18,11 +18,14 @@ class ControlledPdfFiller
     {
         @set_time_limit(300);
 
-        $source = $revision->canonicalAbsolutePath();
         $pdf = $this->newPdf($revision);
-        $pageCount = $this->openSource($pdf, $source);
+        $page = $revision->page();
+        $hasCanonical = $revision->hasCanonicalPdf();
+        $pageCount = $hasCanonical
+            ? $this->openSource($pdf, $revision->canonicalAbsolutePath())
+            : max(1, (int) ($revision->page_count ?: 1));
 
-        $continuation = $this->matrixContinuation($revision, $values);
+        $continuation = $hasCanonical ? $this->matrixContinuation($revision, $values) : null;
         if ($continuation !== null) {
             $templateId = $pdf->importPage(1);
             $size = $pdf->getTemplateSize($templateId);
@@ -44,12 +47,18 @@ class ControlledPdfFiller
         }
 
         for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
-            $templateId = $pdf->importPage($pageNo);
-            $size = $pdf->getTemplateSize($templateId);
-            $orientation = $size['width'] > $size['height'] ? 'L' : 'P';
-
-            $pdf->AddPage($orientation, [$size['width'], $size['height']]);
-            $pdf->useTemplate($templateId);
+            if ($hasCanonical) {
+                $templateId = $pdf->importPage($pageNo);
+                $size = $pdf->getTemplateSize($templateId);
+                $orientation = $size['width'] > $size['height'] ? 'L' : 'P';
+                $pdf->AddPage($orientation, [$size['width'], $size['height']]);
+                $pdf->useTemplate($templateId);
+            } else {
+                $width = (float) $page['width'];
+                $height = (float) $page['height'];
+                $orientation = $width > $height ? 'L' : 'P';
+                $pdf->AddPage($orientation, [$width, $height]);
+            }
 
             $pageFields = $revision->fields
                 ->filter(fn ($field) => (int) $field->page_number === $pageNo)

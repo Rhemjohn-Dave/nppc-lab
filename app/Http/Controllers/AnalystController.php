@@ -867,6 +867,11 @@ class AnalystController extends Controller
             'references' => ['nullable', 'string', 'max:4000'],
             'notes' => ['nullable', 'string', 'max:8000'],
             'field_data' => ['nullable', 'string', 'max:2000'],
+            'field_data_temperature' => ['nullable', 'string', 'max:80'],
+            'field_data_dissolved_oxygen' => ['nullable', 'string', 'max:80'],
+            'field_data_time_of_sampling' => ['nullable', 'string', 'max:80'],
+            'field_data_time_of_sampling_from' => ['nullable', 'string', 'max:40'],
+            'field_data_time_of_sampling_to' => ['nullable', 'string', 'max:40'],
             'reset' => ['sometimes', 'boolean'],
             'sample_id' => ['nullable', 'integer'],
             'form_id' => ['nullable', 'integer'],
@@ -930,14 +935,52 @@ class AnalystController extends Controller
                 'result_footer' => ResultFooter::normalizeForStorage($data, $form),
             ];
 
-            if (ResultFooter::formShowsFieldData($form, $jobOrder) && array_key_exists('field_data', $data)) {
-                $fieldData = trim((string) ($data['field_data'] ?? ''));
-                if ($fieldData === '') {
-                    throw ValidationException::withMessages([
-                        'field_data' => 'Enter FIELD DATA for Coastal Water results.',
-                    ]);
+            if (ResultFooter::formShowsFieldData($form, $jobOrder)) {
+                $fdTemp = trim((string) ($data['field_data_temperature'] ?? ''));
+                $fdDo = trim((string) ($data['field_data_dissolved_oxygen'] ?? ''));
+                $fdTimeFrom = trim((string) ($data['field_data_time_of_sampling_from'] ?? ''));
+                $fdTimeTo = trim((string) ($data['field_data_time_of_sampling_to'] ?? ''));
+
+                if ($fdTimeFrom === '' && $fdTimeTo === '') {
+                    $range = ResultFooter::parseTimeOfSamplingRange(
+                        (string) ($data['field_data_time_of_sampling'] ?? ''),
+                    );
+                    $fdTimeFrom = $range['from'];
+                    $fdTimeTo = $range['to'];
                 }
-                $updates['field_data'] = $fieldData;
+
+                if ($fdTemp === '' && $fdDo === '' && $fdTimeFrom === '' && $fdTimeTo === '') {
+                    $parsed = ResultFooter::parseCoastalFieldData(
+                        (string) ($data['field_data'] ?? ''),
+                    );
+                    $fdTemp = $parsed['temperature'];
+                    $fdDo = $parsed['dissolved_oxygen'];
+                    $fdTimeFrom = $parsed['time_of_sampling_from'];
+                    $fdTimeTo = $parsed['time_of_sampling_to'];
+                }
+
+                $fieldDataErrors = [];
+                if ($fdTemp === '') {
+                    $fieldDataErrors['field_data_temperature'] = 'Enter field temperature.';
+                }
+                if ($fdDo === '') {
+                    $fieldDataErrors['field_data_dissolved_oxygen'] = 'Enter field dissolved oxygen.';
+                }
+                if ($fdTimeFrom === '') {
+                    $fieldDataErrors['field_data_time_of_sampling_from'] = 'Enter sampling start time.';
+                }
+                if ($fdTimeTo === '') {
+                    $fieldDataErrors['field_data_time_of_sampling_to'] = 'Enter sampling end time.';
+                }
+                if ($fieldDataErrors !== []) {
+                    throw ValidationException::withMessages($fieldDataErrors);
+                }
+
+                $updates['field_data'] = ResultFooter::composeCoastalFieldData(
+                    $fdTemp,
+                    $fdDo,
+                    ResultFooter::composeTimeOfSamplingRange($fdTimeFrom, $fdTimeTo),
+                );
             }
 
             $jobOrder->update($updates);

@@ -1281,6 +1281,11 @@ export default function AnalystIndex({
         references: string;
         notes: string;
         field_data?: string;
+        field_data_temperature?: string;
+        field_data_dissolved_oxygen?: string;
+        field_data_time_of_sampling?: string;
+        field_data_time_of_sampling_from?: string;
+        field_data_time_of_sampling_to?: string;
     }) {
         const config = footerConfig;
         if (!footerJobId || !config?.save_url) {

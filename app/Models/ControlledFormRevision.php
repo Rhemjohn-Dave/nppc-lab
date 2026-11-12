@@ -104,6 +104,20 @@ class ControlledFormRevision extends Model
             && Storage::disk('local')->exists($this->canonical_pdf_path);
     }
 
+    /**
+     * Whether PDF generation can run: either an uploaded canonical PDF exists,
+     * or page size is known for a blank-canvas overlay.
+     */
+    public function canGenerateWithoutCanonical(): bool
+    {
+        if ($this->hasCanonicalPdf()) {
+            return true;
+        }
+
+        return (float) ($this->page_width_mm ?: 0) > 0
+            && (float) ($this->page_height_mm ?: 0) > 0;
+    }
+
     public function canonicalAbsolutePath(): string
     {
         return Storage::disk('local')->path((string) $this->canonical_pdf_path);
