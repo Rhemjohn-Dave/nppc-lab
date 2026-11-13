@@ -1,5 +1,5 @@
 import { Head, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import JoReferenceChip from '@/components/lims/jo-reference-chip';
 import LimsWorkspace from '@/components/lims/lims-workspace';
 import QueueKpi from '@/components/lims/queue-kpi';
@@ -16,6 +16,7 @@ type OrderRow = {
     reference_no: string;
     customer_name: string;
     company_name: string | null;
+    classification?: string | null;
     payment_mode: string | null;
     payment_mode_label: string;
     payment_terms: string | null;
@@ -43,9 +44,13 @@ type TrendPoint = {
 
 type Props = {
     filters: {
-        date: string;
+        date_from: string;
+        date_to: string;
+        q: string;
+        classification: string;
         payment_mode: string;
     };
+    classification_options: string[];
     summary: {
         job_count: number;
         gross: number;
@@ -90,21 +95,55 @@ function formatApprovedAt(value: string | null) {
 
 export default function AccountingIndex({
     filters,
+    classification_options: classificationOptions,
     summary,
     by_payment_mode: byPaymentMode,
     trend,
     orders,
 }: Props) {
-    const [date, setDate] = useState(filters.date);
+    const [dateFrom, setDateFrom] = useState(filters.date_from);
+    const [dateTo, setDateTo] = useState(filters.date_to);
+    const [q, setQ] = useState(filters.q);
+    const [classification, setClassification] = useState(
+        filters.classification || 'all',
+    );
+    const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    function applyFilters(next: { date?: string; payment_mode?: string }) {
-        const nextDate = next.date ?? date;
+    useEffect(() => {
+        setDateFrom(filters.date_from);
+        setDateTo(filters.date_to);
+        setQ(filters.q);
+        setClassification(filters.classification || 'all');
+    }, [
+        filters.date_from,
+        filters.date_to,
+        filters.q,
+        filters.classification,
+    ]);
+
+    function applyFilters(next: {
+        date_from?: string;
+        date_to?: string;
+        q?: string;
+        classification?: string;
+        payment_mode?: string;
+    }) {
+        const nextFrom = next.date_from ?? dateFrom;
+        const nextTo = next.date_to ?? dateTo;
+        const nextQ = (next.q ?? q).trim();
+        const nextClassification =
+            next.classification ?? classification ?? 'all';
         const nextMode = next.payment_mode ?? filters.payment_mode;
 
         router.get(
             '/accounting',
             {
-                date: nextDate,
+                date_from: nextFrom,
+                date_to: nextTo,
+                ...(nextQ !== '' ? { q: nextQ } : {}),
+                ...(nextClassification && nextClassification !== 'all'
+                    ? { classification: nextClassification }
+                    : {}),
                 ...(nextMode && nextMode !== 'all'
                     ? { payment_mode: nextMode }
                     : {}),
@@ -115,6 +154,24 @@ export default function AccountingIndex({
             },
         );
     }
+
+    function onSearchChange(value: string) {
+        setQ(value);
+        if (searchTimer.current) {
+            clearTimeout(searchTimer.current);
+        }
+        searchTimer.current = setTimeout(() => {
+            applyFilters({ q: value });
+        }, 300);
+    }
+
+    useEffect(() => {
+        return () => {
+            if (searchTimer.current) {
+                clearTimeout(searchTimer.current);
+            }
+        };
+    }, []);
 
     const modeTotal = Math.max(
         byPaymentMode.reduce((sum, row) => sum + row.count, 0),
@@ -152,6 +209,7 @@ export default function AccountingIndex({
     ];
 
     const maxTrendNet = Math.max(...trend.map((point) => point.net), 1);
+    const singleDayRange = filters.date_from === filters.date_to;
 
     return (
         <>
@@ -159,31 +217,96 @@ export default function AccountingIndex({
             <LimsWorkspace className="gap-4">
                 <WorkspaceHeader
                     title="Sales monitor"
-                    description="Daily billed totals from Head-approved job orders. Payment collection stays outside LMIS."
-                    actions={
-                        <div className="flex items-center gap-2">
-                            <label
-                                htmlFor="accounting-date"
-                                className="text-xs font-medium text-slate-600"
-                            >
-                                Date
-                            </label>
-                            <Input
-                                id="accounting-date"
-                                type="date"
-                                className="h-8 w-[10.5rem] text-xs"
-                                value={date}
-                                onChange={(event) => {
-                                    const next = event.target.value;
-                                    setDate(next);
-                                    if (next) {
-                                        applyFilters({ date: next });
-                                    }
-                                }}
-                            />
-                        </div>
-                    }
+                    description="Billed totals from Head-approved job orders. Payment collection stays outside LMIS."
                 />
+
+                <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-xs">
+                    <div className="space-y-1">
+                        <label
+                            htmlFor="accounting-date-from"
+                            className="text-[11px] font-medium text-slate-600"
+                        >
+                            From
+                        </label>
+                        <Input
+                            id="accounting-date-from"
+                            type="date"
+                            className="h-8 w-[10.5rem] text-xs"
+                            value={dateFrom}
+                            onChange={(event) => {
+                                const next = event.target.value;
+                                setDateFrom(next);
+                                if (next) {
+                                    applyFilters({ date_from: next });
+                                }
+                            }}
+                        />
+                    </div>
+                    <div className="space-y-1">
+                        <label
+                            htmlFor="accounting-date-to"
+                            className="text-[11px] font-medium text-slate-600"
+                        >
+                            To
+                        </label>
+                        <Input
+                            id="accounting-date-to"
+                            type="date"
+                            className="h-8 w-[10.5rem] text-xs"
+                            value={dateTo}
+                            onChange={(event) => {
+                                const next = event.target.value;
+                                setDateTo(next);
+                                if (next) {
+                                    applyFilters({ date_to: next });
+                                }
+                            }}
+                        />
+                    </div>
+                    <div className="min-w-[12rem] flex-1 space-y-1">
+                        <label
+                            htmlFor="accounting-search"
+                            className="text-[11px] font-medium text-slate-600"
+                        >
+                            Search
+                        </label>
+                        <Input
+                            id="accounting-search"
+                            type="search"
+                            placeholder="JO, customer, or company"
+                            className="h-8 text-xs"
+                            value={q}
+                            onChange={(event) =>
+                                onSearchChange(event.target.value)
+                            }
+                        />
+                    </div>
+                    <div className="space-y-1">
+                        <label
+                            htmlFor="accounting-classification"
+                            className="text-[11px] font-medium text-slate-600"
+                        >
+                            Classification
+                        </label>
+                        <select
+                            id="accounting-classification"
+                            className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-800"
+                            value={classification}
+                            onChange={(event) => {
+                                const next = event.target.value;
+                                setClassification(next);
+                                applyFilters({ classification: next });
+                            }}
+                        >
+                            <option value="all">All</option>
+                            {classificationOptions.map((option) => (
+                                <option key={option} value={option}>
+                                    {option}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
 
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <QueueKpi
@@ -196,7 +319,7 @@ export default function AccountingIndex({
                     <QueueKpi
                         label="Job orders"
                         value={summary.job_count}
-                        hint="Approved this day"
+                        hint="Approved in range"
                         tone="info"
                     />
                     <QueueKpi
@@ -236,10 +359,12 @@ export default function AccountingIndex({
                 <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
                     <div className="mb-3 flex items-baseline justify-between gap-2">
                         <h2 className="text-xs font-semibold tracking-wide text-slate-900 uppercase">
-                            Last 14 days
+                            Trend
                         </h2>
                         <p className="text-xs text-slate-500">
-                            Ending {filters.date}
+                            {filters.date_from === filters.date_to
+                                ? filters.date_from
+                                : `${filters.date_from} → ${filters.date_to}`}
                         </p>
                     </div>
                     <div className="flex h-36 items-end gap-1.5">
@@ -248,7 +373,9 @@ export default function AccountingIndex({
                                 (point.net / maxTrendNet) * 100,
                                 point.net > 0 ? 6 : 2,
                             );
-                            const selected = point.date === filters.date;
+                            const selected =
+                                singleDayRange &&
+                                point.date === filters.date_from;
 
                             return (
                                 <button
@@ -256,8 +383,12 @@ export default function AccountingIndex({
                                     type="button"
                                     title={`${point.label}: ${money(point.net)} · ${point.job_count} JO`}
                                     onClick={() => {
-                                        setDate(point.date);
-                                        applyFilters({ date: point.date });
+                                        setDateFrom(point.date);
+                                        setDateTo(point.date);
+                                        applyFilters({
+                                            date_from: point.date,
+                                            date_to: point.date,
+                                        });
                                     }}
                                     className="group flex min-w-0 flex-1 flex-col items-center gap-1"
                                 >
@@ -354,8 +485,8 @@ export default function AccountingIndex({
                                             colSpan={7}
                                             className="px-4 py-10 text-center text-sm text-slate-500"
                                         >
-                                            No Head-approved job orders for this
-                                            day
+                                            No Head-approved job orders for
+                                            these filters
                                             {filters.payment_mode !== 'all'
                                                 ? ' with the selected payment mode'
                                                 : ''}
@@ -382,6 +513,11 @@ export default function AccountingIndex({
                                                 {order.company_name ? (
                                                     <div className="text-xs text-slate-500">
                                                         {order.company_name}
+                                                    </div>
+                                                ) : null}
+                                                {order.classification ? (
+                                                    <div className="text-[11px] text-slate-400">
+                                                        {order.classification}
                                                     </div>
                                                 ) : null}
                                             </td>

@@ -5,38 +5,42 @@ namespace App\Support\Accounting;
 use App\Enums\PaymentMode;
 use App\Enums\PaymentTerms;
 use App\Models\JobOrder;
+use App\Support\OfficialAnalysisCatalog;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class SalesMonitor
 {
+    private const MAX_RANGE_DAYS = 90;
+
     /**
+     * @param  array{
+     *     date?: string|null,
+     *     date_from?: string|null,
+     *     date_to?: string|null,
+     *     q?: string|null,
+     *     classification?: string|null,
+     *     payment_mode?: string|null
+     * }  $input
      * @return array{
-     *     filters: array{date: string, payment_mode: string},
+     *     filters: array{date_from: string, date_to: string, q: string, classification: string, payment_mode: string},
+     *     classification_options: list<string>,
      *     summary: array{job_count: int, gross: float, discount: float, net: float, avg_ticket: float},
      *     by_payment_mode: list<array{id: string, label: string, count: int, net: float}>,
      *     trend: list<array{date: string, label: string, job_count: int, net: float}>,
      *     orders: LengthAwarePaginator
      * }
      */
-    public function build(?string $date, ?string $paymentMode): array
+    public function build(array $input): array
     {
-        $day = $this->resolveDate($date);
-        $mode = $this->resolvePaymentMode($paymentMode);
+        $filters = $this->resolveFilters($input);
 
-        $dayQuery = JobOrder::query()
-            ->whereNotNull('jo_approved_at')
-            ->whereDate('jo_approved_at', $day->toDateString())
-            ->when($mode === 'unset', fn ($q) => $q->whereNull('payment_mode'))
-            ->when(
-                $mode !== null && $mode !== 'unset',
-                fn ($q) => $q->where('payment_mode', $mode),
-            );
-
-        $aggregates = (clone $dayQuery)
+        $scoped = $this->scopedQuery($filters, includePaymentMode: true);
+        $aggregates = (clone $scoped)
             ->selectRaw('COUNT(*) as job_count')
             ->selectRaw('COALESCE(SUM(total_cost), 0) as net')
             ->selectRaw('COALESCE(SUM(discount_amount), 0) as discount')
@@ -50,9 +54,13 @@ class SalesMonitor
 
         return [
             'filters' => [
-                'date' => $day->toDateString(),
-                'payment_mode' => $mode ?? 'all',
+                'date_from' => $filters['date_from']->toDateString(),
+                'date_to' => $filters['date_to']->toDateString(),
+                'q' => $filters['q'],
+                'classification' => $filters['classification'] ?? 'all',
+                'payment_mode' => $filters['payment_mode'] ?? 'all',
             ],
+            'classification_options' => OfficialAnalysisCatalog::classifications(),
             'summary' => [
                 'job_count' => $jobCount,
                 'gross' => $gross,
@@ -60,23 +68,80 @@ class SalesMonitor
                 'net' => $net,
                 'avg_ticket' => $avgTicket,
             ],
-            'by_payment_mode' => $this->paymentModeBreakdown($day),
-            'trend' => $this->trendEndingOn($day, 14),
-            'orders' => $this->paginateOrders($day, $mode),
+            'by_payment_mode' => $this->paymentModeBreakdown($filters),
+            'trend' => $this->trendForRange($filters),
+            'orders' => $this->paginateOrders($filters),
         ];
     }
 
-    private function resolveDate(?string $date): CarbonInterface
+    /**
+     * @param  array{
+     *     date?: string|null,
+     *     date_from?: string|null,
+     *     date_to?: string|null,
+     *     q?: string|null,
+     *     classification?: string|null,
+     *     payment_mode?: string|null
+     * }  $input
+     * @return array{
+     *     date_from: CarbonInterface,
+     *     date_to: CarbonInterface,
+     *     q: string,
+     *     classification: string|null,
+     *     payment_mode: string|null
+     * }
+     */
+    private function resolveFilters(array $input): array
     {
-        if (is_string($date) && $date !== '') {
-            try {
-                return Carbon::parse($date)->startOfDay();
-            } catch (\Throwable) {
-                // fall through
-            }
+        $legacyDate = is_string($input['date'] ?? null) ? trim((string) $input['date']) : '';
+        $fromRaw = is_string($input['date_from'] ?? null) ? trim((string) $input['date_from']) : '';
+        $toRaw = is_string($input['date_to'] ?? null) ? trim((string) $input['date_to']) : '';
+
+        if ($fromRaw === '' && $toRaw === '' && $legacyDate !== '') {
+            $fromRaw = $legacyDate;
+            $toRaw = $legacyDate;
         }
 
-        return now()->startOfDay();
+        $from = $this->parseDay($fromRaw) ?? now()->startOfDay();
+        $to = $this->parseDay($toRaw) ?? $from->copy();
+
+        if ($from->greaterThan($to)) {
+            [$from, $to] = [$to->copy()->startOfDay(), $from->copy()->startOfDay()];
+        }
+
+        $spanDays = $from->diffInDays($to) + 1;
+        if ($spanDays > self::MAX_RANGE_DAYS) {
+            $to = $from->copy()->addDays(self::MAX_RANGE_DAYS - 1)->startOfDay();
+        }
+
+        $q = trim((string) ($input['q'] ?? ''));
+        $classification = $this->resolveClassification(
+            is_string($input['classification'] ?? null) ? (string) $input['classification'] : null,
+        );
+        $paymentMode = $this->resolvePaymentMode(
+            is_string($input['payment_mode'] ?? null) ? (string) $input['payment_mode'] : null,
+        );
+
+        return [
+            'date_from' => $from->startOfDay(),
+            'date_to' => $to->startOfDay(),
+            'q' => $q,
+            'classification' => $classification,
+            'payment_mode' => $paymentMode,
+        ];
+    }
+
+    private function parseDay(string $value): ?CarbonInterface
+    {
+        if ($value === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value)->startOfDay();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function resolvePaymentMode(?string $paymentMode): ?string
@@ -92,14 +157,74 @@ class SalesMonitor
         return in_array($paymentMode, PaymentMode::values(), true) ? $paymentMode : null;
     }
 
+    private function resolveClassification(?string $classification): ?string
+    {
+        if (! is_string($classification) || $classification === '' || $classification === 'all') {
+            return null;
+        }
+
+        $allowed = OfficialAnalysisCatalog::classifications();
+
+        return in_array($classification, $allowed, true) ? $classification : null;
+    }
+
     /**
+     * @param  array{
+     *     date_from: CarbonInterface,
+     *     date_to: CarbonInterface,
+     *     q: string,
+     *     classification: string|null,
+     *     payment_mode: string|null
+     * }  $filters
+     * @return Builder<JobOrder>
+     */
+    private function scopedQuery(array $filters, bool $includePaymentMode): Builder
+    {
+        $from = $filters['date_from']->copy()->startOfDay();
+        $to = $filters['date_to']->copy()->endOfDay();
+
+        $query = JobOrder::query()
+            ->whereNotNull('jo_approved_at')
+            ->whereBetween('jo_approved_at', [$from, $to]);
+
+        if ($filters['q'] !== '') {
+            $term = '%'.$filters['q'].'%';
+            $query->where(function (Builder $inner) use ($term): void {
+                $inner->where('reference_no', 'like', $term)
+                    ->orWhere('customer_name', 'like', $term)
+                    ->orWhere('company_name', 'like', $term);
+            });
+        }
+
+        if ($filters['classification'] !== null) {
+            $query->where('classification', $filters['classification']);
+        }
+
+        if ($includePaymentMode) {
+            $mode = $filters['payment_mode'];
+            if ($mode === 'unset') {
+                $query->whereNull('payment_mode');
+            } elseif ($mode !== null) {
+                $query->where('payment_mode', $mode);
+            }
+        }
+
+        return $query;
+    }
+
+    /**
+     * @param  array{
+     *     date_from: CarbonInterface,
+     *     date_to: CarbonInterface,
+     *     q: string,
+     *     classification: string|null,
+     *     payment_mode: string|null
+     * }  $filters
      * @return list<array{id: string, label: string, count: int, net: float}>
      */
-    private function paymentModeBreakdown(CarbonInterface $day): array
+    private function paymentModeBreakdown(array $filters): array
     {
-        $rows = JobOrder::query()
-            ->whereNotNull('jo_approved_at')
-            ->whereDate('jo_approved_at', $day->toDateString())
+        $rows = $this->scopedQuery($filters, includePaymentMode: false)
             ->selectRaw('payment_mode')
             ->selectRaw('COUNT(*) as job_count')
             ->selectRaw('COALESCE(SUM(total_cost), 0) as net')
@@ -132,12 +257,20 @@ class SalesMonitor
     }
 
     /**
+     * @param  array{
+     *     date_from: CarbonInterface,
+     *     date_to: CarbonInterface,
+     *     q: string,
+     *     classification: string|null,
+     *     payment_mode: string|null
+     * }  $filters
      * @return list<array{date: string, label: string, job_count: int, net: float}>
      */
-    private function trendEndingOn(CarbonInterface $day, int $days): array
+    private function trendForRange(array $filters): array
     {
-        $end = $day->copy()->endOfDay();
-        $start = $day->copy()->subDays($days - 1)->startOfDay();
+        $start = $filters['date_from']->copy()->startOfDay();
+        $end = $filters['date_to']->copy()->endOfDay();
+        $days = $start->diffInDays($filters['date_to']->copy()->startOfDay()) + 1;
 
         $driver = DB::connection()->getDriverName();
         $dateExpr = match ($driver) {
@@ -146,9 +279,7 @@ class SalesMonitor
         };
 
         /** @var Collection<string, object> $rows */
-        $rows = JobOrder::query()
-            ->whereNotNull('jo_approved_at')
-            ->whereBetween('jo_approved_at', [$start, $end])
+        $rows = $this->scopedQuery($filters, includePaymentMode: true)
             ->selectRaw("{$dateExpr} as sale_date")
             ->selectRaw('COUNT(*) as job_count')
             ->selectRaw('COALESCE(SUM(total_cost), 0) as net')
@@ -172,16 +303,18 @@ class SalesMonitor
         return $trend;
     }
 
-    private function paginateOrders(CarbonInterface $day, ?string $mode): LengthAwarePaginator
+    /**
+     * @param  array{
+     *     date_from: CarbonInterface,
+     *     date_to: CarbonInterface,
+     *     q: string,
+     *     classification: string|null,
+     *     payment_mode: string|null
+     * }  $filters
+     */
+    private function paginateOrders(array $filters): LengthAwarePaginator
     {
-        return JobOrder::query()
-            ->whereNotNull('jo_approved_at')
-            ->whereDate('jo_approved_at', $day->toDateString())
-            ->when($mode === 'unset', fn ($q) => $q->whereNull('payment_mode'))
-            ->when(
-                $mode !== null && $mode !== 'unset',
-                fn ($q) => $q->where('payment_mode', $mode),
-            )
+        return $this->scopedQuery($filters, includePaymentMode: true)
             ->orderByDesc('jo_approved_at')
             ->orderByDesc('id')
             ->paginate(20)
@@ -195,6 +328,7 @@ class SalesMonitor
                     'reference_no' => $order->reference_no,
                     'customer_name' => $order->customer_name,
                     'company_name' => $order->company_name,
+                    'classification' => $order->classification,
                     'payment_mode' => $paymentMode instanceof PaymentMode ? $paymentMode->value : null,
                     'payment_mode_label' => $paymentMode instanceof PaymentMode ? $paymentMode->label() : '—',
                     'payment_terms' => $paymentTerms instanceof PaymentTerms ? $paymentTerms->value : null,
