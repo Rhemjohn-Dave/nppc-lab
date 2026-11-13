@@ -1143,6 +1143,30 @@ export default function ReceivingBulkCreate({
                                                 ]);
                                             }
                                         }}
+                                        onSetMembers={(mode) => {
+                                            if (
+                                                !presetKeys.includes(preset.key)
+                                            ) {
+                                                return;
+                                            }
+                                            const memberIds =
+                                                preset.analysis_type_ids;
+                                            if (mode === 'all') {
+                                                setAnalysisTypeIds((ids) => [
+                                                    ...new Set([
+                                                        ...ids,
+                                                        ...memberIds,
+                                                    ]),
+                                                ]);
+                                                return;
+                                            }
+                                            setAnalysisTypeIds((ids) =>
+                                                ids.filter(
+                                                    (id) =>
+                                                        !memberIds.includes(id),
+                                                ),
+                                            );
+                                        }}
                                     />
                                 ))}
                             </div>
@@ -1175,6 +1199,28 @@ export default function ReceivingBulkCreate({
                                                     pkg.id,
                                                 ]);
                                             }
+                                        }}
+                                        onSetMembers={(mode) => {
+                                            if (!packageIds.includes(pkg.id)) {
+                                                return;
+                                            }
+                                            const memberIds =
+                                                pkg.analysis_type_ids;
+                                            if (mode === 'all') {
+                                                setAnalysisTypeIds((ids) => [
+                                                    ...new Set([
+                                                        ...ids,
+                                                        ...memberIds,
+                                                    ]),
+                                                ]);
+                                                return;
+                                            }
+                                            setAnalysisTypeIds((ids) =>
+                                                ids.filter(
+                                                    (id) =>
+                                                        !memberIds.includes(id),
+                                                ),
+                                            );
                                         }}
                                     />
                                 ))}

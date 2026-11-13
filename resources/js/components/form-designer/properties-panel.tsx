@@ -8,6 +8,7 @@ import { Separator } from '@/components/ui/separator';
 import type { DataSource, DesignerField } from '@/lib/controlled-forms';
 import {
     fieldAnchor,
+    metaOffsetForAbove,
     patchFieldAnchor,
     fieldBold,
     fieldListIndentMm,
@@ -131,10 +132,14 @@ export default function PropertiesPanel({
                         options: patchFieldOptions(field.options, { anchor: null }),
                     };
                 }
-                const next = patchFieldAnchor(current, {
-                    below,
-                    offset_mm: current?.offset_mm ?? minOffset ?? 3,
-                });
+                const next = patchFieldAnchor(
+                    current,
+                    {
+                        below,
+                        offset_mm: current?.offset_mm ?? minOffset ?? 3,
+                    },
+                    metaOffsetForAbove(pageFields, current?.above),
+                );
 
                 return {
                     options: patchFieldOptions(field.options, { anchor: next }),
@@ -150,7 +155,15 @@ export default function PropertiesPanel({
             if (Math.abs(delta) < 0.0001) {
                 return;
             }
-            onUpdateMapped((field) => shiftFieldFlow(field, delta));
+            onUpdateMapped((field) => {
+                const current = fieldAnchor(field);
+
+                return shiftFieldFlow(
+                    field,
+                    delta,
+                    metaOffsetForAbove(pageFields, current?.above),
+                );
+            });
         }
 
         function spaceStack() {
@@ -213,9 +226,13 @@ export default function PropertiesPanel({
                         y: next.y,
                         height: next.height,
                         options: patchFieldOptions(field.options, {
-                            anchor: patchFieldAnchor(current, {
-                                offset_mm: next.offset_mm,
-                            }),
+                            anchor: patchFieldAnchor(
+                                current,
+                                {
+                                    offset_mm: next.offset_mm,
+                                },
+                                metaOffsetForAbove(pageFields, current.above),
+                            ),
                         }),
                     };
                 }
@@ -635,6 +652,10 @@ export default function PropertiesPanel({
                                                             : patchFieldAnchor(
                                                                   anchor,
                                                                   { below },
+                                                                  metaOffsetForAbove(
+                                                                      pageFields,
+                                                                      anchor?.above,
+                                                                  ),
                                                               ),
                                                 },
                                             ),
@@ -674,6 +695,10 @@ export default function PropertiesPanel({
                                                                         .value,
                                                                 ),
                                                             },
+                                                            metaOffsetForAbove(
+                                                                pageFields,
+                                                                anchor?.above,
+                                                            ),
                                                         ),
                                                     },
                                                 ),

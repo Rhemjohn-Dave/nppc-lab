@@ -509,12 +509,22 @@ class DynamicTestMatrixReportTest extends TestCase
         $this->assertSame('Chloride (mg/L)', $chloride->name);
         $this->assertSame('4500-Cl- B – Argentometric Method', $chloride->method);
 
+        $ec = AnalysisType::query()->where('code', 'WW-16')->firstOrFail();
+        $this->assertSame('Electrical Conductivity (µS/cm)', $ec->name);
+        $this->assertSame('EC Meter (2510 B)', $ec->method);
+
+        $turbidity = AnalysisType::query()->where('code', 'WW-17')->firstOrFail();
+        $this->assertSame('Turbidity (NTU)', $turbidity->name);
+        $this->assertSame('In-House Laboratory Method (Turbidimetry)', $turbidity->method);
+
         $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2')->firstOrFail();
         $this->assertNull($form->analysis_package_id);
         $this->assertSame(4, (int) $form->analyst_signatory_slots);
 
         $codes = $form->analysisTypes()->orderByPivot('slot')->pluck('code')->all();
         $this->assertSame(\App\Support\OfficialAnalysisCatalog::wastewaterPhysicoPanelTypeCodes(), $codes);
+        $this->assertContains('WW-16', $codes);
+        $this->assertContains('WW-17', $codes);
 
         $revision = $form->activeRevision();
         $this->assertNotNull($revision);
@@ -530,6 +540,16 @@ class DynamicTestMatrixReportTest extends TestCase
         $this->assertSame(['test', 'method', 'result'], $keys);
         $this->assertSame('C', $matrix->table_config['columns'][0]['align'] ?? null);
         $this->assertFalse($matrix->table_config['stretch_body'] ?? true);
+        $this->assertSame(20, (int) ($matrix->table_config['preview_rows'] ?? 0));
+        $this->assertGreaterThanOrEqual(124.0, (float) $matrix->height);
+
+        $previewTests = collect(
+            \App\Support\DynamicTestMatrix::previewRowsForForm(
+                $form->fresh(['analysisPackage', 'analysisTypes']),
+            ),
+        )->pluck('test')->all();
+        $this->assertContains('Electrical Conductivity (µS/cm)', $previewTests);
+        $this->assertContains('Turbidity (NTU)', $previewTests);
 
         $customer = $revision->fields()->where('name', 'results.customer')->first();
         $this->assertNotNull($customer);

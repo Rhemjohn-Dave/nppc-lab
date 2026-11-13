@@ -27,6 +27,8 @@ type Props = {
     estimatedPrice: number;
     onTogglePreset: () => void;
     onToggleMember: (typeId: number) => void;
+    /** Bulk-check / clear panel members; panel stays selected on clear. */
+    onSetMembers?: (mode: 'all' | 'none') => void;
 };
 
 /**
@@ -41,6 +43,7 @@ export default function IntakeTypePresetRow({
     estimatedPrice,
     onTogglePreset,
     onToggleMember,
+    onSetMembers,
 }: Props) {
     const [detailsOpen, setDetailsOpen] = useState(false);
 
@@ -142,10 +145,36 @@ export default function IntakeTypePresetRow({
 
                     {selected ? (
                         <>
-                            <p className="text-xs text-muted-foreground">
-                                Uncheck tests you do not need. Selected tests
-                                are billed individually.
-                            </p>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-xs text-muted-foreground">
+                                    Uncheck tests you do not need. Selected
+                                    tests are billed individually.
+                                </p>
+                                {onSetMembers ? (
+                                    <div className="flex shrink-0 items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => onSetMembers('all')}
+                                            className="text-xs font-medium text-nppc-700 hover:underline focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none"
+                                        >
+                                            Select all
+                                        </button>
+                                        <span
+                                            className="text-xs text-slate-300"
+                                            aria-hidden
+                                        >
+                                            ·
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => onSetMembers('none')}
+                                            className="text-xs font-medium text-nppc-700 hover:underline focus-visible:ring-2 focus-visible:ring-nppc-900/40 focus-visible:outline-none"
+                                        >
+                                            Clear
+                                        </button>
+                                    </div>
+                                ) : null}
+                            </div>
                             <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
                                 {preset.tests.map((test) => {
                                     const lockedBy = lockedTypes?.get(test.id);

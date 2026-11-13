@@ -78,6 +78,8 @@ class OfficialAnalysisCatalog
                 ['WW-13', 'Total Fecal Coliform', 750],
                 ['WW-14', 'Total Suspended Solids (mg/L)', 750],
                 ['WW-15', '*Nitrite (mg/L)', 750],
+                ['WW-16', 'Electrical Conductivity (µS/cm)', 750],
+                ['WW-17', 'Turbidity (NTU)', 750],
             ],
             AnalysisCategory::FoodProductsMicrobiological->value => [
                 // FO26 Issue 4 print order (FM-04 Listeria spp. kept off the FO26 sheet).
@@ -332,6 +334,8 @@ class OfficialAnalysisCatalog
             'WW-10' => '5540 C – Anionic Surfactants as MBAS',
             'WW-03' => '5220 B – Open Reflux Method',
             'WW-11' => '2550 B – Laboratory and Field Method',
+            'WW-16' => 'EC Meter (2510 B)',
+            'WW-17' => 'In-House Laboratory Method (Turbidimetry)',
             'SA-19' => '4500-SO4-2 – Turbidimetric Method',
             'SA-06' => '4500-Cl- B – Argentometric Method',
             'FM-01' => "Pour Plate Method, Plate Count Agar (PCA); BAM Online Chapter 3\nAOAC International Official Method of Analysis – Method 990.12\n3M PetrifilmTM Rapid Aerobic Count Plates, AOAC Certificate Number 121403",
@@ -693,6 +697,8 @@ class OfficialAnalysisCatalog
             'WW-11', // Lab Temperature
             'SA-19', // Sulfate
             'SA-06', // Chloride
+            'WW-16', // Electrical Conductivity
+            'WW-17', // Turbidity
         ];
     }
 
@@ -963,6 +969,8 @@ TXT;
             'WW-11' => 'Lab Temperature (°C)',
             'SA-19' => 'Sulfate (mg/L)',
             'SA-06' => 'Chloride (mg/L)',
+            'WW-16' => 'Electrical Conductivity (µS/cm)',
+            'WW-17' => 'Turbidity (NTU)',
         ];
     }
 
@@ -977,7 +985,7 @@ TXT;
 
         return match ($code) {
             'WW-14', 'WW-12', 'SA-25', 'SA-17', 'WW-07', 'WW-10', 'SA-06', 'WW-15' => 'Date/Time of Analysis',
-            'WW-08', 'WW-05', 'WW-02', 'WW-06', 'WW-01', 'WW-09', 'WW-04', 'WW-03', 'WW-11', 'SA-19' => 'Time of Analysis',
+            'WW-08', 'WW-05', 'WW-02', 'WW-06', 'WW-01', 'WW-09', 'WW-04', 'WW-03', 'WW-11', 'SA-19', 'WW-16', 'WW-17' => 'Time of Analysis',
             default => null,
         };
     }

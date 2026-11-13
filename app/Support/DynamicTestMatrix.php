@@ -1743,7 +1743,7 @@ class DynamicTestMatrix
             'header_row' => true,
             'header_row_height_mm' => 5,
             'border' => true,
-            'preview_rows' => 17,
+            'preview_rows' => 20,
             'test_name_bold' => true,
             'header_bold' => true,
             'method_font_size' => 6,

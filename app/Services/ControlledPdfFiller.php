@@ -208,6 +208,7 @@ class ControlledPdfFiller
                 $overlay['y'] = $absoluteFieldY[$name];
             } else {
                 $overlay = $this->clampFo28SignatoriesAboveFormMeta($overlay, $pageFields);
+                $overlay = $this->syncAboveOffsetFromMetaOffset($overlay, $pageFields);
                 $overlay = $this->applyAnchorBelow($overlay, $matrixBottomY, $absoluteFieldY);
             }
             $this->writeField($pdf, $overlay, $value, $values);
@@ -307,6 +308,12 @@ class ControlledPdfFiller
 
     /** Small extra drop under notes when space remains above the Test Report footer. */
     private const SIGNATORY_NUDGE_MM = 20.0;
+
+    /**
+     * FO2 family keeps label→name spacing close to Form Designer; a 20mm short-sheet
+     * nudge opened a large band under "Reviewed by:" / "Certified Correct:".
+     */
+    private const FO2_SIGNATORY_NUDGE_MM = 0.0;
 
     /** Minimum spare room (clamp − flow) before the short-sheet nudge applies. */
     private const SIGNATORY_NUDGE_MIN_SPARE_MM = 24.0;
@@ -763,7 +770,9 @@ class ControlledPdfFiller
             $plain = \App\Support\InlineBoldMarkup::strip($text);
             $this->applyTcpdfFont($pdf, $family, $forceBold ? 'B' : '', $fontSize);
             $pdf->SetXY($x, $y);
-            $pdf->Cell($w, $h, $plain, 0, 0, $align, false, '', 1);
+            // Top-align like Form Designer (TCPDF defaults to middle, which opens
+            // gaps when label h=4 and name h=5 share the same stack).
+            $pdf->Cell($w, $h, $plain, 0, 0, $align, false, '', 1, false, 'T', 'T');
 
             return;
         }
@@ -788,7 +797,7 @@ class ControlledPdfFiller
                 break;
             }
             $pdf->SetXY($cursorX, $y);
-            $pdf->Cell(min($segWidth, max(0.5, $x + $w - $cursorX)), $h, $seg['text'], 0, 0, 'L', false, '', 0, false, 'T', 'M');
+            $pdf->Cell(min($segWidth, max(0.5, $x + $w - $cursorX)), $h, $seg['text'], 0, 0, 'L', false, '', 0, false, 'T', 'T');
             $cursorX += $segWidth;
         }
     }
@@ -1262,6 +1271,69 @@ class ControlledPdfFiller
     }
 
     /**
+     * Keep FO2 (and FO2A) Designer spacing as the source of truth: derive
+     * above_offset_mm from form-meta.offset_mm − field.offset_mm so stale
+     * stored above offsets cannot open/collapse gaps under role labels.
+     *
+     * @param  array<string, mixed>  $field
+     * @param  \Illuminate\Support\Collection<int, \App\Models\ControlledFormField>  $pageFields
+     * @return array<string, mixed>
+     */
+    private function syncAboveOffsetFromMetaOffset(array $field, $pageFields): array
+    {
+        $options = is_array($field['options'] ?? null) ? $field['options'] : [];
+        $anchor = is_array($options['anchor'] ?? null) ? $options['anchor'] : null;
+        if ($anchor === null) {
+            return $field;
+        }
+
+        $above = trim((string) ($anchor['above'] ?? ''));
+        if ($above !== 'fo2_form_meta') {
+            return $field;
+        }
+
+        $below = trim((string) ($anchor['below'] ?? ''));
+        if ($below === '') {
+            return $field;
+        }
+
+        $fieldOffset = is_numeric($anchor['offset_mm'] ?? null) ? (float) $anchor['offset_mm'] : 0.0;
+        $metaOffset = null;
+        foreach ($pageFields as $pageField) {
+            if ($pageField->name !== $above) {
+                continue;
+            }
+            $metaAnchor = is_array($pageField->options['anchor'] ?? null) ? $pageField->options['anchor'] : [];
+            $metaBelow = trim((string) ($metaAnchor['below'] ?? ''));
+            if ($metaBelow !== '' && $metaBelow !== $below) {
+                break;
+            }
+            if (is_numeric($metaAnchor['offset_mm'] ?? null)) {
+                $metaOffset = (float) $metaAnchor['offset_mm'];
+            }
+            break;
+        }
+
+        if ($metaOffset === null) {
+            return $field;
+        }
+
+        $nextAboveOffset = max(0.0, $metaOffset - $fieldOffset);
+        $currentAboveOffset = is_numeric($anchor['above_offset_mm'] ?? null)
+            ? (float) $anchor['above_offset_mm']
+            : null;
+        if ($currentAboveOffset !== null && abs($currentAboveOffset - $nextAboveOffset) < 0.001) {
+            return $field;
+        }
+
+        $anchor['above_offset_mm'] = $nextAboveOffset;
+        $options['anchor'] = $anchor;
+        $field['options'] = $options;
+
+        return $field;
+    }
+
+    /**
      * Rewrite field y from options.anchor.below (matrix) and/or options.anchor.above (fixed field).
      * When both are set: y = min(matrixBottom + offset_mm + optionalNudge, aboveY - above_offset_mm).
      * Nudge applies only when spare room above the Test Report clamp is large (short sheets);
@@ -1319,8 +1391,11 @@ class ControlledPdfFiller
             if ($above === 'fo28_form_meta' && $spare >= self::SIGNATORY_NUDGE_MIN_SPARE_MM) {
                 $field['y'] = $fromAbove;
             } else {
+                $nudgeAmount = $above === 'fo2_form_meta'
+                    ? self::FO2_SIGNATORY_NUDGE_MM
+                    : self::SIGNATORY_NUDGE_MM;
                 $nudge = $spare >= self::SIGNATORY_NUDGE_MIN_SPARE_MM
-                    ? self::SIGNATORY_NUDGE_MM
+                    ? $nudgeAmount
                     : 0.0;
                 $field['y'] = min($fromBelow + $nudge, $fromAbove);
             }

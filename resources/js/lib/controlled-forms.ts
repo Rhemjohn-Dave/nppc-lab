@@ -110,26 +110,64 @@ export function fieldAnchor(field: DesignerField): FieldAnchor | null {
     };
 }
 
+/**
+ * Matrix offset_mm on the field named by anchor.above (e.g. fo2_form_meta),
+ * used to keep above_offset_mm = metaOffset − offset_mm in sync with Designer.
+ */
+export function metaOffsetForAbove(
+    fields: DesignerField[],
+    aboveName: string | undefined,
+): number | null {
+    const name = (aboveName ?? '').trim();
+    if (name === '') {
+        return null;
+    }
+    const meta = fields.find((field) => field.name === name);
+    if (!meta) {
+        return null;
+    }
+    const anchor = fieldAnchor(meta);
+    if (!anchor || !Number.isFinite(anchor.offset_mm)) {
+        return null;
+    }
+
+    return anchor.offset_mm;
+}
+
 /** Keep above/above_offset_mm when Designer only edits below or offset. */
 export function patchFieldAnchor(
     current: FieldAnchor | null,
     patch: { below?: string; offset_mm?: number },
+    metaOffsetMm?: number | null,
 ): FieldAnchor | null {
     const below = (patch.below ?? current?.below ?? '').trim();
     if (below === '') {
         return null;
     }
 
+    const offset_mm =
+        typeof patch.offset_mm === 'number' && Number.isFinite(patch.offset_mm)
+            ? patch.offset_mm
+            : (current?.offset_mm ?? 3);
+    const above = current?.above;
+
+    let above_offset_mm = current?.above_offset_mm;
+    if (
+        above &&
+        typeof metaOffsetMm === 'number' &&
+        Number.isFinite(metaOffsetMm)
+    ) {
+        above_offset_mm = Math.max(
+            0,
+            Math.round((metaOffsetMm - offset_mm) * 1000) / 1000,
+        );
+    }
+
     return {
         below,
-        offset_mm:
-            typeof patch.offset_mm === 'number' && Number.isFinite(patch.offset_mm)
-                ? patch.offset_mm
-                : (current?.offset_mm ?? 3),
-        ...(current?.above ? { above: current.above } : {}),
-        ...(current?.above_offset_mm !== undefined
-            ? { above_offset_mm: current.above_offset_mm }
-            : {}),
+        offset_mm,
+        ...(above ? { above } : {}),
+        ...(above_offset_mm !== undefined ? { above_offset_mm } : {}),
     };
 }
 
@@ -173,12 +211,14 @@ export function textLineHeightMm(fontSize: number): number {
 }
 
 /**
- * Shift a field's flow offset and designer Y together (preserves above clamp).
- * Unanchored fields still move on the canvas via y.
+ * Shift a field's flow offset and designer Y together.
+ * When metaOffsetMm is provided, above_offset_mm stays in sync so PDF clamp
+ * gaps match Designer Δoffset.
  */
 export function shiftFieldFlow(
     field: DesignerField,
     deltaMm: number,
+    metaOffsetMm?: number | null,
 ): Pick<DesignerField, 'y' | 'options'> {
     const nextY = Math.round((field.y + deltaMm) * 1000) / 1000;
     const current = fieldAnchor(field);
@@ -186,9 +226,13 @@ export function shiftFieldFlow(
         return { y: nextY, options: field.options };
     }
 
-    const nextAnchor = patchFieldAnchor(current, {
-        offset_mm: Math.round((current.offset_mm + deltaMm) * 1000) / 1000,
-    });
+    const nextAnchor = patchFieldAnchor(
+        current,
+        {
+            offset_mm: Math.round((current.offset_mm + deltaMm) * 1000) / 1000,
+        },
+        metaOffsetMm,
+    );
 
     return {
         y: nextY,

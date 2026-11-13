@@ -88,14 +88,14 @@ class MatrixAnchorBelowTest extends TestCase
             ],
         ];
 
-        // Short table (spare 258-45-145=68 >= 24): nudge under notes (+20 mm).
+        // Short table (spare 258-45-145=68 >= 24): FO2 nudge is 0 so stack stays tight.
         $short = $method->invoke(
             $filler,
             $field,
             ['ww_fo2_matrix' => 100.0],
             ['fo2_form_meta' => 258.0],
         );
-        $this->assertEqualsWithDelta(165.0, $short['y'], 0.01);
+        $this->assertEqualsWithDelta(145.0, $short['y'], 0.01);
 
         // Medium/tall with little spare (213-190=23 < 24): no nudge, normal flow.
         $normal = $method->invoke(
@@ -143,6 +143,111 @@ class MatrixAnchorBelowTest extends TestCase
         $this->assertEqualsWithDelta(262.0, $resolved['y'], 0.01);
     }
 
+    public function test_fo2_sync_above_offset_keeps_designer_delta_despite_stale_above(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $sync = new ReflectionMethod(ControlledPdfFiller::class, 'syncAboveOffsetFromMetaOffset');
+        $sync->setAccessible(true);
+        $apply = new ReflectionMethod(ControlledPdfFiller::class, 'applyAnchorBelow');
+        $apply->setAccessible(true);
+
+        $meta = new ControlledFormField([
+            'name' => 'fo2_form_meta',
+            'options' => [
+                'anchor' => [
+                    'below' => 'ww_fo2_matrix',
+                    'offset_mm' => 87.0,
+                ],
+            ],
+        ]);
+        $pageFields = collect([$meta]);
+
+        $pairs = [
+            // Reviewed by — Designer Δoffset 5mm, stale equal above_offsets would collapse.
+            [
+                'label' => 'fo2_label_reviewed',
+                'name' => 'results.analyst_name',
+                'label_off' => 41.0,
+                'name_off' => 46.0,
+                'stale_above' => 30.0,
+                'delta' => 5.0,
+            ],
+            // Noted By — Designer Δoffset 6mm.
+            [
+                'label' => 'fo2_label_noted',
+                'name' => 'results.analyst_name_2',
+                'label_off' => 63.0,
+                'name_off' => 69.0,
+                'stale_above' => 30.0,
+                'delta' => 6.0,
+            ],
+        ];
+
+        foreach ($pairs as $pair) {
+            $label = [
+                'name' => $pair['label'],
+                'y' => 100.0,
+                'options' => [
+                    'anchor' => [
+                        'below' => 'ww_fo2_matrix',
+                        'offset_mm' => $pair['label_off'],
+                        'above' => 'fo2_form_meta',
+                        'above_offset_mm' => $pair['stale_above'],
+                    ],
+                ],
+            ];
+            $name = [
+                'name' => $pair['name'],
+                'y' => 100.0,
+                'options' => [
+                    'anchor' => [
+                        'below' => 'ww_fo2_matrix',
+                        'offset_mm' => $pair['name_off'],
+                        'above' => 'fo2_form_meta',
+                        'above_offset_mm' => $pair['stale_above'],
+                    ],
+                ],
+            ];
+
+            $labelSynced = $sync->invoke($filler, $label, $pageFields);
+            $nameSynced = $sync->invoke($filler, $name, $pageFields);
+
+            $this->assertEqualsWithDelta(
+                87.0 - $pair['label_off'],
+                $labelSynced['options']['anchor']['above_offset_mm'],
+                0.01,
+                $pair['label'],
+            );
+            $this->assertEqualsWithDelta(
+                87.0 - $pair['name_off'],
+                $nameSynced['options']['anchor']['above_offset_mm'],
+                0.01,
+                $pair['name'],
+            );
+
+            // Tall sheet: above clamp wins — Δy must still equal Designer Δoffset.
+            $labelY = $apply->invoke(
+                $filler,
+                $labelSynced,
+                ['ww_fo2_matrix' => 186.0],
+                ['fo2_form_meta' => 252.5],
+            );
+            $nameY = $apply->invoke(
+                $filler,
+                $nameSynced,
+                ['ww_fo2_matrix' => 186.0],
+                ['fo2_form_meta' => 252.5],
+            );
+
+            $this->assertEqualsWithDelta(
+                $pair['delta'],
+                $nameY['y'] - $labelY['y'],
+                0.01,
+                $pair['label'].' → '.$pair['name'],
+            );
+        }
+    }
+
     public function test_fo2_blueprint_pins_meta_footer_and_signatories(): void
     {
         $this->seed();
@@ -169,6 +274,18 @@ class MatrixAnchorBelowTest extends TestCase
         $this->assertSame('ww_fo2_matrix', $reviewedAnchor['below'] ?? null);
         $this->assertSame('fo2_form_meta', $reviewedAnchor['above'] ?? null);
         $this->assertGreaterThan(0, (float) ($reviewedAnchor['above_offset_mm'] ?? 0));
+
+        $reviewedName = $revision->fields->firstWhere('name', 'results.analyst_name');
+        $this->assertNotNull($reviewedName);
+        $nameAnchor = is_array($reviewedName->options['anchor'] ?? null)
+            ? $reviewedName->options['anchor']
+            : [];
+        $this->assertEqualsWithDelta(
+            5.0,
+            (float) ($nameAnchor['offset_mm'] ?? 0) - (float) ($reviewedAnchor['offset_mm'] ?? 0),
+            0.01,
+            'Reviewed label→name offset must match Form Designer (~5mm).',
+        );
 
         $notesEnd = (float) ($notesAnchor['offset_mm'] ?? 0) + (float) $notes->height;
         $this->assertGreaterThanOrEqual(

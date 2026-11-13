@@ -1210,35 +1210,9 @@ export default function IntakeWizard({
                 return current;
             }
 
-            const memberIds = pkg.analysis_type_ids;
             const currentlyOn = sample.analysis_type_ids.includes(typeId);
-            const selectedMembers = memberIds.filter((id) =>
-                currentlyOn
-                    ? id !== typeId && sample.analysis_type_ids.includes(id)
-                    : sample.analysis_type_ids.includes(id) || id === typeId,
-            );
 
-            if (currentlyOn && selectedMembers.length === 0) {
-                const keep = keptTypeIdsExcluding(sample, memberIds, {
-                    exceptPackageId: pkg.id,
-                });
-
-                return current.map((row, i) =>
-                    i === sampleIndex
-                        ? {
-                              ...row,
-                              package_ids: row.package_ids.filter(
-                                  (id) => id !== pkg.id,
-                              ),
-                              analysis_type_ids: row.analysis_type_ids.filter(
-                                  (id) =>
-                                      !memberIds.includes(id) || keep.has(id),
-                              ),
-                          }
-                        : row,
-                );
-            }
-
+            // Keep the package selected even when every member is cleared.
             return current.map((row, i) => {
                 if (i !== sampleIndex) {
                     return row;
@@ -1258,6 +1232,44 @@ export default function IntakeWizard({
                     analysis_type_ids: row.analysis_type_ids.includes(typeId)
                         ? row.analysis_type_ids
                         : [...row.analysis_type_ids, typeId],
+                };
+            });
+        });
+    }
+
+    function setPackageMembers(
+        sampleIndex: number,
+        pkg: IntakePackage,
+        mode: 'all' | 'none',
+    ) {
+        setActiveTestSample(sampleIndex);
+        setSamples((current) => {
+            const sample = current[sampleIndex];
+            if (!sample?.package_ids.includes(pkg.id)) {
+                return current;
+            }
+
+            const memberIds = pkg.analysis_type_ids;
+
+            return current.map((row, i) => {
+                if (i !== sampleIndex) {
+                    return row;
+                }
+
+                if (mode === 'all') {
+                    return {
+                        ...row,
+                        analysis_type_ids: [
+                            ...new Set([...row.analysis_type_ids, ...memberIds]),
+                        ],
+                    };
+                }
+
+                return {
+                    ...row,
+                    analysis_type_ids: row.analysis_type_ids.filter(
+                        (id) => !memberIds.includes(id),
+                    ),
                 };
             });
         });
@@ -1376,37 +1388,10 @@ export default function IntakeWizard({
                 return current;
             }
 
-            const memberIds = preset.analysis_type_ids.filter(
-                (id) => !owned.has(id),
-            );
             const currentlyOn = sample.analysis_type_ids.includes(typeId);
-            const selectedMembers = memberIds.filter((id) =>
-                currentlyOn
-                    ? id !== typeId && sample.analysis_type_ids.includes(id)
-                    : sample.analysis_type_ids.includes(id) || id === typeId,
-            );
 
-            if (currentlyOn && selectedMembers.length === 0) {
-                const keep = keptTypeIdsExcluding(sample, memberIds, {
-                    exceptPresetKey: preset.key,
-                });
-
-                return current.map((row, i) =>
-                    i === sampleIndex
-                        ? {
-                              ...row,
-                              preset_keys: row.preset_keys.filter(
-                                  (key) => key !== preset.key,
-                              ),
-                              analysis_type_ids: row.analysis_type_ids.filter(
-                                  (id) =>
-                                      !memberIds.includes(id) || keep.has(id),
-                              ),
-                          }
-                        : row,
-                );
-            }
-
+            // Keep the panel selected even when every member is cleared so staff
+            // can re-check individual tests (same as Clear).
             return current.map((row, i) => {
                 if (i !== sampleIndex) {
                     return row;
@@ -1426,6 +1411,47 @@ export default function IntakeWizard({
                     analysis_type_ids: row.analysis_type_ids.includes(typeId)
                         ? row.analysis_type_ids
                         : [...row.analysis_type_ids, typeId],
+                };
+            });
+        });
+    }
+
+    function setTypePresetMembers(
+        sampleIndex: number,
+        preset: IntakeTypePreset,
+        mode: 'all' | 'none',
+    ) {
+        setActiveTestSample(sampleIndex);
+        setSamples((current) => {
+            const sample = current[sampleIndex];
+            if (!sample?.preset_keys.includes(preset.key)) {
+                return current;
+            }
+
+            const owned = packageOwnedTypes(sample);
+            const memberIds = preset.analysis_type_ids.filter(
+                (id) => !owned.has(id),
+            );
+
+            return current.map((row, i) => {
+                if (i !== sampleIndex) {
+                    return row;
+                }
+
+                if (mode === 'all') {
+                    return {
+                        ...row,
+                        analysis_type_ids: [
+                            ...new Set([...row.analysis_type_ids, ...memberIds]),
+                        ],
+                    };
+                }
+
+                return {
+                    ...row,
+                    analysis_type_ids: row.analysis_type_ids.filter(
+                        (id) => !memberIds.includes(id),
+                    ),
                 };
             });
         });
@@ -1475,6 +1501,9 @@ export default function IntakeWizard({
                 onToggleMember={(typeId) =>
                     togglePackageMember(sampleIndex, pkg, typeId)
                 }
+                onSetMembers={(mode) =>
+                    setPackageMembers(sampleIndex, pkg, mode)
+                }
             />
         );
     }
@@ -1496,6 +1525,9 @@ export default function IntakeWizard({
                 onTogglePreset={() => toggleTypePreset(sampleIndex, preset)}
                 onToggleMember={(typeId) =>
                     toggleTypePresetMember(sampleIndex, preset, typeId)
+                }
+                onSetMembers={(mode) =>
+                    setTypePresetMembers(sampleIndex, preset, mode)
                 }
             />
         );

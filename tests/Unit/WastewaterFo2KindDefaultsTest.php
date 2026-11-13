@@ -46,6 +46,38 @@ class WastewaterFo2KindDefaultsTest extends TestCase
     }
 
     #[Test]
+    public function full_fo2_panel_includes_electrical_conductivity_and_turbidity(): void
+    {
+        $full = OfficialAnalysisCatalog::wastewaterPhysicoIssue18TypeCodes();
+
+        $this->assertContains('WW-16', $full);
+        $this->assertContains('WW-17', $full);
+        $this->assertSame(
+            ['WW-16', 'WW-17'],
+            array_slice($full, -2),
+        );
+        $this->assertTrue(OfficialAnalysisCatalog::isWastewaterPhysicoPanelCode('WW-16'));
+        $this->assertTrue(OfficialAnalysisCatalog::isWastewaterPhysicoPanelCode('WW-17'));
+        $this->assertSame(
+            'Electrical Conductivity (µS/cm)',
+            OfficialAnalysisCatalog::wastewaterPhysicoIssue18Labels()['WW-16'],
+        );
+        $this->assertSame(
+            'Turbidity (NTU)',
+            OfficialAnalysisCatalog::wastewaterPhysicoIssue18Labels()['WW-17'],
+        );
+        $this->assertSame(
+            'Time of Analysis',
+            OfficialAnalysisCatalog::wastewaterPhysicoIssue18AnalysisCaption('WW-16'),
+        );
+        $this->assertSame(
+            'Time of Analysis',
+            OfficialAnalysisCatalog::wastewaterPhysicoIssue18AnalysisCaption('WW-17'),
+        );
+        $this->assertSame(20, \App\Support\DynamicTestMatrix::wastewaterPhysicoConfig()['preview_rows']);
+    }
+
+    #[Test]
     public function abstracted_water_uses_subset_defaults(): void
     {
         $this->assertSame(
