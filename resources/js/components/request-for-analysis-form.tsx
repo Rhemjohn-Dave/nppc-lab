@@ -23,6 +23,7 @@ export type FormAnalysis = {
     category_label?: string | null;
     quantity: number;
     unit_price: string | number;
+    discount_percent?: string | number | null;
     total_cost: string | number;
     status_label?: string;
     assigned_to_name?: string | null;
@@ -42,6 +43,7 @@ export type FormPackage = {
     default_price?: string | number | null;
     selected_type_ids: number[];
     member_names?: string[];
+    discount_percent?: string | number | null;
 };
 
 export type CatalogItem = {

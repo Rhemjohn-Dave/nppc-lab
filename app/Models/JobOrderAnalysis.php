@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $category_label
  * @property int $quantity
  * @property string $unit_price
+ * @property string $discount_percent
  * @property string $total_cost
  * @property JobOrderAnalysisStatus $status
  * @property int|null $assigned_to
@@ -51,6 +52,7 @@ class JobOrderAnalysis extends Model
         'category_label',
         'quantity',
         'unit_price',
+        'discount_percent',
         'total_cost',
         'status',
         'assigned_to',
@@ -76,6 +78,7 @@ class JobOrderAnalysis extends Model
         return [
             'status' => JobOrderAnalysisStatus::class,
             'unit_price' => 'decimal:2',
+            'discount_percent' => 'decimal:2',
             'total_cost' => 'decimal:2',
             'performed_at' => 'datetime',
             'completed_at' => 'datetime',

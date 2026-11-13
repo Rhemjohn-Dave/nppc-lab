@@ -390,6 +390,7 @@ class ReceivingController extends Controller
             'lines.*.id' => ['required', 'integer', 'exists:job_order_analyses,id'],
             'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
             'lines.*.quantity' => ['nullable', 'integer', 'min:1'],
+            'lines.*.discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ]);
 
@@ -430,6 +431,7 @@ class ReceivingController extends Controller
                 'id' => $line->id,
                 'unit_price' => (float) $line->unit_price,
                 'quantity' => (int) $line->quantity,
+                'discount_percent' => (float) $line->discount_percent,
             ])->all();
 
             $result = $this->jobOrders->updatePricing(

@@ -80,7 +80,7 @@ class AnalysisPackage extends Model
     {
         return $this->belongsToMany(JobOrder::class, 'job_order_packages')
             ->using(JobOrderPackage::class)
-            ->withPivot(['selected_type_ids', 'waived_type_ids'])
+            ->withPivot(['selected_type_ids', 'waived_type_ids', 'discount_percent'])
             ->withTimestamps();
     }
 

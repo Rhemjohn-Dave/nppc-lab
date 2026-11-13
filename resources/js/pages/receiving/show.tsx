@@ -62,12 +62,24 @@ function money(value: number) {
     return `₱${value.toFixed(2)}`;
 }
 
+function lineGross(line: PricingLine | undefined): number {
+    if (!line) {
+        return 0;
+    }
+
+    return Math.max(0, Number(line.quantity || 0)) * Number(line.unit_price || 0);
+}
+
+/** Net amount after per-line discount %. */
 function lineAmount(line: PricingLine | undefined): number {
     if (!line) {
         return 0;
     }
 
-    return Number(line.quantity || 0) * Number(line.unit_price || 0);
+    const gross = lineGross(line);
+    const pct = Math.max(0, Math.min(100, Number(line.discount_percent || 0)));
+
+    return Math.round(gross * (1 - pct / 100) * 100) / 100;
 }
 
 function redistributePackagePrice(
@@ -82,7 +94,7 @@ function redistributePackagePrice(
 
     const target = Math.max(0, Number(newPackagePrice) || 0);
     const weights = members.map((line) => {
-        const amount = lineAmount(line);
+        const amount = lineGross(line);
         return amount > 0 ? amount : 1;
     });
     const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
@@ -106,6 +118,20 @@ function redistributePackagePrice(
     return lines.map((line) =>
         nextById.has(line.id)
             ? { ...line, unit_price: nextById.get(line.id)! }
+            : line,
+    );
+}
+
+function applyPackageDiscount(
+    lines: PricingLine[],
+    memberIds: number[],
+    discountPercent: number,
+): PricingLine[] {
+    const pct = Math.max(0, Math.min(100, Number(discountPercent) || 0));
+
+    return lines.map((line) =>
+        memberIds.includes(line.id)
+            ? { ...line, discount_percent: pct }
             : line,
     );
 }
@@ -169,12 +195,16 @@ export default function ReceivingShow({
             id: line.id,
             quantity: line.quantity,
             unit_price: Number(line.unit_price),
+            discount_percent: Number(line.discount_percent ?? 0),
         })),
         discount_percent: Number(jobOrder.discount_percent ?? 0),
     });
 
     const analysisSignature = jobOrder.analyses
-        .map((line) => `${line.id}:${line.quantity}:${line.unit_price}`)
+        .map(
+            (line) =>
+                `${line.id}:${line.quantity}:${line.unit_price}:${line.discount_percent ?? 0}`,
+        )
         .join('|');
 
     useEffect(() => {
@@ -183,6 +213,7 @@ export default function ReceivingShow({
                 id: line.id,
                 quantity: line.quantity,
                 unit_price: Number(line.unit_price),
+                discount_percent: Number(line.discount_percent ?? 0),
             })),
             discount_percent: Number(jobOrder.discount_percent ?? 0),
         });
@@ -297,13 +328,25 @@ export default function ReceivingShow({
         };
     }, [linesById, sampleGroups]);
 
+    const lineDiscountTotal = useMemo(
+        () =>
+            form.data.lines.reduce((sum, line) => {
+                const gross = lineGross(line);
+                const net = lineAmount(line);
+
+                return sum + Math.max(0, gross - net);
+            }, 0),
+        [form.data.lines],
+    );
     const discountPercent = Math.max(
         0,
         Math.min(100, Number(form.data.discount_percent || 0)),
     );
-    const discountAmount =
+    const joDiscountAmount =
         Math.round(subtotal * (discountPercent / 100) * 100) / 100;
-    const estimatedTotal = Math.max(0, subtotal - discountAmount);
+    const discountAmount =
+        Math.round((lineDiscountTotal + joDiscountAmount) * 100) / 100;
+    const estimatedTotal = Math.max(0, subtotal - joDiscountAmount);
 
     const needsPricing = jobOrder.status === 'draft_submitted';
     const hasUnsavedPricing =
@@ -316,6 +359,7 @@ export default function ReceivingShow({
                 id: line.id,
                 quantity: line.quantity,
                 unit_price: Number(line.unit_price),
+                discount_percent: Number(line.discount_percent ?? 0),
             })),
             discount_percent: Number(jobOrder.discount_percent ?? 0),
         });
@@ -346,7 +390,7 @@ export default function ReceivingShow({
 
     function updateLine(
         lineId: number,
-        key: 'quantity' | 'unit_price',
+        key: 'quantity' | 'unit_price' | 'discount_percent',
         value: number,
     ) {
         form.setData(
@@ -364,6 +408,20 @@ export default function ReceivingShow({
                 form.data.lines,
                 memberLineIds,
                 newPrice,
+            ),
+        );
+    }
+
+    function updatePackageDiscount(
+        memberLineIds: number[],
+        discountPercentValue: number,
+    ) {
+        form.setData(
+            'lines',
+            applyPackageDiscount(
+                form.data.lines,
+                memberLineIds,
+                discountPercentValue,
             ),
         );
     }
@@ -661,8 +719,10 @@ export default function ReceivingShow({
                         linesById={linesById}
                         money={money}
                         lineAmount={lineAmount}
+                        lineGross={lineGross}
                         updateLine={updateLine}
                         updatePackagePrice={updatePackagePrice}
+                        updatePackageDiscount={updatePackageDiscount}
                         needsPricing={needsPricing}
                     />
 

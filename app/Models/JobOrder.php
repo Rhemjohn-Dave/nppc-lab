@@ -162,7 +162,7 @@ class JobOrder extends Model
     {
         return $this->belongsToMany(AnalysisPackage::class, 'job_order_packages')
             ->using(JobOrderPackage::class)
-            ->withPivot(['id', 'sample_id', 'selected_type_ids', 'waived_type_ids'])
+            ->withPivot(['id', 'sample_id', 'selected_type_ids', 'waived_type_ids', 'discount_percent'])
             ->withTimestamps();
     }
 
@@ -197,13 +197,22 @@ class JobOrder extends Model
 
     public function recalculateTotal(): void
     {
-        $subtotal = (float) $this->analyses()->sum('total_cost');
+        $analyses = $this->analyses()->get(['quantity', 'unit_price', 'discount_percent', 'total_cost']);
+        $lineGross = 0.0;
+        $lineNet = 0.0;
+        foreach ($analyses as $line) {
+            $gross = max(1, (int) $line->quantity) * (float) $line->unit_price;
+            $lineGross += $gross;
+            $lineNet += (float) $line->total_cost;
+        }
+        $lineDiscount = round(max(0, $lineGross - $lineNet), 2);
+        $subtotal = round($lineNet, 2);
         $percent = max(0, min(100, (float) $this->discount_percent));
-        $discount = round($subtotal * ($percent / 100), 2);
+        $joDiscount = round($subtotal * ($percent / 100), 2);
 
         $this->update([
-            'discount_amount' => $discount,
-            'total_cost' => max(0, $subtotal - $discount),
+            'discount_amount' => round($lineDiscount + $joDiscount, 2),
+            'total_cost' => max(0, $subtotal - $joDiscount),
         ]);
     }
 

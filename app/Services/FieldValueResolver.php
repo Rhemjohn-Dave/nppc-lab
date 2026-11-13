@@ -1083,13 +1083,22 @@ class FieldValueResolver
                 ? 'type:'.(int) $line->analysis_type_id
                 : 'name:'.mb_strtolower(trim((string) $line->name));
 
+            $net = round((float) $line->total_cost, 2);
+            if ($net <= 0) {
+                $net = round(
+                    (float) $line->unit_price
+                    * max(1, (int) $line->quantity)
+                    * (1 - (max(0, min(100, (float) $line->discount_percent)) / 100)),
+                    2,
+                );
+            }
+
             if (! isset($groups[$key])) {
-                $unit = (float) $line->unit_price;
                 $groups[$key] = [
                     'name' => (string) $line->name,
-                    'unit_price' => $unit,
+                    'unit_price' => $net,
                     'quantity' => 1,
-                    'line_total' => $unit,
+                    'line_total' => $net,
                     'result_value' => filled($line->result_value) ? (string) $line->result_value : null,
                     'result_unit' => filled($line->result_unit) ? (string) $line->result_unit : null,
                 ];
@@ -1098,7 +1107,14 @@ class FieldValueResolver
             }
 
             $groups[$key]['quantity']++;
-            $groups[$key]['line_total'] = $groups[$key]['unit_price'] * $groups[$key]['quantity'];
+            $groups[$key]['line_total'] = round(
+                (float) $groups[$key]['line_total'] + $net,
+                2,
+            );
+            $groups[$key]['unit_price'] = round(
+                (float) $groups[$key]['line_total'] / max(1, (int) $groups[$key]['quantity']),
+                2,
+            );
         }
 
         $rows = [...array_values($packageGroups), ...array_values($groups)];

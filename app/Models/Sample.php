@@ -51,7 +51,7 @@ class Sample extends Model
     {
         return $this->belongsToMany(AnalysisPackage::class, 'job_order_packages')
             ->using(JobOrderPackage::class)
-            ->withPivot(['job_order_id', 'selected_type_ids', 'waived_type_ids'])
+            ->withPivot(['job_order_id', 'selected_type_ids', 'waived_type_ids', 'discount_percent'])
             ->withTimestamps();
     }
 }

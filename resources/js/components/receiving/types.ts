@@ -8,6 +8,7 @@ export type PricingLine = {
     id: number;
     quantity: number;
     unit_price: number;
+    discount_percent: number;
 };
 
 export type SamplePackageGroup = {

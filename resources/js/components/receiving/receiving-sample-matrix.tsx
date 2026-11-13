@@ -25,14 +25,33 @@ type Props = {
     linesById: Map<number, PricingLine>;
     money: (value: number) => string;
     lineAmount: (line: PricingLine | undefined) => number;
+    lineGross: (line: PricingLine | undefined) => number;
     updateLine: (
         lineId: number,
-        key: 'quantity' | 'unit_price',
+        key: 'quantity' | 'unit_price' | 'discount_percent',
         value: number,
     ) => void;
     updatePackagePrice: (memberLineIds: number[], newPrice: number) => void;
+    updatePackageDiscount: (
+        memberLineIds: number[],
+        discountPercent: number,
+    ) => void;
     needsPricing: boolean;
 };
+
+function packageDiscountPercent(
+    memberLineIds: number[],
+    linesById: Map<number, PricingLine>,
+): number {
+    const percents = memberLineIds.map((id) =>
+        Number(linesById.get(id)?.discount_percent || 0),
+    );
+    if (percents.length === 0) {
+        return 0;
+    }
+    const first = percents[0];
+    return percents.every((pct) => Math.abs(pct - first) < 0.001) ? first : first;
+}
 
 function sampleSubtotal(
     group: SamplePricingGroup,
@@ -65,8 +84,10 @@ export default function ReceivingSampleMatrix({
     linesById,
     money,
     lineAmount,
+    lineGross,
     updateLine,
     updatePackagePrice,
+    updatePackageDiscount,
     needsPricing,
 }: Props) {
     function removePackage(packageLinkId: number) {
@@ -187,13 +208,16 @@ export default function ReceivingSampleMatrix({
                                                         <th className={thClass}>
                                                             Parameter
                                                         </th>
-                                                        <th className={`${thClass} w-20`}>
+                                                        <th className={`${thClass} w-16`}>
                                                             Qty
                                                         </th>
-                                                        <th className={`${thClass} w-28`}>
+                                                        <th className={`${thClass} w-24`}>
                                                             Rate
                                                         </th>
-                                                        <th className={`${thClass} w-28 text-right`}>
+                                                        <th className={`${thClass} w-20`}>
+                                                            Disc %
+                                                        </th>
+                                                        <th className={`${thClass} w-24 text-right`}>
                                                             Net
                                                         </th>
                                                         {canEditAnalyses ? (
@@ -208,7 +232,18 @@ export default function ReceivingSampleMatrix({
                                                 <tbody className="divide-y divide-slate-200/80 bg-white">
                                                     {group.packages.map(
                                                         (pkgGroup) => {
-                                                            const pkgTotal =
+                                                            const pkgGross =
+                                                                pkgGroup.memberLineIds.reduce(
+                                                                    (sum, id) =>
+                                                                        sum +
+                                                                        lineGross(
+                                                                            linesById.get(
+                                                                                id,
+                                                                            ),
+                                                                        ),
+                                                                    0,
+                                                                );
+                                                            const pkgNet =
                                                                 pkgGroup.memberLineIds.reduce(
                                                                     (sum, id) =>
                                                                         sum +
@@ -218,6 +253,11 @@ export default function ReceivingSampleMatrix({
                                                                             ),
                                                                         ),
                                                                     0,
+                                                                );
+                                                            const pkgDisc =
+                                                                packageDiscountPercent(
+                                                                    pkgGroup.memberLineIds,
+                                                                    linesById,
                                                                 );
 
                                                             return (
@@ -253,7 +293,7 @@ export default function ReceivingSampleMatrix({
                                                                                 min={
                                                                                     1
                                                                                 }
-                                                                                className="h-8 w-16"
+                                                                                className="h-8 w-14"
                                                                                 value={
                                                                                     1
                                                                                 }
@@ -270,7 +310,7 @@ export default function ReceivingSampleMatrix({
                                                                                 step="0.01"
                                                                                 className="h-8 w-24"
                                                                                 value={
-                                                                                    pkgTotal
+                                                                                    pkgGross
                                                                                 }
                                                                                 onChange={(
                                                                                     e,
@@ -286,9 +326,37 @@ export default function ReceivingSampleMatrix({
                                                                                 }
                                                                             />
                                                                         </td>
+                                                                        <td className="px-3 py-2 align-top">
+                                                                            <Input
+                                                                                type="number"
+                                                                                min={
+                                                                                    0
+                                                                                }
+                                                                                max={
+                                                                                    100
+                                                                                }
+                                                                                step="0.01"
+                                                                                className="h-8 w-16"
+                                                                                value={
+                                                                                    pkgDisc
+                                                                                }
+                                                                                onChange={(
+                                                                                    e,
+                                                                                ) =>
+                                                                                    updatePackageDiscount(
+                                                                                        pkgGroup.memberLineIds,
+                                                                                        Number(
+                                                                                            e
+                                                                                                .target
+                                                                                                .value,
+                                                                                        ),
+                                                                                    )
+                                                                                }
+                                                                            />
+                                                                        </td>
                                                                         <td className="px-3 py-2 text-right align-top text-xs font-bold tabular-nums text-slate-900">
                                                                             {money(
-                                                                                pkgTotal,
+                                                                                pkgNet,
                                                                             )}
                                                                         </td>
                                                                         {canEditAnalyses ? (
@@ -325,7 +393,7 @@ export default function ReceivingSampleMatrix({
                                                                                 </td>
                                                                                 <td
                                                                                     className="px-3 py-1.5 align-top text-[11px] text-slate-600"
-                                                                                    colSpan={3}
+                                                                                    colSpan={4}
                                                                                 >
                                                                                     <span className="inline-flex items-center gap-1.5">
                                                                                         <Check className="size-3 text-emerald-600" />
@@ -437,6 +505,35 @@ export default function ReceivingSampleMatrix({
                                                                             }
                                                                         />
                                                                     </td>
+                                                                    <td className="px-3 py-2 align-top">
+                                                                        <Input
+                                                                            type="number"
+                                                                            min={
+                                                                                0
+                                                                            }
+                                                                            max={
+                                                                                100
+                                                                            }
+                                                                            step="0.01"
+                                                                            className="h-8 w-16"
+                                                                            value={
+                                                                                line.discount_percent
+                                                                            }
+                                                                            onChange={(
+                                                                                e,
+                                                                            ) =>
+                                                                                updateLine(
+                                                                                    meta.id,
+                                                                                    'discount_percent',
+                                                                                    Number(
+                                                                                        e
+                                                                                            .target
+                                                                                            .value,
+                                                                                    ),
+                                                                                )
+                                                                            }
+                                                                        />
+                                                                    </td>
                                                                     <td className="px-3 py-2 text-right align-top text-xs font-bold tabular-nums text-slate-900">
                                                                         {money(
                                                                             lineTotal,
@@ -473,8 +570,8 @@ export default function ReceivingSampleMatrix({
                                                             <td
                                                                 colSpan={
                                                                     canEditAnalyses
-                                                                        ? 6
-                                                                        : 5
+                                                                        ? 7
+                                                                        : 6
                                                                 }
                                                                 className="px-3 py-6 text-center text-sm text-slate-500"
                                                             >

@@ -180,6 +180,7 @@ class JobOrderFormPresenter
                     'category_label' => $line->resolvedCategoryLabel(),
                     'quantity' => $line->quantity,
                     'unit_price' => $line->unit_price,
+                    'discount_percent' => $line->discount_percent,
                     'total_cost' => $line->total_cost,
                     'status' => $line->status->value,
                     'status_label' => $line->status->label(),
@@ -213,6 +214,7 @@ class JobOrderFormPresenter
                     'default_price' => $package?->default_price,
                     'selected_type_ids' => $selectedIds,
                     'member_names' => $memberNames,
+                    'discount_percent' => $link->discount_percent,
                 ];
             })->values(),
             'catalog' => self::catalog(),

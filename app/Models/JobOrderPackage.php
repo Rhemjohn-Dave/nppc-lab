@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
  * @property int $analysis_package_id
  * @property list<int>|null $selected_type_ids
  * @property list<int>|null $waived_type_ids
+ * @property string $discount_percent
  */
 class JobOrderPackage extends Pivot
 {
@@ -25,6 +26,7 @@ class JobOrderPackage extends Pivot
         'analysis_package_id',
         'selected_type_ids',
         'waived_type_ids',
+        'discount_percent',
     ];
 
     protected function casts(): array
@@ -32,6 +34,7 @@ class JobOrderPackage extends Pivot
         return [
             'selected_type_ids' => 'array',
             'waived_type_ids' => 'array',
+            'discount_percent' => 'decimal:2',
         ];
     }
 

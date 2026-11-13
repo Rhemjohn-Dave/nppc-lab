@@ -560,7 +560,7 @@ class JobOrderService
     }
 
     /**
-     * @param  array<int, array{id: int, unit_price: float|int|string, quantity?: int}>  $lines
+     * @param  array<int, array{id: int, unit_price: float|int|string, quantity?: int, discount_percent?: float|int|string|null}>  $lines
      * @return array{job: JobOrder, outcome: 'queued_for_approval'|'awaiting_approval'|'pricing_updated'}
      */
     public function updatePricing(
@@ -594,16 +594,23 @@ class JobOrderService
         ) {
             foreach ($lines as $line) {
                 $analysis = $jobOrder->analyses()->whereKey($line['id'])->firstOrFail();
-                $quantity = (int) ($line['quantity'] ?? $analysis->quantity);
+                $quantity = max(1, (int) ($line['quantity'] ?? $analysis->quantity));
                 $unitPrice = (float) $line['unit_price'];
-                $lineTotal = max(1, $quantity) * $unitPrice;
+                $lineDiscount = array_key_exists('discount_percent', $line) && $line['discount_percent'] !== null
+                    ? max(0, min(100, (float) $line['discount_percent']))
+                    : max(0, min(100, (float) $analysis->discount_percent));
+                $gross = $quantity * $unitPrice;
+                $lineTotal = round($gross * (1 - ($lineDiscount / 100)), 2);
 
                 $analysis->update([
-                    'quantity' => max(1, $quantity),
+                    'quantity' => $quantity,
                     'unit_price' => $unitPrice,
+                    'discount_percent' => $lineDiscount,
                     'total_cost' => $lineTotal,
                 ]);
             }
+
+            $this->syncPackageDiscountPercentsFromMembers($jobOrder);
 
             $attributes = [
                 'discount_percent' => $resolvedPercent,
@@ -642,6 +649,52 @@ class JobOrderService
         };
 
         return ['job' => $jobOrder, 'outcome' => $outcome];
+    }
+
+    /**
+     * Mirror member line discount_percent onto each package pivot when all members agree.
+     */
+    private function syncPackageDiscountPercentsFromMembers(JobOrder $jobOrder): void
+    {
+        $jobOrder->loadMissing(['packageLinks', 'analyses', 'packages']);
+        $analyses = $jobOrder->analyses;
+
+        foreach ($jobOrder->packageLinks as $link) {
+            $selectedIds = $link->selected_type_ids;
+            if (! is_array($selectedIds)) {
+                $package = $jobOrder->packages->firstWhere('id', $link->analysis_package_id);
+                $selectedIds = $package instanceof AnalysisPackage
+                    ? array_values(array_diff(
+                        $package->orderedTypeIds(),
+                        array_map('intval', (array) ($link->waived_type_ids ?? [])),
+                    ))
+                    : [];
+            }
+            $selectedIds = array_map('intval', $selectedIds);
+            if ($selectedIds === []) {
+                continue;
+            }
+
+            $members = $analyses->filter(function (JobOrderAnalysis $line) use ($link, $selectedIds): bool {
+                return $line->analysis_type_id !== null
+                    && in_array((int) $line->analysis_type_id, $selectedIds, true)
+                    && ($link->sample_id === null || (int) $line->sample_id === (int) $link->sample_id);
+            });
+            if ($members->isEmpty()) {
+                continue;
+            }
+
+            $percents = $members
+                ->map(fn (JobOrderAnalysis $line): float => round((float) $line->discount_percent, 2))
+                ->unique()
+                ->values();
+            $pivotPercent = $percents->count() === 1 ? (float) $percents->first() : 0.0;
+            if (abs((float) $link->discount_percent - $pivotPercent) < 0.001) {
+                continue;
+            }
+            $link->discount_percent = $pivotPercent;
+            $link->save();
+        }
     }
 
     /**
