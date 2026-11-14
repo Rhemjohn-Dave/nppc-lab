@@ -27,11 +27,30 @@ class AnalysisResultReportResolver
     /** @var array<int, true>|null */
     private ?array $samplePreparationTypeIds = null;
 
+    /**
+     * Request-local memo of reportsForJobOrder results.
+     *
+     * @var array<string, Collection<int, AnalysisResultReport>>
+     */
+    private array $reportsByJobCache = [];
+
     public function forAnalysis(JobOrderAnalysis $analysis, User $user, bool $withValues = true): AnalysisResultReport
     {
         $analysis->loadMissing(['jobOrder.samples', 'jobOrder.analyses.assignee', 'jobOrder.analyses.analysisType', 'analysisType', 'assignee']);
 
         $reports = $this->reportsForJobOrder($analysis->jobOrder, $user, $withValues);
+
+        return $this->matchAnalysisInReports($reports, $analysis);
+    }
+
+    /**
+     * Pick the report for one assay from an already-resolved JO report list.
+     *
+     * @param  Collection<int, AnalysisResultReport>  $reports
+     */
+    public function matchAnalysisInReports(Collection $reports, JobOrderAnalysis $analysis): AnalysisResultReport
+    {
+        $analysis->loadMissing(['jobOrder', 'analysisType', 'assignee']);
 
         $match = $reports->first(
             fn (AnalysisResultReport $report) => $report->analyses->contains(
@@ -61,11 +80,38 @@ class AnalysisResultReportResolver
      */
     public function reportsForJobOrder(JobOrder $jobOrder, User $user, bool $withValues = true): Collection
     {
-        if ($jobOrder->is_laboratory_services) {
-            return collect();
+        $jobOrder->loadMissing(['samples', 'analyses.assignee', 'analyses.analysisType', 'packageLinks.analysisPackage', 'packages']);
+
+        // Fingerprint analysis rows so a request-scoped memo cannot return stale
+        // reports after drafts/completes (and so PHPUnit HTTP calls stay correct).
+        $analysisFingerprint = $jobOrder->analyses
+            ->map(function (JobOrderAnalysis $line): string {
+                $status = $line->status instanceof JobOrderAnalysisStatus
+                    ? $line->status->value
+                    : (string) $line->status;
+
+                return implode(':', [
+                    (int) $line->id,
+                    $status,
+                    (string) ($line->updated_at?->getTimestamp() ?? 0),
+                    (string) ($line->result_value ?? ''),
+                ]);
+            })
+            ->implode('|');
+
+        $cacheKey = implode('|', [
+            (int) $jobOrder->id,
+            (int) $user->id,
+            $withValues ? '1' : '0',
+            hash('xxh3', $analysisFingerprint),
+        ]);
+        if (isset($this->reportsByJobCache[$cacheKey])) {
+            return $this->reportsByJobCache[$cacheKey];
         }
 
-        $jobOrder->loadMissing(['samples', 'analyses.assignee', 'analyses.analysisType', 'packageLinks.analysisPackage', 'packages']);
+        if ($jobOrder->is_laboratory_services) {
+            return $this->reportsByJobCache[$cacheKey] = collect();
+        }
 
         // Snapshot full analyses — fromControlledForm temporarily scopes the relation per sample.
         $allAnalyses = $jobOrder->analyses;
@@ -107,7 +153,7 @@ class AnalysisResultReportResolver
             ));
         }
 
-        return $reports->values();
+        return $this->reportsByJobCache[$cacheKey] = $reports->values();
     }
 
     /**
@@ -925,16 +971,26 @@ class AnalysisResultReportResolver
             );
         }
 
-        $incomplete = $ordered->first(
-            fn (JobOrderAnalysis $line) => $line->status !== JobOrderAnalysisStatus::Completed,
+        $incompleteLines = $ordered->reject(
+            fn (JobOrderAnalysis $line) => $line->isSamplePreparation()
+                || $line->status === JobOrderAnalysisStatus::Completed,
         );
 
-        if ($incomplete) {
+        if ($incompleteLines->isNotEmpty()) {
+            $missingNames = $incompleteLines
+                ->map(fn (JobOrderAnalysis $line): string => trim((string) $line->name))
+                ->filter(fn (string $name): bool => $name !== '')
+                ->values()
+                ->all();
+            $missingLabel = $missingNames !== []
+                ? implode(', ', $missingNames)
+                : 'all matched tests';
+
             return new AnalysisResultReport(
                 kind: AnalysisResultReport::KIND_WAITING,
                 filename: $filename,
                 title: $title,
-                message: "This job uses the \"{$form->name}\" form. Preview is available after every matched result is complete.",
+                message: "Preview for \"{$form->name}\" needs these results completed: {$missingLabel}.",
                 jobOrder: $jobOrder,
                 analyses: $ordered,
                 values: [],

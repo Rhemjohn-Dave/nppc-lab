@@ -43,7 +43,7 @@ class AnalystCompleteSampleTest extends TestCase
                     'result_value' => (string) (10 + $index),
                     'result_method' => 'Standard Method',
                 ])
-                ->assertRedirect()
+                ->assertOk()
                 ->assertSessionDoesntHaveErrors();
         }
 
@@ -93,7 +93,7 @@ class AnalystCompleteSampleTest extends TestCase
                 'performed_at' => '2026-07-29T15:00',
                 'result_value' => '11.2',
             ])
-            ->assertRedirect();
+            ->assertOk();
 
         $this->actingAs($analyst)
             ->from('/analyst')
@@ -132,7 +132,7 @@ class AnalystCompleteSampleTest extends TestCase
                 'performed_at' => '2026-07-29T15:00',
                 'result_value' => '9.9',
             ])
-            ->assertRedirect();
+            ->assertOk();
 
         $this->actingAs($analyst)
             ->from('/analyst')
@@ -148,7 +148,7 @@ class AnalystCompleteSampleTest extends TestCase
                 'result_value' => '9.9',
                 'result_pass_fail' => 'Passed',
             ])
-            ->assertRedirect();
+            ->assertOk();
 
         $this->actingAs($analyst)
             ->post("/analyst/job-orders/{$job->id}/complete-sample", array_filter([
@@ -176,8 +176,8 @@ class AnalystCompleteSampleTest extends TestCase
             'Multi Sample Complete Customer',
             'multi-complete@example.com',
             [
-                ['description' => 'Sample A', 'matrix' => 'Solid'],
-                ['description' => 'Sample B', 'matrix' => 'Solid'],
+                ['description' => 'Wastewater', 'matrix' => 'Liquid', 'classification' => 'Wastewater'],
+                ['description' => 'River water', 'matrix' => 'Liquid', 'classification' => 'Wastewater'],
             ],
         );
 
@@ -195,7 +195,7 @@ class AnalystCompleteSampleTest extends TestCase
                     'result_value' => (string) (20 + $index),
                     'result_method' => 'Standard Method',
                 ])
-                ->assertRedirect()
+                ->assertOk()
                 ->assertSessionDoesntHaveErrors();
         }
 
@@ -227,8 +227,8 @@ class AnalystCompleteSampleTest extends TestCase
             'Multi Sample Incomplete Customer',
             'multi-incomplete@example.com',
             [
-                ['description' => 'Sample A', 'matrix' => 'Solid'],
-                ['description' => 'Sample B', 'matrix' => 'Solid'],
+                ['description' => 'Wastewater', 'matrix' => 'Liquid', 'classification' => 'Wastewater'],
+                ['description' => 'River water', 'matrix' => 'Liquid', 'classification' => 'Wastewater'],
             ],
         );
 
@@ -241,7 +241,7 @@ class AnalystCompleteSampleTest extends TestCase
                 'performed_at' => '2026-07-29T15:00',
                 'result_value' => '11.2',
             ])
-            ->assertRedirect();
+            ->assertOk();
 
         $this->actingAs($analyst)
             ->from('/analyst')
@@ -266,15 +266,23 @@ class AnalystCompleteSampleTest extends TestCase
         string $email,
         ?array $samples = null,
     ): JobOrder {
+        $defaultSamples = [
+            [
+                'description' => 'Wastewater',
+                'matrix' => 'Liquid',
+                'classification' => 'Wastewater',
+            ],
+        ];
+
         $this->post('/intake/job-orders', [
             'customer_name' => $name,
             'customer_email' => $email,
             'customer_contact' => '09170000000',
-            'samples' => $samples ?? [
-                ['description' => 'Sample', 'matrix' => 'Solid'],
-            ],
+            'samples' => $samples ?? $defaultSamples,
             'analysis_type_ids' => $typeIds,
-        ])->assertRedirect();
+        ])
+            ->assertRedirect()
+            ->assertSessionDoesntHaveErrors();
 
         $job = JobOrder::query()->latest('id')->firstOrFail();
         $lines = $job->analyses->map(fn ($line) => [

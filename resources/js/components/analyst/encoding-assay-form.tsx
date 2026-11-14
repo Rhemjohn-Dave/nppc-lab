@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { formatScientificResult } from '@/lib/scientific-result';
 import { cn } from '@/lib/utils';
 import { Check, Circle } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 export type EncodingFormData = {
     performed_at: string;
@@ -84,8 +85,25 @@ export default function EncodingAssayForm({
     const rawFilled = formData.result_raw.trim().length > 0;
     const finishFilled = formData.result_finish.trim().length > 0;
     const chlorinatedFilled = formData.result_chlorinated.trim().length > 0;
-    const clMode = usesResidualCl
+    const derivedClMode = usesResidualCl
         ? residualChlorineMode(formData)
+        : null;
+    // Explicit selection so Finish/Chlorinated stick before a value is typed.
+    const [residualMode, setResidualMode] = useState<
+        'finish' | 'chlorinated' | 'raw' | null
+    >(derivedClMode);
+    useEffect(() => {
+        setResidualMode(residualChlorineMode(formData));
+        // Reset when switching assays; derived fields re-seed from the new task.
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- task.id is the intentional reset key
+    }, [task.id]);
+    useEffect(() => {
+        if (derivedClMode) {
+            setResidualMode(derivedClMode);
+        }
+    }, [derivedClMode]);
+    const clMode = usesResidualCl
+        ? (residualMode ?? derivedClMode)
         : null;
     const resultFilled = usesRawFinish
         ? rawFilled || finishFilled
@@ -100,6 +118,7 @@ export default function EncodingAssayForm({
         if (readOnly || resultsLocked) {
             return;
         }
+        setResidualMode(mode);
         const patch: Partial<EncodingFormData> =
             mode === 'raw'
                 ? {

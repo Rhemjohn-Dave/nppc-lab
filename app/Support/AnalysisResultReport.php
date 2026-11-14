@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Enums\JobOrderAnalysisStatus;
 use App\Models\ControlledFormRevision;
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
@@ -65,7 +66,28 @@ class AnalysisResultReport
     }
 
     /**
-     * @return array{kind: string, title: string, message: string|null, can_preview: bool, can_print: bool, sample_id: int|null, form_id: int|null, control_number: string|null}
+     * Assay names on this sheet that are not yet completed (excludes sample preparation).
+     *
+     * @return list<string>
+     */
+    public function missingAssayNames(): array
+    {
+        return $this->analyses
+            ->reject(function (JobOrderAnalysis $line): bool {
+                if ($line->isSamplePreparation()) {
+                    return true;
+                }
+
+                return $line->status === JobOrderAnalysisStatus::Completed;
+            })
+            ->map(fn (JobOrderAnalysis $line): string => trim((string) $line->name))
+            ->filter(fn (string $name): bool => $name !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array{kind: string, title: string, message: string|null, can_preview: bool, can_print: bool, sample_id: int|null, form_id: int|null, control_number: string|null, missing: list<string>}
      */
     public function summary(): array
     {
@@ -78,6 +100,7 @@ class AnalysisResultReport
             'sample_id' => $this->sampleId,
             'form_id' => $this->controlledForm?->id,
             'control_number' => $this->controlNumber,
+            'missing' => $this->missingAssayNames(),
         ];
     }
 
@@ -97,6 +120,7 @@ class AnalysisResultReport
             'sample_id' => $this->sampleId,
             'form_id' => $this->controlledForm?->id,
             'control_number' => $this->controlNumber,
+            'missing' => $this->missingAssayNames(),
             'template_url' => $templateUrl,
             'pdf_url' => $pdfUrl,
             'fill_mode' => $fillMode ?? $this->fillMode(),

@@ -61,7 +61,7 @@ class AnalystAssignmentTest extends TestCase
                 'result_value' => '12.5',
                 'result_unit' => '%',
             ])
-            ->assertRedirect();
+            ->assertOk();
 
         $line->refresh();
         $this->assertSame($second->id, $line->assigned_to);

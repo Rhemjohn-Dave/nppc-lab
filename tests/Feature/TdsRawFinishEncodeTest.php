@@ -43,7 +43,7 @@ class TdsRawFinishEncodeTest extends TestCase
                 'result_unit' => 'mg/L',
                 'result_method' => DynamicTestMatrix::methodForAnalysisType($tds) ?? 'TDS method',
             ])
-            ->assertRedirect()
+            ->assertOk()
             ->assertSessionDoesntHaveErrors();
 
         $line->refresh();
@@ -170,7 +170,7 @@ class TdsRawFinishEncodeTest extends TestCase
                 'result_chlorinated' => '0.9',
                 'result_method' => DynamicTestMatrix::methodForAnalysisType($cl) ?? 'DPD method',
             ])
-            ->assertRedirect()
+            ->assertOk()
             ->assertSessionDoesntHaveErrors();
 
         $line->refresh();
@@ -322,7 +322,7 @@ class TdsRawFinishEncodeTest extends TestCase
                 'result_finish' => '6.1',
                 'result_method' => DynamicTestMatrix::methodForAnalysisType($ph) ?? 'pH method',
             ])
-            ->assertRedirect()
+            ->assertOk()
             ->assertSessionDoesntHaveErrors();
 
         $line->refresh();

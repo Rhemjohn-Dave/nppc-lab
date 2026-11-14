@@ -258,30 +258,46 @@ export default function AnalystEncodingStudio({
 
         return query ? `?${query}` : '';
     })();
+    // Prefer the active result sheet URL — never fall back to a sibling sheet's ready preview.
+    const sheetScopedPreviewUrl =
+        activeSampleId != null || activeFormId != null
+            ? `/analyst/job-orders/${job.id}/result-report${taskPreviewQuery}`
+            : null;
     const previewUrl =
         activeReportRow?.preview_url ||
-        (activeSampleId != null
-            ? activeConsolidationSample?.preview_url ||
-              activeReleasedSample?.preview_url ||
-              `/analyst/job-orders/${job.id}/result-report${taskPreviewQuery}`
+        (activeFormId != null ? sheetScopedPreviewUrl : null) ||
+        (activeSampleId != null && activeFormId == null
+            ? activeReleasedSample?.preview_url || sheetScopedPreviewUrl
             : null) ||
-        consolidation?.preview_url ||
-        releasedPrint?.preview_url ||
-        (tasks[0]
-            ? `/analyst/job-orders/${job.id}/result-report${taskPreviewQuery}`
+        (activeFormId == null
+            ? releasedPrint?.preview_url ||
+              (tasks[0]
+                  ? `/analyst/job-orders/${job.id}/result-report${taskPreviewQuery}`
+                  : null)
             : null);
-    // Overlay preview needs Completed lines on this result sheet (not drafts).
+    const previewMissing = (
+        activeReportRow?.missing ??
+        active?.report?.missing ??
+        []
+    ).filter((name) => name.trim() !== '');
+    // Gate on the active sheet only — a finished sibling form must not enable Preview here.
     const canPreview = Boolean(
         previewUrl &&
-            (activeReportRow?.can_preview ||
-                active?.report?.can_preview ||
-                activeConsolidationSample?.can_preview ||
-                activeReleasedSample?.can_preview ||
-                sampleFullyCompleted ||
-                sheetAlreadyAtHead ||
-                consolidation?.can_preview ||
-                releasedPrint?.can_preview),
+            (activeReportRow
+                ? activeReportRow.can_preview ||
+                  activeReportRow.submitted ||
+                  activeReleasedSample?.released
+                : active?.report?.can_preview ||
+                  sampleFullyCompleted ||
+                  sheetAlreadyAtHead ||
+                  activeReleasedSample?.released ||
+                  releasedPrint?.can_preview),
     );
+    const previewDisabledTitle =
+        previewMissing.length > 0
+            ? `Still need: ${previewMissing.join(', ')}`
+            : active?.report?.message?.trim() ||
+              'Encode all tests on this result sheet to preview';
 
     const sampleLabel =
         active?.sample_label?.trim() ||
@@ -748,8 +764,8 @@ export default function AnalystEncodingStudio({
                                 disabled={!canPreview}
                                 title={
                                     canPreview
-                                        ? 'Preview result form for this sample'
-                                        : 'Encode all tests on this sample to preview'
+                                        ? 'Preview result form for this sheet'
+                                        : previewDisabledTitle
                                 }
                                 onClick={() => {
                                     if (canPreview) {

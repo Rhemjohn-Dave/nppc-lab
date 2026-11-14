@@ -52,7 +52,7 @@ class PerSampleSubmitForReviewTest extends TestCase
                 'result_value' => '9.1',
                 'result_method' => 'Standard Method',
             ])
-            ->assertRedirect()
+            ->assertOk()
             ->assertSessionDoesntHaveErrors();
 
         $this->assertSame(

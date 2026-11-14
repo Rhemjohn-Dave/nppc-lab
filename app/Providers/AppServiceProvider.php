@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\AnalysisResultReportResolver;
 use App\Ssr\TimedHttpGateway;
 use App\Support\Mail\MailSettings;
 use Carbon\CarbonImmutable;
@@ -20,6 +21,10 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(Gateway::class, TimedHttpGateway::class);
+
+        // One resolver per request so reportsForJobOrder memoization is shared
+        // across AnalystController + JobOrderService consolidations/prints.
+        $this->app->scoped(AnalysisResultReportResolver::class);
     }
 
     /**

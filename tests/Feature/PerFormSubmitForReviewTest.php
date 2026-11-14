@@ -239,7 +239,7 @@ class PerFormSubmitForReviewTest extends TestCase
                     'result_value' => '<1.1',
                     'result_pass_fail' => null,
                 ]))
-                ->assertRedirect()
+                ->assertOk()
                 ->assertSessionDoesntHaveErrors();
         }
 

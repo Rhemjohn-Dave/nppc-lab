@@ -1,6 +1,7 @@
 import AnalystEncodingStudio from '@/components/analyst/analyst-encoding-studio';
 import AnalystQueuePanel from '@/components/analyst/analyst-queue-panel';
 import CompleteJobOrderDialog from '@/components/analyst/complete-job-order-dialog';
+import ResultSheetNotReadyDialog from '@/components/analyst/result-sheet-not-ready-dialog';
 import type {
     AnalystTask,
     Consolidation,
@@ -163,7 +164,7 @@ function setJobQueryParam(jobId: number | null) {
 }
 
 export default function AnalystIndex({
-    tasks,
+    tasks: tasksProp,
     consolidations = [],
     releasedPrints = [],
     counts,
@@ -173,6 +174,7 @@ export default function AnalystIndex({
     const { errors } = usePage().props as {
         errors?: Record<string, string>;
     };
+    const [tasks, setTasks] = useState(tasksProp);
     const [query, setQuery] = useState(filters.q ?? '');
     const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
     const [active, setActive] = useState<AnalystTask | null>(null);
@@ -188,8 +190,9 @@ export default function AnalystIndex({
     const [sampleCompleteProcessing, setSampleCompleteProcessing] =
         useState(false);
     const [sampleCompleteFallback, setSampleCompleteFallback] = useState(false);
-    const [sampleCompleteError, setSampleCompleteError] = useState<
-        string | null
+    /** Gaps that block Complete — shown in ResultSheetNotReadyDialog. */
+    const [sampleCompleteMissing, setSampleCompleteMissing] = useState<
+        string[] | null
     >(null);
     const [discardConfirm, setDiscardConfirm] = useState(false);
     const [pendingTask, setPendingTask] = useState<AnalystTask | null>(null);
@@ -291,6 +294,10 @@ export default function AnalystIndex({
         Boolean(submitSignatoryJobId) ||
         Boolean(editSignatoryJobId) ||
         Boolean(footerJobId);
+
+    useEffect(() => {
+        setTasks(tasksProp);
+    }, [tasksProp]);
 
     useEffect(() => {
         setQuery(filters.q ?? '');
@@ -773,19 +780,56 @@ export default function AnalystIndex({
             pendingAfterDraft.current = onDone;
         }
 
-        router.post(`/analyst/tasks/${taskId}/draft`, snapshot, {
-            preserveScroll: true,
-            preserveState: true,
-            // Partial + silent: keep encoding focus; no progress bar / nav chrome / toast.
-            only: [
-                'tasks',
-                'jobs',
-                'counts',
-                'consolidations',
-                'releasedPrints',
-            ],
-            showProgress: false,
-            onSuccess: () => {
+        void (async () => {
+            try {
+                const token = csrfToken();
+                const response = await fetch(`/analyst/tasks/${taskId}/draft`, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        Accept: 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        ...(token ? { 'X-XSRF-TOKEN': token } : {}),
+                    },
+                    body: JSON.stringify(snapshot),
+                });
+
+                const payload = (await response.json().catch(() => null)) as {
+                    task?: Partial<AnalystTask> & { id: number };
+                    message?: string;
+                    errors?: Record<string, string[]>;
+                } | null;
+
+                if (!response.ok) {
+                    const fieldErrors = payload?.errors ?? {};
+                    Object.entries(fieldErrors).forEach(([key, messages]) => {
+                        if (messages?.[0]) {
+                            form.setError(
+                                key as keyof typeof form.data,
+                                messages[0],
+                            );
+                        }
+                    });
+                    pendingAfterDraft.current = null;
+                    return;
+                }
+
+                if (payload?.task) {
+                    setTasks((prev) =>
+                        prev.map((task) =>
+                            task.id === payload.task!.id
+                                ? { ...task, ...payload.task }
+                                : task,
+                        ),
+                    );
+                    setActive((current) =>
+                        current?.id === payload.task!.id
+                            ? { ...current, ...payload.task }
+                            : current,
+                    );
+                }
+
                 setSavedJustNow(true);
                 setLastAutosavedAt(new Date());
                 // Align defaults to what was saved so isDirty clears when the form
@@ -794,20 +838,17 @@ export default function AnalystIndex({
                 if (draftTaskIdRef.current === taskId) {
                     form.setDefaults(snapshot);
                 }
-            },
-            onError: () => {
-                // Keep editing if draft fails — do not switch assays.
+            } catch {
                 pendingAfterDraft.current = null;
-            },
-            onFinish: () => {
+            } finally {
                 draftInFlight.current = false;
                 draftTaskIdRef.current = null;
                 setDraftSaving(false);
                 const next = pendingAfterDraft.current;
                 pendingAfterDraft.current = null;
                 next?.();
-            },
-        });
+            }
+        })();
     }
 
     function saveDraft() {
@@ -830,58 +871,12 @@ export default function AnalystIndex({
         const sampleRows = groupTasksBySample(selectedGroup?.tasks ?? jobTasks);
         const multiSample = sampleRows.length > 1;
 
-        return jobTasks
-            .filter((task) => {
-                if (task.is_sample_preparation === true) {
-                    return false;
-                }
-                if (active?.id === task.id) {
-                    const hasPerformed =
-                        form.data.performed_at.trim() !== '' ||
-                        (task.status === 'returned' &&
-                            (task.performed_at ?? '').trim() !== '');
-                    if (!hasPerformed) {
-                        return true;
-                    }
-                    if (task.uses_raw_finish === true) {
-                        return (
-                            !form.data.result_raw.trim() &&
-                            !form.data.result_finish.trim()
-                        );
-                    }
-                    if (task.uses_residual_chlorine === true) {
-                        return (
-                            !form.data.result_finish.trim() &&
-                            !form.data.result_chlorinated.trim() &&
-                            !form.data.result_raw.trim()
-                        );
-                    }
-                    return !form.data.result_value.trim();
-                }
-
-                if (!(task.performed_at ?? '').trim()) {
-                    return true;
-                }
-                if (task.uses_raw_finish === true) {
-                    return (
-                        !(task.result_raw ?? '').trim() &&
-                        !(task.result_finish ?? '').trim()
-                    );
-                }
-                if (task.uses_residual_chlorine === true) {
-                    return (
-                        !(task.result_finish ?? '').trim() &&
-                        !(task.result_chlorinated ?? '').trim() &&
-                        !(task.result_raw ?? '').trim()
-                    );
-                }
-                return !(task.result_value ?? '').trim();
-            })
-            .map((task) => {
+        function assayLabel(task: AnalystTask, suffix?: string): string {
+            const base = (() => {
                 if (!multiSample) {
                     return task.name;
                 }
-                const label =
+                const sample =
                     task.sample_label?.trim() ||
                     sampleRows.find((g) =>
                         task.sample_id == null
@@ -889,8 +884,78 @@ export default function AnalystIndex({
                             : g.sample_id === task.sample_id,
                     )?.label ||
                     'Sample';
-                return `${label} / ${task.name}`;
-            });
+                return `${sample} / ${task.name}`;
+            })();
+
+            return suffix ? `${base} (${suffix})` : base;
+        }
+
+        function isPassFailSet(value: string | null | undefined): boolean {
+            const normalized = (value ?? '').trim().toLowerCase();
+            return normalized === 'passed' || normalized === 'failed';
+        }
+
+        const gaps: string[] = [];
+
+        for (const task of jobTasks) {
+            if (task.is_sample_preparation === true) {
+                continue;
+            }
+
+            const isActive = active?.id === task.id;
+            const performedAt = isActive
+                ? form.data.performed_at.trim() ||
+                  (task.status === 'returned'
+                      ? (task.performed_at ?? '').trim()
+                      : '')
+                : (task.performed_at ?? '').trim();
+            const resultValue = isActive
+                ? form.data.result_value.trim()
+                : (task.result_value ?? '').trim();
+            const resultRaw = isActive
+                ? form.data.result_raw.trim()
+                : (task.result_raw ?? '').trim();
+            const resultFinish = isActive
+                ? form.data.result_finish.trim()
+                : (task.result_finish ?? '').trim();
+            const resultChlorinated = isActive
+                ? form.data.result_chlorinated.trim()
+                : (task.result_chlorinated ?? '').trim();
+            const passFail = isActive
+                ? form.data.result_pass_fail
+                : task.result_pass_fail;
+
+            if (task.uses_raw_finish === true) {
+                if (!resultRaw && !resultFinish) {
+                    gaps.push(assayLabel(task, 'Raw or Finish'));
+                    continue;
+                }
+            } else if (task.uses_residual_chlorine === true) {
+                if (!resultFinish && !resultChlorinated && !resultRaw) {
+                    gaps.push(
+                        assayLabel(task, 'Finish, Chlorinated, or Raw'),
+                    );
+                    continue;
+                }
+            } else if (!resultValue) {
+                gaps.push(assayLabel(task));
+                continue;
+            }
+
+            if (!performedAt) {
+                gaps.push(assayLabel(task, 'date/time performed'));
+                continue;
+            }
+
+            if (
+                task.requires_pass_fail === true &&
+                !isPassFailSet(passFail)
+            ) {
+                gaps.push(assayLabel(task, 'Pass/Fail'));
+            }
+        }
+
+        return gaps;
     }
 
     function openSampleCompletePreview() {
@@ -917,17 +982,11 @@ export default function AnalystIndex({
             jobTasks.length > 0 ? jobTasks : jobWorkableTasks();
         const missing = missingJobAssays(scopeTasks);
         if (missing.length > 0) {
-            setSampleCompleteError(
-                formId != null
-                    ? `Encode all results for this result sheet before completing: ${missing.join(', ')}.`
-                    : sampleId != null
-                      ? `Encode all results for this sample before completing: ${missing.join(', ')}.`
-                      : `Encode all results before completing this job order: ${missing.join(', ')}.`,
-            );
+            setSampleCompleteMissing(missing);
             return;
         }
 
-        setSampleCompleteError(null);
+        setSampleCompleteMissing(null);
         setSampleCompletePending({
             jobId: selectedGroup.job.id,
             sampleId,
@@ -944,22 +1003,31 @@ export default function AnalystIndex({
                       (row) => Number(row.form_id) === Number(formId),
                   )
                 : null;
+        // Sheet-scoped only — a finished sibling form must not unlock this sheet's preview.
         const canPreview = Boolean(
-            reportRow?.can_preview ||
-                sampleRow?.can_preview ||
-                consolidation?.can_preview ||
-                scopeTasks.some((t) => t.report?.can_preview) ||
-                active.report?.can_preview,
+            formId != null
+                ? reportRow?.can_preview || active.report?.can_preview
+                : reportRow?.can_preview ||
+                      sampleRow?.can_preview ||
+                      scopeTasks.every(
+                          (t) =>
+                              t.is_sample_preparation === true ||
+                              t.status === 'completed' ||
+                              t.report?.can_preview,
+                      ) ||
+                      active.report?.can_preview,
         );
 
         if (!canPreview) {
+            // Drafts are present (missingJobAssays already passed). consolidations/
+            // WAITING "missing" means not Completed yet — that is expected before
+            // this complete step. Allow complete without preview.
             setSampleCompleteFallback(true);
             return;
         }
 
         const previewUrl =
             reportRow?.preview_url ||
-            sampleRow?.preview_url ||
             (() => {
                 const params = new URLSearchParams();
                 if (sampleId != null) {
@@ -1135,7 +1203,7 @@ export default function AnalystIndex({
         const formId = sampleCompletePending.formId;
 
         setSampleCompleteProcessing(true);
-        setSampleCompleteError(null);
+        setSampleCompleteMissing(null);
 
         router.post(
             `/analyst/job-orders/${jobId}/complete-sample`,
@@ -1176,10 +1244,20 @@ export default function AnalystIndex({
                         errs.sample_id ||
                         errs.job_order ||
                         Object.values(errs)[0];
-                    setSampleCompleteError(
+                    const message =
                         typeof first === 'string'
                             ? first
-                            : 'Could not complete this job order.',
+                            : 'Could not complete this job order.';
+                    const listed = message.match(
+                        /before completing:\s*(.+?)\.?\s*$/i,
+                    );
+                    setSampleCompleteMissing(
+                        listed?.[1]
+                            ? listed[1]
+                                  .split(/,\s*/)
+                                  .map((part) => part.trim())
+                                  .filter(Boolean)
+                            : [message],
                     );
                     setSampleCompleteFallback(false);
                     setPreviewUrl(null);
@@ -1806,17 +1884,15 @@ export default function AnalystIndex({
                 )}
             </ConfirmDialog>
 
-            <ConfirmDialog
-                open={Boolean(sampleCompleteError)}
+            <ResultSheetNotReadyDialog
+                open={Boolean(sampleCompleteMissing?.length)}
                 onOpenChange={(open) => {
                     if (!open) {
-                        setSampleCompleteError(null);
+                        setSampleCompleteMissing(null);
                     }
                 }}
-                title="Result sheet not ready"
-                description={sampleCompleteError ?? ''}
-                confirmLabel="OK"
-                onConfirm={() => setSampleCompleteError(null)}
+                items={sampleCompleteMissing ?? []}
+                jobReference={selectedGroup?.job.reference_no}
             />
 
             <CompleteJobOrderDialog

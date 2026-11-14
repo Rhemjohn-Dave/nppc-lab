@@ -101,284 +101,333 @@ class AnalystController extends Controller
         $showingCompleted = $statusFilter === JobOrderAnalysisStatus::Completed->value;
         $showingReadyToSubmit = $statusFilter === 'ready_to_submit';
 
-        $readyToSubmitJobsQuery = $this->readyToSubmitJobsQuery($user, $isAdmin, $dayRange, $search);
-        $readyToSubmitCount = (clone $readyToSubmitJobsQuery)->count();
+        $wantsCounts = $this->inertiaWants($request, 'counts');
+        $wantsTasks = $this->inertiaWants($request, 'tasks') || $this->inertiaWants($request, 'jobs');
+        $wantsConsolidations = $this->inertiaWants($request, 'consolidations');
+        $wantsReleasedPrints = $this->inertiaWants($request, 'releasedPrints');
+
+        $readyToSubmitJobsQuery = ($wantsCounts || ($wantsTasks && $showingReadyToSubmit))
+            ? $this->readyToSubmitJobsQuery($user, $isAdmin, $dayRange, $search)
+            : null;
 
         $baseQuery = $showingCompleted ? $completedQuery : $openQuery;
 
-        $assignedCount = (clone $openQuery)
-            ->whereIn('status', [
-                JobOrderAnalysisStatus::Assigned,
-                JobOrderAnalysisStatus::Pending,
-            ])
-            ->count();
-        $returnedCount = (clone $openQuery)
-            ->where('status', JobOrderAnalysisStatus::Returned)
-            ->count();
-
         $counts = [
-            'all' => (clone $openQuery)->count(),
-            'needs_action' => $assignedCount + $returnedCount,
-            'returned' => $returnedCount,
-            'in_progress' => (clone $openQuery)
-                ->where('status', JobOrderAnalysisStatus::InProgress)
-                ->count(),
-            'assigned' => $assignedCount,
-            'ready_to_submit' => $readyToSubmitCount,
-            'completed' => (clone $completedQuery)->count(),
+            'all' => 0,
+            'needs_action' => 0,
+            'returned' => 0,
+            'in_progress' => 0,
+            'assigned' => 0,
+            'ready_to_submit' => 0,
+            'completed' => 0,
         ];
 
-        $allowedStatusFilters = [
-            'needs_action',
-            'ready_to_submit',
-            JobOrderAnalysisStatus::Returned->value,
-            JobOrderAnalysisStatus::InProgress->value,
-            JobOrderAnalysisStatus::Assigned->value,
-            JobOrderAnalysisStatus::Pending->value,
-            JobOrderAnalysisStatus::Completed->value,
-        ];
+        if ($wantsCounts) {
+            $openStatusCounts = (clone $openQuery)
+                ->selectRaw('status, COUNT(*) as aggregate')
+                ->groupBy('status')
+                ->pluck('aggregate', 'status');
 
-        $returnedValue = JobOrderAnalysisStatus::Returned->value;
+            $assignedCount = (int) ($openStatusCounts[JobOrderAnalysisStatus::Assigned->value] ?? 0)
+                + (int) ($openStatusCounts[JobOrderAnalysisStatus::Pending->value] ?? 0);
+            $returnedCount = (int) ($openStatusCounts[JobOrderAnalysisStatus::Returned->value] ?? 0);
+            $inProgressCount = (int) ($openStatusCounts[JobOrderAnalysisStatus::InProgress->value] ?? 0);
+            $allOpen = (int) $openStatusCounts->sum();
 
-        if ($showingReadyToSubmit) {
-            $jobsQuery = $readyToSubmitJobsQuery;
-        } else {
-            $filteredQuery = (clone $baseQuery)
-                ->when(
-                    in_array($statusFilter, $allowedStatusFilters, true) && ! $showingCompleted,
-                    function ($query) use ($statusFilter) {
-                        if ($statusFilter === 'needs_action') {
-                            $query->whereIn('status', [
-                                JobOrderAnalysisStatus::Assigned,
-                                JobOrderAnalysisStatus::Pending,
-                                JobOrderAnalysisStatus::Returned,
-                            ]);
-                        } elseif ($statusFilter === JobOrderAnalysisStatus::Assigned->value) {
-                            $query->whereIn('status', [
-                                JobOrderAnalysisStatus::Assigned,
-                                JobOrderAnalysisStatus::Pending,
-                            ]);
-                        } else {
-                            $query->where('status', $statusFilter);
-                        }
-                    },
-                )
-                ->when($search !== '', function ($query) use ($search) {
-                    $query->where(function ($inner) use ($search) {
-                        $inner->where('name', 'like', "%{$search}%")
-                            ->orWhere('category_label', 'like', "%{$search}%")
-                            ->orWhereHas('jobOrder', function ($job) use ($search) {
-                                $job->where('reference_no', 'like', "%{$search}%")
-                                    ->orWhere('customer_name', 'like', "%{$search}%")
-                                    ->orWhere('company_name', 'like', "%{$search}%")
-                                    ->orWhere('classification', 'like', "%{$search}%")
-                                    ->orWhereHas('samples', function ($samples) use ($search) {
-                                        $samples->where('sample_code', 'like', "%{$search}%")
-                                            ->orWhere('description', 'like', "%{$search}%");
-                                    });
-                            });
-                    });
-                });
-
-            $jobsQuery = JobOrder::query()
-                ->whereIn('id', (clone $filteredQuery)->select('job_order_id'));
-        }
-
-        if ($sort === 'newest') {
-            $jobsQuery->orderByDesc('id');
-        } elseif ($sort === 'oldest') {
-            $jobsQuery->orderBy('id');
-        } else {
-            $jobsQuery
-                ->orderByRaw(
-                    '(select min(case when status = ? then 0 else 1 end) from job_order_analyses where job_order_id = job_orders.id) asc',
-                    [$returnedValue],
-                )
-                ->orderByDesc('id');
-        }
-
-        $jobs = $jobsQuery->paginate(10)->withQueryString();
-
-        $pageJobIds = $jobs->getCollection()->pluck('id');
-
-        // Only lines this analyst is assigned to (Admin → Assignments), not teammate types.
-        $tasksQuery = JobOrderAnalysis::query()
-            ->with(['jobOrder.samples', 'analysisType', 'assignee:id,name'])
-            ->whereIn('job_order_id', $pageJobIds);
-
-        if (! $isAdmin) {
-            if ($qualifiedTypeIds === []) {
-                $tasksQuery->whereRaw('0 = 1');
-            } else {
-                $tasksQuery->whereIn('analysis_type_id', $qualifiedTypeIds);
-            }
-        }
-
-        $tasks = $tasksQuery
-            ->get()
-            ->sortBy(function (JobOrderAnalysis $task) {
-                $returned = $task->status === JobOrderAnalysisStatus::Returned ? 0 : 1;
-
-                return sprintf(
-                    '%d-%s-%s',
-                    $returned,
-                    $task->jobOrder->reference_no,
-                    $task->name,
-                );
-            })
-            ->values();
-
-        $reportByTaskId = [];
-        foreach ($tasks as $task) {
-            $reportByTaskId[(int) $task->id] = $this->reports->forAnalysis($task, $user, withValues: false);
-        }
-
-        $editableSampleIds = [];
-        foreach ($tasks as $line) {
-            if ($line->sample_id === null || ! $this->userCanWorkLine($user, $line, $qualifiedTypeIds)) {
-                continue;
-            }
-            $owned = $line->jobOrder->samples->first(
-                fn ($row) => (int) $row->id === (int) $line->sample_id,
-            );
-            if ($owned && $owned->released_at === null) {
-                $editableSampleIds[(int) $owned->id] = true;
-            }
-        }
-
-        $tasks = $tasks->map(function (JobOrderAnalysis $task) use ($user, $isAdmin, $qualifiedTypeIds, $reportByTaskId, $editableSampleIds) {
-            $canWork = $this->userCanWorkLine($user, $task, $qualifiedTypeIds);
-            $isMine = $canWork;
-
-            $samples = $task->jobOrder->samples->values();
-            $sampleCount = $samples->count();
-            $sampleIndex = $samples->search(
-                fn ($sample) => (int) $sample->id === (int) $task->sample_id,
-            );
-            $controlNumber = $sampleIndex === false
-                ? null
-                : SampleControlNumber::forIndex(
-                    (string) $task->jobOrder->reference_no,
-                    (int) $sampleIndex,
-                    $sampleCount,
-                );
-            $sample = $sampleIndex === false ? null : $samples->get($sampleIndex);
-            $sampleLabel = null;
-            if ($sample) {
-                $code = filled($sample->sample_code) ? (string) $sample->sample_code : null;
-                $description = filled($sample->description)
-                    ? (string) $sample->description
-                    : 'Sample '.((int) $sampleIndex + 1);
-                $sampleLabel = $code ? "{$code} — {$description}" : $description;
-            }
-
-            return [
-                'id' => $task->id,
-                'name' => $task->name,
-                'sample_id' => $task->sample_id,
-                'sample_label' => $sampleLabel,
-                'control_number' => $controlNumber,
-                'analysis_type_id' => $task->analysis_type_id,
-                'category_label' => $task->resolvedCategoryLabel(),
-                'status' => $task->status->value,
-                'status_label' => $task->status->label(),
-                'analysis_type_code' => $task->analysisType?->code,
-                'uses_raw_finish' => OfficialAnalysisCatalog::usesRawFinishResults(
-                    $task->analysisType?->code,
-                ),
-                'uses_residual_chlorine' => OfficialAnalysisCatalog::usesResidualChlorineResults(
-                    $task->analysisType?->code,
-                ),
-                'result_value' => $task->result_value,
-                'result_raw' => $task->result_raw,
-                'result_finish' => $task->result_finish,
-                'result_chlorinated' => $task->result_chlorinated,
-                'result_pass_fail' => $task->result_pass_fail,
-                'result_measurement' => $task->result_measurement,
-                'result_unit' => $task->result_unit,
-                'result_remarks' => $task->result_remarks,
-                'result_remarks_raw' => $task->result_remarks_raw,
-                'result_remarks_finish' => $task->result_remarks_finish,
-                'result_remarks_chlorinated' => $task->result_remarks_chlorinated,
-                'result_method' => $task->result_method,
-                'accreditation_footnote' => ($supportsFootnote = OfficialAnalysisCatalog::isWastewaterPhysicoPanelCode(
-                    $task->analysisType?->code,
-                ))
-                    ? (OfficialAnalysisCatalog::resolveWastewaterAccreditationFootnote(
-                        $task->accreditation_footnote,
-                        $task->analysisType?->code,
-                    ) ?? '')
-                    : null,
-                'supports_accreditation_footnote' => $supportsFootnote,
-                'performed_at' => $task->performed_at
-                    ? $task->performed_at
-                        ->timezone((string) config('app.lab_timezone', 'Asia/Manila'))
-                        ->format('Y-m-d\TH:i')
-                    : null,
-                'procedure_method' => DynamicTestMatrix::methodForAnalysisType($task->analysisType),
-                'result_mode' => $task->analysisType?->isPassFail() ? 'pass_fail' : 'value',
-                'requires_pass_fail' => (bool) ($task->analysisType?->requires_pass_fail),
-                'is_sample_preparation' => $task->isSamplePreparation(),
-                'updated_at' => $task->updated_at?->toIso8601String(),
-                'assigned_to' => $task->assigned_to,
-                'assignee_name' => $task->assignee?->name,
-                'is_mine' => $isMine,
-                'can_work' => $canWork,
-                'report' => $this->taskReportSummary(
-                    ($resolvedReport = $reportByTaskId[(int) $task->id] ?? null) instanceof AnalysisResultReport
-                        ? $resolvedReport->summary()
-                        : null,
-                    $task->jobOrder,
-                ),
-                'result_facts' => $resolvedReport instanceof AnalysisResultReport
-                    ? ResultSheetFacts::forReport($resolvedReport)
-                    : [],
-                'can_edit_result_facts' => $sample !== null && isset($editableSampleIds[(int) $sample->id]),
-                'job_order' => [
-                    'id' => $task->jobOrder->id,
-                    'reference_no' => $task->jobOrder->reference_no,
-                    'customer_name' => $task->jobOrder->customer_name,
-                    'company_name' => $task->jobOrder->company_name,
-                    'classification' => $task->jobOrder->classification,
-                    'sampling_site' => $task->jobOrder->sampling_site,
-                    'sample_storage_temp' => $task->jobOrder->sample_storage_temp,
-                    'field_data' => $task->jobOrder->field_data,
-                    'status' => $task->jobOrder->status->value,
-                    'received_at' => $task->jobOrder->received_at?->toIso8601String(),
-                    'reviewed_at' => $task->jobOrder->reviewed_at?->toIso8601String(),
-                    'review_notes' => $task->jobOrder->review_notes,
-                    'samples' => $samples->map(function ($sample, int $index) use ($task, $sampleCount, $editableSampleIds) {
-                        return [
-                            'id' => $sample->id,
-                            'sample_code' => $sample->sample_code,
-                            'description' => $sample->description,
-                            'matrix' => $sample->matrix,
-                            'control_number' => SampleControlNumber::forIndex(
-                                (string) $task->jobOrder->reference_no,
-                                $index,
-                                $sampleCount,
-                            ),
-                            'submitted_for_review' => $sample->submitted_for_review_at !== null,
-                            'released' => $sample->released_at !== null,
-                            'can_edit_description' => isset($editableSampleIds[(int) $sample->id]),
-                            'description_choices' => $this->sampleDescriptionChoices($sample->description),
-                        ];
-                    })->values()->all(),
-                ],
+            $counts = [
+                'all' => $allOpen,
+                'needs_action' => $assignedCount + $returnedCount,
+                'returned' => $returnedCount,
+                'in_progress' => $inProgressCount,
+                'assigned' => $assignedCount,
+                'ready_to_submit' => $readyToSubmitJobsQuery !== null
+                    ? (clone $readyToSubmitJobsQuery)->count()
+                    : 0,
+                'completed' => (clone $completedQuery)->count(),
             ];
-        });
+        }
 
-        return Inertia::render('analyst/index', [
-            'tasks' => $tasks,
-            'consolidations' => $this->jobOrders->consolidationsFor($user),
-            'releasedPrints' => $this->jobOrders->releasedResultPrintsFor($user),
-            'counts' => $counts,
-            'jobs' => [
+        $jobsMeta = [
+            'from' => null,
+            'to' => null,
+            'total' => 0,
+            'links' => [],
+        ];
+        $tasks = collect();
+
+        if ($wantsTasks) {
+            $allowedStatusFilters = [
+                'needs_action',
+                'ready_to_submit',
+                JobOrderAnalysisStatus::Returned->value,
+                JobOrderAnalysisStatus::InProgress->value,
+                JobOrderAnalysisStatus::Assigned->value,
+                JobOrderAnalysisStatus::Pending->value,
+                JobOrderAnalysisStatus::Completed->value,
+            ];
+
+            $returnedValue = JobOrderAnalysisStatus::Returned->value;
+
+            if ($showingReadyToSubmit) {
+                $jobsQuery = $readyToSubmitJobsQuery;
+            } else {
+                $filteredQuery = (clone $baseQuery)
+                    ->when(
+                        in_array($statusFilter, $allowedStatusFilters, true) && ! $showingCompleted,
+                        function ($query) use ($statusFilter) {
+                            if ($statusFilter === 'needs_action') {
+                                $query->whereIn('status', [
+                                    JobOrderAnalysisStatus::Assigned,
+                                    JobOrderAnalysisStatus::Pending,
+                                    JobOrderAnalysisStatus::Returned,
+                                ]);
+                            } elseif ($statusFilter === JobOrderAnalysisStatus::Assigned->value) {
+                                $query->whereIn('status', [
+                                    JobOrderAnalysisStatus::Assigned,
+                                    JobOrderAnalysisStatus::Pending,
+                                ]);
+                            } else {
+                                $query->where('status', $statusFilter);
+                            }
+                        },
+                    )
+                    ->when($search !== '', function ($query) use ($search) {
+                        $query->where(function ($inner) use ($search) {
+                            $inner->where('name', 'like', "%{$search}%")
+                                ->orWhere('category_label', 'like', "%{$search}%")
+                                ->orWhereHas('jobOrder', function ($job) use ($search) {
+                                    $job->where('reference_no', 'like', "%{$search}%")
+                                        ->orWhere('customer_name', 'like', "%{$search}%")
+                                        ->orWhere('company_name', 'like', "%{$search}%")
+                                        ->orWhere('classification', 'like', "%{$search}%")
+                                        ->orWhereHas('samples', function ($samples) use ($search) {
+                                            $samples->where('sample_code', 'like', "%{$search}%")
+                                                ->orWhere('description', 'like', "%{$search}%");
+                                        });
+                                });
+                        });
+                    });
+
+                $jobsQuery = JobOrder::query()
+                    ->whereIn('id', (clone $filteredQuery)->select('job_order_id'));
+            }
+
+            if ($sort === 'newest') {
+                $jobsQuery->orderByDesc('id');
+            } elseif ($sort === 'oldest') {
+                $jobsQuery->orderBy('id');
+            } else {
+                $jobsQuery
+                    ->orderByRaw(
+                        '(select min(case when status = ? then 0 else 1 end) from job_order_analyses where job_order_id = job_orders.id) asc',
+                        [$returnedValue],
+                    )
+                    ->orderByDesc('id');
+            }
+
+            $jobs = $jobsQuery->paginate(10)->withQueryString();
+            $jobsMeta = [
                 'from' => $jobs->firstItem(),
                 'to' => $jobs->lastItem(),
                 'total' => $jobs->total(),
                 'links' => $jobs->toArray()['links'] ?? [],
-            ],
+            ];
+
+            $pageJobIds = $jobs->getCollection()->pluck('id');
+
+            // Only lines this analyst is assigned to (Admin → Assignments), not teammate types.
+            $tasksQuery = JobOrderAnalysis::query()
+                ->with(['jobOrder.samples', 'analysisType', 'assignee:id,name'])
+                ->whereIn('job_order_id', $pageJobIds);
+
+            if (! $isAdmin) {
+                if ($qualifiedTypeIds === []) {
+                    $tasksQuery->whereRaw('0 = 1');
+                } else {
+                    $tasksQuery->whereIn('analysis_type_id', $qualifiedTypeIds);
+                }
+            }
+
+            $tasks = $tasksQuery
+                ->get()
+                ->sortBy(function (JobOrderAnalysis $task) {
+                    $returned = $task->status === JobOrderAnalysisStatus::Returned ? 0 : 1;
+
+                    return sprintf(
+                        '%d-%s-%s',
+                        $returned,
+                        $task->jobOrder->reference_no,
+                        $task->name,
+                    );
+                })
+                ->values();
+
+            // Resolve controlled-form reports once per JO on this page.
+            $reportsByJobId = [];
+            foreach ($tasks->groupBy('job_order_id') as $jobOrderId => $jobTasks) {
+                $job = $jobTasks->first()?->jobOrder;
+                if (! $job instanceof JobOrder) {
+                    continue;
+                }
+                $reportsByJobId[(int) $jobOrderId] = $this->reports->reportsForJobOrder(
+                    $job,
+                    $user,
+                    withValues: false,
+                );
+            }
+
+            $reportByTaskId = [];
+            foreach ($tasks as $task) {
+                $reports = $reportsByJobId[(int) $task->job_order_id] ?? collect();
+                $reportByTaskId[(int) $task->id] = $this->reports->matchAnalysisInReports($reports, $task);
+            }
+
+            $editableSampleIds = [];
+            foreach ($tasks as $line) {
+                if ($line->sample_id === null || ! $this->userCanWorkLine($user, $line, $qualifiedTypeIds)) {
+                    continue;
+                }
+                $owned = $line->jobOrder->samples->first(
+                    fn ($row) => (int) $row->id === (int) $line->sample_id,
+                );
+                if ($owned && $owned->released_at === null) {
+                    $editableSampleIds[(int) $owned->id] = true;
+                }
+            }
+
+            $tasks = $tasks->map(function (JobOrderAnalysis $task) use ($user, $qualifiedTypeIds, $reportByTaskId, $editableSampleIds) {
+                $canWork = $this->userCanWorkLine($user, $task, $qualifiedTypeIds);
+                $isMine = $canWork;
+
+                $samples = $task->jobOrder->samples->values();
+                $sampleCount = $samples->count();
+                $sampleIndex = $samples->search(
+                    fn ($sample) => (int) $sample->id === (int) $task->sample_id,
+                );
+                $controlNumber = $sampleIndex === false
+                    ? null
+                    : SampleControlNumber::forIndex(
+                        (string) $task->jobOrder->reference_no,
+                        (int) $sampleIndex,
+                        $sampleCount,
+                    );
+                $sample = $sampleIndex === false ? null : $samples->get($sampleIndex);
+                $sampleLabel = null;
+                if ($sample) {
+                    $code = filled($sample->sample_code) ? (string) $sample->sample_code : null;
+                    $description = filled($sample->description)
+                        ? (string) $sample->description
+                        : 'Sample '.((int) $sampleIndex + 1);
+                    $sampleLabel = $code ? "{$code} — {$description}" : $description;
+                }
+
+                return [
+                    'id' => $task->id,
+                    'name' => $task->name,
+                    'sample_id' => $task->sample_id,
+                    'sample_label' => $sampleLabel,
+                    'control_number' => $controlNumber,
+                    'analysis_type_id' => $task->analysis_type_id,
+                    'category_label' => $task->resolvedCategoryLabel(),
+                    'status' => $task->status->value,
+                    'status_label' => $task->status->label(),
+                    'analysis_type_code' => $task->analysisType?->code,
+                    'uses_raw_finish' => OfficialAnalysisCatalog::usesRawFinishResults(
+                        $task->analysisType?->code,
+                    ),
+                    'uses_residual_chlorine' => OfficialAnalysisCatalog::usesResidualChlorineResults(
+                        $task->analysisType?->code,
+                    ),
+                    'result_value' => $task->result_value,
+                    'result_raw' => $task->result_raw,
+                    'result_finish' => $task->result_finish,
+                    'result_chlorinated' => $task->result_chlorinated,
+                    'result_pass_fail' => $task->result_pass_fail,
+                    'result_measurement' => $task->result_measurement,
+                    'result_unit' => $task->result_unit,
+                    'result_remarks' => $task->result_remarks,
+                    'result_remarks_raw' => $task->result_remarks_raw,
+                    'result_remarks_finish' => $task->result_remarks_finish,
+                    'result_remarks_chlorinated' => $task->result_remarks_chlorinated,
+                    'result_method' => $task->result_method,
+                    'accreditation_footnote' => ($supportsFootnote = OfficialAnalysisCatalog::isWastewaterPhysicoPanelCode(
+                        $task->analysisType?->code,
+                    ))
+                        ? (OfficialAnalysisCatalog::resolveWastewaterAccreditationFootnote(
+                            $task->accreditation_footnote,
+                            $task->analysisType?->code,
+                        ) ?? '')
+                        : null,
+                    'supports_accreditation_footnote' => $supportsFootnote,
+                    'performed_at' => $task->performed_at
+                        ? $task->performed_at
+                            ->timezone((string) config('app.lab_timezone', 'Asia/Manila'))
+                            ->format('Y-m-d\TH:i')
+                        : null,
+                    'procedure_method' => DynamicTestMatrix::methodForAnalysisType($task->analysisType),
+                    'result_mode' => $task->analysisType?->isPassFail() ? 'pass_fail' : 'value',
+                    'requires_pass_fail' => (bool) ($task->analysisType?->requires_pass_fail),
+                    'is_sample_preparation' => $task->isSamplePreparation(),
+                    'updated_at' => $task->updated_at?->toIso8601String(),
+                    'assigned_to' => $task->assigned_to,
+                    'assignee_name' => $task->assignee?->name,
+                    'is_mine' => $isMine,
+                    'can_work' => $canWork,
+                    'report' => $this->taskReportSummary(
+                        ($resolvedReport = $reportByTaskId[(int) $task->id] ?? null) instanceof AnalysisResultReport
+                            ? $resolvedReport->summary()
+                            : null,
+                        $task->jobOrder,
+                    ),
+                    'result_facts' => $resolvedReport instanceof AnalysisResultReport
+                        ? ResultSheetFacts::forReport($resolvedReport)
+                        : [],
+                    'can_edit_result_facts' => $sample !== null && isset($editableSampleIds[(int) $sample->id]),
+                    'job_order' => [
+                        'id' => $task->jobOrder->id,
+                        'reference_no' => $task->jobOrder->reference_no,
+                        'customer_name' => $task->jobOrder->customer_name,
+                        'company_name' => $task->jobOrder->company_name,
+                        'classification' => $task->jobOrder->classification,
+                        'sampling_site' => $task->jobOrder->sampling_site,
+                        'sample_storage_temp' => $task->jobOrder->sample_storage_temp,
+                        'field_data' => $task->jobOrder->field_data,
+                        'status' => $task->jobOrder->status->value,
+                        'received_at' => $task->jobOrder->received_at?->toIso8601String(),
+                        'reviewed_at' => $task->jobOrder->reviewed_at?->toIso8601String(),
+                        'review_notes' => $task->jobOrder->review_notes,
+                        'samples' => $samples->map(function ($sample, int $index) use ($task, $sampleCount, $editableSampleIds) {
+                            return [
+                                'id' => $sample->id,
+                                'sample_code' => $sample->sample_code,
+                                'description' => $sample->description,
+                                'matrix' => $sample->matrix,
+                                'control_number' => SampleControlNumber::forIndex(
+                                    (string) $task->jobOrder->reference_no,
+                                    $index,
+                                    $sampleCount,
+                                ),
+                                'submitted_for_review' => $sample->submitted_for_review_at !== null,
+                                'released' => $sample->released_at !== null,
+                                'can_edit_description' => isset($editableSampleIds[(int) $sample->id]),
+                                'description_choices' => $this->sampleDescriptionChoices($sample->description),
+                            ];
+                        })->values()->all(),
+                    ],
+                ];
+            });
+        }
+
+        return Inertia::render('analyst/index', [
+            'tasks' => $tasks,
+            'consolidations' => $wantsConsolidations
+                ? $this->jobOrders->consolidationsFor($user)
+                : [],
+            'releasedPrints' => $wantsReleasedPrints
+                ? $this->jobOrders->releasedResultPrintsFor($user)
+                : [],
+            'counts' => $counts,
+            'jobs' => $jobsMeta,
             'filters' => [
                 'q' => $search,
                 'status' => $statusFilter,
@@ -489,7 +538,7 @@ class AnalystController extends Controller
         return $this->redirectToAnalystReferer($request);
     }
 
-    public function saveDraft(Request $request, JobOrderAnalysis $analysis): RedirectResponse
+    public function saveDraft(Request $request, JobOrderAnalysis $analysis): JsonResponse
     {
         $data = $request->validate([
             'performed_at' => ['nullable', 'date'],
@@ -508,10 +557,37 @@ class AnalystController extends Controller
             'accreditation_footnote' => ['nullable', 'string', 'max:8'],
         ]);
 
-        $this->jobOrders->saveAnalysisDraft($analysis, $data, $request->user());
+        $fresh = $this->jobOrders->saveAnalysisDraft($analysis, $data, $request->user());
 
-        // Silent redirect — autosave on blur must not toast or feel like a full navigation.
-        return back();
+        // Lightweight JSON — encoding autosave must not rebuild the analyst queue.
+        return response()->json([
+            'task' => [
+                'id' => $fresh->id,
+                'status' => $fresh->status->value,
+                'status_label' => $fresh->status->label(),
+                'result_value' => $fresh->result_value,
+                'result_raw' => $fresh->result_raw,
+                'result_finish' => $fresh->result_finish,
+                'result_chlorinated' => $fresh->result_chlorinated,
+                'result_pass_fail' => $fresh->result_pass_fail,
+                'result_measurement' => $fresh->result_measurement,
+                'result_unit' => $fresh->result_unit,
+                'result_remarks' => $fresh->result_remarks,
+                'result_remarks_raw' => $fresh->result_remarks_raw,
+                'result_remarks_finish' => $fresh->result_remarks_finish,
+                'result_remarks_chlorinated' => $fresh->result_remarks_chlorinated,
+                'result_method' => $fresh->result_method,
+                'accreditation_footnote' => $fresh->accreditation_footnote,
+                'performed_at' => $fresh->performed_at
+                    ? $fresh->performed_at
+                        ->timezone((string) config('app.lab_timezone', 'Asia/Manila'))
+                        ->format('Y-m-d\TH:i')
+                    : null,
+                'updated_at' => $fresh->updated_at?->toIso8601String(),
+                'assigned_to' => $fresh->assigned_to,
+                'assignee_name' => $fresh->assignee?->name,
+            ],
+        ]);
     }
 
     public function complete(Request $request, JobOrderAnalysis $analysis): RedirectResponse
@@ -1077,6 +1153,25 @@ class AnalystController extends Controller
      * @param  array{0: \Illuminate\Support\Carbon, 1: \Illuminate\Support\Carbon}|null  $dayRange
      * @return \Illuminate\Database\Eloquent\Builder<JobOrder>
      */
+    /**
+     * Whether an Inertia partial (or full) visit needs this prop.
+     * Full visits and non-Inertia requests receive every prop.
+     */
+    private function inertiaWants(Request $request, string $key): bool
+    {
+        $partialData = $request->header('X-Inertia-Partial-Data');
+        if (! is_string($partialData) || trim($partialData) === '') {
+            return true;
+        }
+
+        $keys = array_values(array_filter(array_map(
+            static fn (string $part): string => trim($part),
+            explode(',', $partialData),
+        )));
+
+        return in_array($key, $keys, true);
+    }
+
     private function readyToSubmitJobsQuery(
         User $user,
         bool $isAdmin,
@@ -1157,6 +1252,10 @@ class AnalystController extends Controller
             return [
                 ...$jobSummary,
                 'can_print' => (bool) ($jobSummary['can_print'] ?? false),
+                'missing' => array_values(array_map(
+                    'strval',
+                    is_array($jobSummary['missing'] ?? null) ? $jobSummary['missing'] : [],
+                )),
             ];
         }
 
@@ -1168,6 +1267,7 @@ class AnalystController extends Controller
                 : 'Print and download are available after Head releases the results.',
             'can_preview' => true,
             'can_print' => $jobOrder->reviewed_at !== null,
+            'missing' => [],
         ];
     }
 

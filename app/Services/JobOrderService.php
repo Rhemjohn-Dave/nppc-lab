@@ -1590,6 +1590,11 @@ class JobOrderService
             ]);
         }
 
+        $previousStatus = $analysis->status;
+        $nextStatus = $previousStatus === JobOrderAnalysisStatus::Returned
+            ? JobOrderAnalysisStatus::Returned
+            : JobOrderAnalysisStatus::InProgress;
+
         $analysis->update([
             'assigned_to' => $analyst->id,
             'result_value' => $value,
@@ -1606,17 +1611,18 @@ class JobOrderService
             'result_method' => $method,
             'accreditation_footnote' => $accreditationFootnote,
             'performed_at' => $performedAt,
-            'status' => $analysis->status === JobOrderAnalysisStatus::Returned
-                ? JobOrderAnalysisStatus::Returned
-                : JobOrderAnalysisStatus::InProgress,
+            'status' => $nextStatus,
             'completed_at' => null,
         ]);
 
         $fresh = $analysis->fresh(['jobOrder', 'analysisType', 'assignee']) ?? $analysis;
 
-        LabQueueUpdated::notify([
-            LabQueueUpdated::SCOPE_ANALYST,
-        ], $fresh->job_order_id);
+        // Value-only drafts must not sync-broadcast; Reverb latency was stalling autosave.
+        if ($previousStatus !== $nextStatus) {
+            LabQueueUpdated::notify([
+                LabQueueUpdated::SCOPE_ANALYST,
+            ], $fresh->job_order_id);
+        }
 
         return $fresh;
     }

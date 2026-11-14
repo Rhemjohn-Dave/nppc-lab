@@ -289,11 +289,19 @@ class AnalysisResultPdfTest extends TestCase
             ])
             ->assertRedirect();
 
-        $this->actingAs($analyst)
+        $secondLine = $job->analyses()->where('analysis_type_id', $second->id)->firstOrFail();
+
+        $response = $this->actingAs($analyst)
             ->getJson("/analyst/tasks/{$firstLine->id}/report")
             ->assertOk()
             ->assertJsonPath('kind', 'waiting')
-            ->assertJsonPath('can_preview', false);
+            ->assertJsonPath('can_preview', false)
+            ->assertJsonPath('missing.0', $secondLine->name);
+
+        $message = (string) $response->json('message');
+        $this->assertStringContainsString('needs these results completed:', $message);
+        $this->assertStringContainsString($secondLine->name, $message);
+        $this->assertStringContainsString('Preview for "', $message);
     }
 
     public function test_combined_report_is_unavailable_when_analyst_is_not_assigned_to_every_test(): void

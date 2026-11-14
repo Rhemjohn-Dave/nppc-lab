@@ -11,7 +11,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { Check, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowRight, Check } from 'lucide-react';
 
 type Props = {
     open: boolean;
@@ -41,10 +41,9 @@ function chipLabel(group: SampleBreakdownRow): string {
 }
 
 function shortSampleLabel(group: SampleBreakdownRow, index: number): string {
-    const description =
-        group.label.includes('—')
-            ? group.label.split('—').slice(1).join('—').trim()
-            : group.label.trim();
+    const description = group.label.includes('—')
+        ? group.label.split('—').slice(1).join('—').trim()
+        : group.label.trim();
     const base = description || group.label.trim() || `Sample ${index + 1}`;
     return `Sample ${index + 1} — ${base}`;
 }
@@ -74,6 +73,39 @@ function resultValueForTask(
         }
     }
     return stored?.trim() || '—';
+}
+
+function ResultRows({
+    tasks,
+    activeTaskId,
+    formResultValue,
+}: {
+    tasks: SampleStats['tasks'];
+    activeTaskId: number | null | undefined;
+    formResultValue: string | undefined;
+}) {
+    return (
+        <ul className="divide-y divide-slate-100">
+            {tasks.map((task) => (
+                <li
+                    key={task.id}
+                    className="flex items-baseline justify-between gap-4 py-2 text-sm"
+                >
+                    <span className="min-w-0 truncate text-slate-700">
+                        {task.name}
+                    </span>
+                    <span className="shrink-0 text-right font-medium text-nppc-900 tabular-nums">
+                        {resultValueForTask(
+                            task.id,
+                            task.result_value,
+                            activeTaskId,
+                            formResultValue,
+                        )}
+                    </span>
+                </li>
+            ))}
+        </ul>
+    );
 }
 
 export default function CompleteJobOrderDialog({
@@ -118,6 +150,8 @@ export default function CompleteJobOrderDialog({
             .filter((group) => group.tasks.length > 0);
     }, [samples, sampleScoped, activeSampleId, activeTaskId, formResultValue]);
 
+    const singleSample = workableSamples.length <= 1;
+
     const initialKey = useMemo(() => {
         if (activeTaskId != null) {
             const match = workableSamples.find((g) =>
@@ -139,8 +173,6 @@ export default function CompleteJobOrderDialog({
         }
     }, [open, initialKey]);
 
-    const sampleCount = workableSamples.length;
-    const samplesComplete = workableSamples.filter((g) => g.complete).length;
     const testTotal = workableSamples.reduce((sum, g) => sum + g.total, 0);
     const testEncoded = workableSamples.reduce((sum, g) => sum + g.encoded, 0);
     const remaining = Math.max(testTotal - testEncoded, 0);
@@ -165,73 +197,31 @@ export default function CompleteJobOrderDialog({
                 onOpenChange(next);
             }}
         >
-            <DialogContent className="flex max-h-[82vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[800px]">
-                <DialogHeader className="shrink-0 space-y-1 border-b border-slate-200 px-5 py-3.5 text-left sm:px-6">
+            <DialogContent className="flex max-h-[82vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+                <DialogHeader className="shrink-0 space-y-1.5 border-b border-slate-200 px-5 py-4 text-left sm:px-6">
                     <DialogTitle className="font-heading text-base text-nppc-900 sm:text-lg">
                         {sampleScoped
-                            ? 'Complete all tests for this sample?'
-                            : 'Complete all tests for this job order?'}
+                            ? 'Complete this sample?'
+                            : 'Complete this job order?'}
                     </DialogTitle>
                     {jobReference ? (
-                        <p className="font-mono text-xs font-medium text-slate-500">
+                        <p className="font-mono text-xs text-slate-500">
                             JO #{jobReference.replace(/^JO\s*#?/i, '')}
                             {sampleScoped && workableSamples[0]
                                 ? ` · ${chipLabel(workableSamples[0])}`
                                 : ''}
                         </p>
                     ) : null}
-                    <DialogDescription className="text-xs text-slate-600 sm:text-sm">
+                    <DialogDescription className="text-sm text-slate-600">
                         {sampleScoped
-                            ? 'Mark every encoded test on this sample complete. Other samples stay open. You can Send this sample to Head afterward.'
-                            : 'Mark every encoded test on this job order complete. You can still Send to Head afterward.'}
+                            ? 'Marks every encoded test on this sample complete. Other samples stay open.'
+                            : 'Marks every encoded test on this job order complete.'}
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-100 bg-nppc-50/50 px-5 py-2.5 sm:gap-3 sm:px-6">
-                    <span
-                        className={cn(
-                            'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold',
-                            testEncoded >= testTotal && testTotal > 0
-                                ? 'bg-emerald-50 text-emerald-800'
-                                : 'bg-white text-slate-700 ring-1 ring-slate-200',
-                        )}
-                    >
-                        {testEncoded >= testTotal && testTotal > 0 ? (
-                            <Check className="size-3.5" aria-hidden />
-                        ) : null}
-                        {testEncoded}/{testTotal} Tests
-                    </span>
-                    <span
-                        className={cn(
-                            'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold',
-                            samplesComplete >= sampleCount && sampleCount > 0
-                                ? 'bg-emerald-50 text-emerald-800'
-                                : 'bg-white text-slate-700 ring-1 ring-slate-200',
-                        )}
-                    >
-                        {samplesComplete >= sampleCount && sampleCount > 0 ? (
-                            <Check className="size-3.5" aria-hidden />
-                        ) : null}
-                        {samplesComplete}/{sampleCount} Samples
-                    </span>
-                    {ready ? (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-900">
-                            <Check className="size-3.5" aria-hidden />
-                            Ready
-                        </span>
-                    ) : (
-                        <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
-                            {remaining} left
-                        </span>
-                    )}
-                </div>
-
-                {workableSamples.length > 0 ? (
-                    <div className="shrink-0 border-b border-slate-200 px-5 py-2.5 sm:px-6">
-                        <p className="mb-1.5 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                            Samples
-                        </p>
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {!singleSample && workableSamples.length > 0 ? (
+                    <div className="shrink-0 border-b border-slate-200 px-5 py-3 sm:px-6">
+                        <div className="flex flex-wrap gap-1.5">
                             {workableSamples.map((group, index) => {
                                 const selected = group.key === expandedKey;
                                 const label = shortSampleLabel(group, index);
@@ -243,38 +233,20 @@ export default function CompleteJobOrderDialog({
                                         title={chipLabel(group)}
                                         onClick={() => selectSample(group.key)}
                                         className={cn(
-                                            'flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left text-xs transition',
+                                            'inline-flex max-w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition',
                                             selected
-                                                ? 'border-nppc-500 bg-nppc-50 font-semibold text-nppc-900 shadow-xs ring-1 ring-inset ring-nppc-500/20'
-                                                : 'border-slate-200 bg-white font-medium text-slate-700 hover:bg-slate-50',
+                                                ? 'border-nppc-500 bg-nppc-50 font-medium text-nppc-900'
+                                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
                                         )}
                                     >
-                                        <span className="flex min-w-0 items-center gap-1.5">
-                                            <span
-                                                className={cn(
-                                                    'shrink-0 text-sm leading-none',
-                                                    group.complete
-                                                        ? 'text-emerald-600'
-                                                        : selected
-                                                          ? 'text-nppc-900'
-                                                          : 'text-slate-400',
-                                                )}
+                                        {group.complete ? (
+                                            <Check
+                                                className="size-3.5 shrink-0 text-emerald-600"
                                                 aria-hidden
-                                            >
-                                                {group.complete ? '✓' : '●'}
-                                            </span>
-                                            <span className="truncate">
-                                                {label}
-                                            </span>
-                                        </span>
-                                        <span
-                                            className={cn(
-                                                'shrink-0 tabular-nums',
-                                                selected
-                                                    ? 'text-nppc-900'
-                                                    : 'text-slate-500',
-                                            )}
-                                        >
+                                            />
+                                        ) : null}
+                                        <span className="truncate">{label}</span>
+                                        <span className="shrink-0 tabular-nums text-slate-500">
                                             {group.encoded}/{group.total}
                                         </span>
                                     </button>
@@ -284,16 +256,19 @@ export default function CompleteJobOrderDialog({
                     </div>
                 ) : null}
 
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2.5 sm:px-6">
-                    <p className="mb-2 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                        Test results
-                    </p>
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3 sm:px-6">
                     {workableSamples.length === 0 ? (
                         <p className="text-sm text-slate-500">
                             No assays to complete.
                         </p>
+                    ) : singleSample ? (
+                        <ResultRows
+                            tasks={workableSamples[0].tasks}
+                            activeTaskId={activeTaskId}
+                            formResultValue={formResultValue}
+                        />
                     ) : (
-                        <div className="space-y-1.5">
+                        <div className="space-y-4">
                             {workableSamples.map((group, index) => {
                                 const expanded = group.key === expandedKey;
                                 const label = shortSampleLabel(group, index);
@@ -302,16 +277,10 @@ export default function CompleteJobOrderDialog({
                                     <div
                                         key={group.key}
                                         id={`complete-jo-sample-${group.key}`}
-                                        className={cn(
-                                            'rounded-md border',
-                                            expanded
-                                                ? 'border-nppc-200 bg-white'
-                                                : 'border-slate-200 bg-slate-50/50',
-                                        )}
                                     >
                                         <button
                                             type="button"
-                                            className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-xs font-semibold text-slate-800"
+                                            className="mb-1 flex w-full items-center justify-between gap-2 text-left text-xs font-medium text-slate-800"
                                             onClick={() =>
                                                 setExpandedKey(
                                                     expanded
@@ -321,47 +290,21 @@ export default function CompleteJobOrderDialog({
                                             }
                                             aria-expanded={expanded}
                                         >
-                                            <span className="flex min-w-0 items-center gap-1.5">
-                                                {expanded ? (
-                                                    <ChevronDown className="size-3.5 shrink-0 text-slate-500" />
-                                                ) : (
-                                                    <ChevronRight className="size-3.5 shrink-0 text-slate-500" />
-                                                )}
-                                                <span className="truncate">
-                                                    {label}
-                                                </span>
+                                            <span className="truncate">
+                                                {label}
                                             </span>
-                                            <span className="flex shrink-0 items-center gap-1.5 tabular-nums text-slate-600">
+                                            <span className="shrink-0 tabular-nums text-slate-500">
                                                 {group.encoded}/{group.total}
-                                                {group.complete ? (
-                                                    <span className="text-emerald-600">
-                                                        ✓
-                                                    </span>
-                                                ) : null}
                                             </span>
                                         </button>
-
                                         {expanded ? (
-                                            <ul className="border-t border-slate-100 px-2.5 pb-1.5">
-                                                {group.tasks.map((task) => (
-                                                    <li
-                                                        key={task.id}
-                                                        className="flex items-baseline justify-between gap-3 border-b border-slate-50 py-1 text-xs last:border-b-0"
-                                                    >
-                                                        <span className="min-w-0 truncate text-slate-700">
-                                                            {task.name}
-                                                        </span>
-                                                        <span className="shrink-0 text-right font-medium text-slate-800 tabular-nums">
-                                                            {resultValueForTask(
-                                                                task.id,
-                                                                task.result_value,
-                                                                activeTaskId,
-                                                                formResultValue,
-                                                            )}
-                                                        </span>
-                                                    </li>
-                                                ))}
-                                            </ul>
+                                            <ResultRows
+                                                tasks={group.tasks}
+                                                activeTaskId={activeTaskId}
+                                                formResultValue={
+                                                    formResultValue
+                                                }
+                                            />
                                         ) : null}
                                     </div>
                                 );
@@ -370,22 +313,16 @@ export default function CompleteJobOrderDialog({
                     )}
                 </div>
 
-                <DialogFooter className="shrink-0 gap-2 border-t border-slate-200 bg-slate-50/90 px-5 py-3 sm:flex-col sm:items-stretch sm:px-6">
-                    <p
-                        className={cn(
-                            'text-left text-xs',
-                            ready
-                                ? 'font-medium text-emerald-800'
-                                : 'text-amber-800',
-                        )}
-                    >
-                        {ready
-                            ? sampleScoped
-                                ? `✓ All ${testTotal} tests on this sample are encoded and ready to complete.`
-                                : `✓ All ${testTotal} tests are encoded and ready to complete.`
-                            : `${remaining} test${remaining === 1 ? '' : 's'} still need encoding.`}
-                    </p>
-                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <DialogFooter className="shrink-0 gap-3 border-t border-slate-200 px-5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                    {!ready ? (
+                        <p className="text-left text-xs text-amber-800">
+                            {remaining} test
+                            {remaining === 1 ? '' : 's'} still need encoding.
+                        </p>
+                    ) : (
+                        <span className="hidden sm:block" />
+                    )}
+                    <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:justify-end">
                         <Button
                             type="button"
                             variant="outline"
@@ -407,11 +344,16 @@ export default function CompleteJobOrderDialog({
                                 onConfirm();
                             }}
                         >
-                            {processing
-                                ? 'Completing…'
-                                : sampleScoped
-                                  ? 'Confirm & Complete Sample →'
-                                  : 'Confirm & Complete Job Order →'}
+                            {processing ? (
+                                'Completing…'
+                            ) : (
+                                <>
+                                    {sampleScoped
+                                        ? 'Complete sample'
+                                        : 'Complete job order'}
+                                    <ArrowRight className="size-3.5" />
+                                </>
+                            )}
                         </Button>
                     </div>
                 </DialogFooter>

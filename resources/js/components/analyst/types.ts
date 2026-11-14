@@ -28,6 +28,8 @@ export type ReportSummary = {
     sample_id?: number | null;
     form_id?: number | null;
     control_number?: string | null;
+    /** Assays on this result sheet still needing completion. */
+    missing?: string[];
 };
 
 export type AnalystTask = {

@@ -92,7 +92,7 @@ class LabWorkflowTest extends TestCase
                 'result_value' => '12.4',
                 'result_unit' => '%',
             ])
-            ->assertRedirect();
+            ->assertOk();
 
         $line->refresh();
         $this->assertSame($analyst->id, $line->assigned_to);

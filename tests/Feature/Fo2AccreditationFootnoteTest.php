@@ -91,7 +91,7 @@ class Fo2AccreditationFootnoteTest extends TestCase
                 'result_method' => '2120 B',
                 'accreditation_footnote' => '***',
             ])
-            ->assertRedirect();
+            ->assertOk();
 
         $line->refresh();
         $this->assertSame('***', $line->accreditation_footnote);
@@ -106,7 +106,7 @@ class Fo2AccreditationFootnoteTest extends TestCase
                 'result_method' => '2120 B',
                 'accreditation_footnote' => 'none',
             ])
-            ->assertRedirect();
+            ->assertOk();
 
         $line->refresh();
         $this->assertSame('', $line->accreditation_footnote);
