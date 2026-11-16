@@ -363,7 +363,7 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                 <LimsWorkspace className="gap-4">
                     <WorkspaceHeader
                         title="Receiving queue"
-                        description="ISO/IEC 17025 sample intake, request review, and custody handoff"
+                        description="Sample intake, request review, and custody handoff"
                         refreshing={isRefreshing}
                         refreshLabel="Updating queue…"
                         actions={
@@ -393,26 +393,7 @@ export default function ReceivingIndex({ orders, counts, filters }: Props) {
                         }
                     />
 
-                    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-gradient-to-r from-blue-50/90 via-slate-50 to-indigo-50/50 px-3 py-2 text-xs text-slate-700">
-                        <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-blue-950 uppercase">
-                            Pipeline
-                        </span>
-                        <span className="flex flex-wrap items-center gap-1 font-medium">
-                            <span>Price</span>
-                            <ArrowRight className="size-3 text-slate-400" />
-                            <span>Head JO approval</span>
-                            <ArrowRight className="size-3 text-slate-400" />
-                            <span className="font-semibold text-nppc-900">
-                                Print JO ×3
-                            </span>
-                            <ArrowRight className="size-3 text-slate-400" />
-                            <span>Send to analysts</span>
-                        </span>
-                        <span className="text-[11px] font-medium text-amber-800">
-                            Do not send to analysts until Head digitally
-                            approves the Job Order.
-                        </span>
-                    </div>
+                    
 
                     <QueueSummaryCards
                         cards={summaryCards}

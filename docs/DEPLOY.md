@@ -1,6 +1,6 @@
 # Deployment — NPPC Lab LMS
 
-Target: **Ubuntu 24.04 LTS** (recommended) or **22.04 LTS**, Nginx, PHP-FPM 8.3+, MySQL 8, Redis, Node 22.
+Target: **Ubuntu 24.04 LTS** (recommended) or **22.04 LTS**, Nginx, PHP-FPM 8.3+, MySQL 8, Redis, Node 22. To install with **Apache** instead, see [DEPLOY_APACHE.md](DEPLOY_APACHE.md).
 
 Controlled-form PDFs live in `storage/app/private`. Back that directory up with the database.
 

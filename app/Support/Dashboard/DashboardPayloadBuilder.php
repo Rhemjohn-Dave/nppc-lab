@@ -178,7 +178,7 @@ class DashboardPayloadBuilder
             'role' => 'admin',
             'header' => [
                 'title' => 'Laboratory Administration & Governance',
-                'subtitle' => 'System overview, ISO/IEC 17025 accredited document control, and active laboratory operations.',
+                'subtitle' => '',
             ],
             'kpis' => [
                 [
