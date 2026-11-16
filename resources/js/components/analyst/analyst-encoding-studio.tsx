@@ -153,14 +153,6 @@ export default function AnalystEncodingStudio({
         consolidation?.footer?.requires_field_data ||
             releasedPrint?.footer?.requires_field_data,
     );
-    // FO2 / FO2A set show_notes_fields; hide Remarks Passed/Failed there.
-    // FO3 / FO37 keep the optional remarks shortcuts.
-    const isWastewaterFo2Sheet = Boolean(
-        consolidation?.footer?.show_notes_fields ||
-            releasedPrint?.footer?.show_notes_fields,
-    );
-    const remarksPassFail =
-        requiresAtmosphere && !isWastewaterFo2Sheet;
     const encodeBlockedByLabConditions =
         (requiresAtmosphere && !atmosphereComplete) ||
         (requiresFieldData && !fieldDataComplete);
@@ -644,7 +636,6 @@ export default function AnalystEncodingStudio({
                                                 readOnly ||
                                                 encodeBlockedByLabConditions
                                             }
-                                            remarksPassFail={remarksPassFail}
                                             analysisError={analysisError}
                                             onFieldChange={onFieldChange}
                                             onFieldsPatch={onFieldsPatch}

@@ -240,7 +240,7 @@ return array (
             'test' => 'Color (Apparent Color)',
             'test_method' => 'Colorimetric Method (2120 B)',
             'result' => NULL,
-            'method' => 'Colorimetric Method',
+            'method' => 'Colorimetric Method (2120 B)',
           ),
           1 => 
           array (

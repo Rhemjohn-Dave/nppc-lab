@@ -76,44 +76,191 @@ class MatrixAnchorBelowTest extends TestCase
         $method->setAccessible(true);
 
         $field = [
-            'name' => 'fo2_label_reviewed',
+            'name' => 'fo2_signatory_reviewed',
             'y' => 100.0,
             'options' => [
                 'anchor' => [
-                    'below' => 'ww_fo2_matrix',
-                    'offset_mm' => 45.0,
+                    'below' => 'fo2_notes',
+                    'offset_mm' => 6.0,
                     'above' => 'fo2_form_meta',
+                    'above_offset_mm' => 46.0,
+                ],
+            ],
+        ];
+
+        // NOTES-ink bottom + 6mm; no 20mm short-sheet nudge for fo2_notes anchors.
+        $short = $method->invoke(
+            $filler,
+            $field,
+            [],
+            ['fo2_form_meta' => 258.0],
+            [],
+            ['fo2_notes' => 140.0],
+        );
+        $this->assertEqualsWithDelta(146.0, $short['y'], 0.01);
+
+        // Longer NOTES ink pushes the signatory down.
+        $longerNotes = $method->invoke(
+            $filler,
+            $field,
+            [],
+            ['fo2_form_meta' => 258.0],
+            [],
+            ['fo2_notes' => 160.0],
+        );
+        $this->assertEqualsWithDelta(166.0, $longerNotes['y'], 0.01);
+
+        // Mid sheet: meta parked at stamp pin must NOT collapse the 6mm NOTES gap
+        // via stale above_offset_mm (46) — that was pulling labels into the notes.
+        $midPinnedMeta = $method->invoke(
+            $filler,
+            array_merge($field, ['h' => 24.0]),
+            [],
+            ['fo2_form_meta' => 235.0],
+            [],
+            ['fo2_notes' => 189.0],
+        );
+        $this->assertEqualsWithDelta(195.0, $midPinnedMeta['y'], 0.01);
+
+        // NOTES stay under the matrix; short sheets also get the same 4mm drop as the matrix.
+        $notesShort = $method->invoke(
+            $filler,
+            [
+                'name' => 'fo2_notes',
+                'y' => 192.0,
+                'options' => [
+                    'anchor' => [
+                        'below' => 'ww_fo2_matrix',
+                        'offset_mm' => 17.0,
+                    ],
+                ],
+            ],
+            ['ww_fo2_matrix' => 100.0],
+            ['fo2_form_meta' => 258.0],
+            ['ww_fo2_matrix' => 4.0],
+        );
+        $this->assertEqualsWithDelta(121.0, $notesShort['y'], 0.01);
+
+        $notesFull = $method->invoke(
+            $filler,
+            [
+                'name' => 'fo2_notes',
+                'y' => 192.0,
+                'options' => [
+                    'anchor' => [
+                        'below' => 'ww_fo2_matrix',
+                        'offset_mm' => 17.0,
+                    ],
+                ],
+            ],
+            ['ww_fo2_matrix' => 100.0],
+            ['fo2_form_meta' => 258.0],
+        );
+        $this->assertEqualsWithDelta(117.0, $notesFull['y'], 0.01);
+
+        // Tall NOTES: still follow ink + 6mm (meta follows the stack afterward).
+        $tall = $method->invoke(
+            $filler,
+            array_merge($field, ['h' => 24.0]),
+            [],
+            ['fo2_form_meta' => 258.0],
+            [],
+            ['fo2_notes' => 220.0],
+        );
+        $this->assertEqualsWithDelta(226.0, $tall['y'], 0.01);
+
+        // Even when meta is tight, never pull signatories up into the NOTES band.
+        $overflow = $method->invoke(
+            $filler,
+            array_merge($field, ['h' => 24.0]),
+            [],
+            ['fo2_form_meta' => 230.0],
+            [],
+            ['fo2_notes' => 220.0],
+        );
+        $this->assertEqualsWithDelta(226.0, $overflow['y'], 0.01);
+    }
+
+    public function test_fo3_keeps_twenty_mm_short_sheet_signatory_nudge(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'applyAnchorBelow');
+        $method->setAccessible(true);
+
+        $field = [
+            'name' => 'fo3_label_analyzed',
+            'y' => 100.0,
+            'options' => [
+                'anchor' => [
+                    'below' => 'dw_old_fo3_matrix',
+                    'offset_mm' => 45.0,
+                    'above' => 'fo3_form_meta',
                     'above_offset_mm' => 45.0,
                 ],
             ],
         ];
 
-        // Short table (spare 258-45-145=68 >= 24): FO2 nudge is 0 so stack stays tight.
         $short = $method->invoke(
             $filler,
             $field,
-            ['ww_fo2_matrix' => 100.0],
-            ['fo2_form_meta' => 258.0],
+            ['dw_old_fo3_matrix' => 100.0],
+            ['fo3_form_meta' => 258.0],
         );
-        $this->assertEqualsWithDelta(145.0, $short['y'], 0.01);
+        // fromBelow 145 + 20 nudge = 165, clamp above 213.
+        $this->assertEqualsWithDelta(165.0, $short['y'], 0.01);
+    }
 
-        // Medium/tall with little spare (213-190=23 < 24): no nudge, normal flow.
-        $normal = $method->invoke(
-            $filler,
-            $field,
-            ['ww_fo2_matrix' => 145.0],
-            ['fo2_form_meta' => 258.0],
-        );
-        $this->assertEqualsWithDelta(190.0, $normal['y'], 0.01);
+    public function test_fo2_short_sheet_matrix_scale_bumps_row_height_and_fonts(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'applyFo2ShortSheetMatrixScale');
+        $method->setAccessible(true);
 
-        // Tall table: clamp just above form-meta (225 > 213).
-        $tall = $method->invoke(
-            $filler,
-            $field,
-            ['ww_fo2_matrix' => 180.0],
-            ['fo2_form_meta' => 258.0],
-        );
-        $this->assertEqualsWithDelta(213.0, $tall['y'], 0.01);
+        $scaled = $method->invoke($filler, [
+            'name' => 'ww_fo2b_matrix',
+            'font_size' => 6.5,
+            'table_config' => [
+                'row_height_mm' => 5.0,
+                'method_font_size' => 6.0,
+                'columns' => [
+                    ['key' => 'test', 'font_size' => 8],
+                    ['key' => 'method', 'font_size' => 8],
+                    ['key' => 'result', 'font_size' => 8],
+                ],
+            ],
+        ]);
+
+        $this->assertEqualsWithDelta(7.5, $scaled['font_size'], 0.01);
+        $this->assertEqualsWithDelta(7.0, $scaled['table_config']['row_height_mm'], 0.01);
+        $this->assertEqualsWithDelta(7.0, $scaled['table_config']['method_font_size'], 0.01);
+        $this->assertEqualsWithDelta(9.0, $scaled['table_config']['columns'][0]['font_size'], 0.01);
+        $this->assertEqualsWithDelta(9.0, $scaled['table_config']['columns'][1]['font_size'], 0.01);
+        // Result column stays at the designer size.
+        $this->assertEqualsWithDelta(8.0, $scaled['table_config']['columns'][2]['font_size'], 0.01);
+    }
+
+    public function test_fo2_short_sheet_chrome_font_targets_notes_refs_signatories_and_meta(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'shouldBoostFo2ShortSheetChromeFont');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($filler, 'fo2_notes', []));
+        $this->assertTrue($method->invoke($filler, 'fo2_references', []));
+        $this->assertTrue($method->invoke($filler, 'fo2_form_meta', []));
+        $this->assertTrue($method->invoke($filler, 'fo2_signatory_reviewed', []));
+        $this->assertTrue($method->invoke($filler, 'fo2_signatory_certified', []));
+        $this->assertTrue($method->invoke($filler, 'fo2_signatory_noted', []));
+        $this->assertTrue($method->invoke($filler, 'fo2_label_reviewed', []));
+        $this->assertTrue($method->invoke($filler, 'results.analyst_name', [
+            'options' => ['anchor' => ['above' => 'fo2_form_meta']],
+        ]));
+
+        $this->assertFalse($method->invoke($filler, 'results.sample_code', []));
+        $this->assertFalse($method->invoke($filler, 'fo2_lab_conditions', []));
+        $this->assertFalse($method->invoke($filler, 'results.analyst_name', [
+            'options' => ['anchor' => ['above' => 'fo3_form_meta']],
+        ]));
     }
 
     public function test_form_meta_ignores_stale_matrix_anchor(): void
@@ -143,109 +290,42 @@ class MatrixAnchorBelowTest extends TestCase
         $this->assertEqualsWithDelta(262.0, $resolved['y'], 0.01);
     }
 
-    public function test_fo2_sync_above_offset_keeps_designer_delta_despite_stale_above(): void
+    public function test_fo2_sync_above_offset_heals_stale_signatory_block(): void
     {
         $filler = app(ControlledPdfFiller::class);
         $sync = new ReflectionMethod(ControlledPdfFiller::class, 'syncAboveOffsetFromMetaOffset');
         $sync->setAccessible(true);
-        $apply = new ReflectionMethod(ControlledPdfFiller::class, 'applyAnchorBelow');
-        $apply->setAccessible(true);
 
         $meta = new ControlledFormField([
             'name' => 'fo2_form_meta',
             'options' => [
                 'anchor' => [
-                    'below' => 'ww_fo2_matrix',
-                    'offset_mm' => 87.0,
+                    'below' => 'fo2_notes',
+                    'offset_mm' => 52.0,
                 ],
             ],
         ]);
         $pageFields = collect([$meta]);
 
-        $pairs = [
-            // Reviewed by — Designer Δoffset 5mm, stale equal above_offsets would collapse.
-            [
-                'label' => 'fo2_label_reviewed',
-                'name' => 'results.analyst_name',
-                'label_off' => 41.0,
-                'name_off' => 46.0,
-                'stale_above' => 30.0,
-                'delta' => 5.0,
-            ],
-            // Noted By — Designer Δoffset 6mm.
-            [
-                'label' => 'fo2_label_noted',
-                'name' => 'results.analyst_name_2',
-                'label_off' => 63.0,
-                'name_off' => 69.0,
-                'stale_above' => 30.0,
-                'delta' => 6.0,
+        $block = [
+            'name' => 'fo2_signatory_reviewed',
+            'y' => 100.0,
+            'options' => [
+                'anchor' => [
+                    'below' => 'fo2_notes',
+                    'offset_mm' => 6.0,
+                    'above' => 'fo2_form_meta',
+                    'above_offset_mm' => 30.0,
+                ],
             ],
         ];
 
-        foreach ($pairs as $pair) {
-            $label = [
-                'name' => $pair['label'],
-                'y' => 100.0,
-                'options' => [
-                    'anchor' => [
-                        'below' => 'ww_fo2_matrix',
-                        'offset_mm' => $pair['label_off'],
-                        'above' => 'fo2_form_meta',
-                        'above_offset_mm' => $pair['stale_above'],
-                    ],
-                ],
-            ];
-            $name = [
-                'name' => $pair['name'],
-                'y' => 100.0,
-                'options' => [
-                    'anchor' => [
-                        'below' => 'ww_fo2_matrix',
-                        'offset_mm' => $pair['name_off'],
-                        'above' => 'fo2_form_meta',
-                        'above_offset_mm' => $pair['stale_above'],
-                    ],
-                ],
-            ];
-
-            $labelSynced = $sync->invoke($filler, $label, $pageFields);
-            $nameSynced = $sync->invoke($filler, $name, $pageFields);
-
-            $this->assertEqualsWithDelta(
-                87.0 - $pair['label_off'],
-                $labelSynced['options']['anchor']['above_offset_mm'],
-                0.01,
-                $pair['label'],
-            );
-            $this->assertEqualsWithDelta(
-                87.0 - $pair['name_off'],
-                $nameSynced['options']['anchor']['above_offset_mm'],
-                0.01,
-                $pair['name'],
-            );
-
-            // Tall sheet: above clamp wins — Δy must still equal Designer Δoffset.
-            $labelY = $apply->invoke(
-                $filler,
-                $labelSynced,
-                ['ww_fo2_matrix' => 186.0],
-                ['fo2_form_meta' => 252.5],
-            );
-            $nameY = $apply->invoke(
-                $filler,
-                $nameSynced,
-                ['ww_fo2_matrix' => 186.0],
-                ['fo2_form_meta' => 252.5],
-            );
-
-            $this->assertEqualsWithDelta(
-                $pair['delta'],
-                $nameY['y'] - $labelY['y'],
-                0.01,
-                $pair['label'].' → '.$pair['name'],
-            );
-        }
+        $synced = $sync->invoke($filler, $block, $pageFields);
+        $this->assertEqualsWithDelta(
+            46.0,
+            $synced['options']['anchor']['above_offset_mm'],
+            0.01,
+        );
     }
 
     public function test_fo2_blueprint_pins_meta_footer_and_signatories(): void
@@ -259,8 +339,8 @@ class MatrixAnchorBelowTest extends TestCase
         $meta = $revision->fields->firstWhere('name', 'fo2_form_meta');
         $this->assertNotNull($meta);
         $metaAnchor = is_array($meta->options['anchor'] ?? null) ? $meta->options['anchor'] : [];
-        $this->assertSame('ww_fo2_matrix', $metaAnchor['below'] ?? null);
-        $this->assertEqualsWithDelta(87.0, (float) ($metaAnchor['offset_mm'] ?? 0), 0.01);
+        $this->assertSame('fo2_notes', $metaAnchor['below'] ?? null);
+        $this->assertEqualsWithDelta(52.0, (float) ($metaAnchor['offset_mm'] ?? 0), 0.01);
 
         $notes = $revision->fields->firstWhere('name', 'fo2_notes');
         $this->assertNotNull($notes);
@@ -268,45 +348,33 @@ class MatrixAnchorBelowTest extends TestCase
         $this->assertSame('ww_fo2_matrix', $notesAnchor['below'] ?? null);
         $this->assertArrayNotHasKey('above', $notesAnchor);
 
-        $reviewed = $revision->fields->firstWhere('name', 'fo2_label_reviewed');
+        $reviewed = $revision->fields->firstWhere('name', 'fo2_signatory_reviewed');
         $this->assertNotNull($reviewed);
         $reviewedAnchor = is_array($reviewed->options['anchor'] ?? null) ? $reviewed->options['anchor'] : [];
-        $this->assertSame('ww_fo2_matrix', $reviewedAnchor['below'] ?? null);
+        $this->assertSame('fo2_notes', $reviewedAnchor['below'] ?? null);
         $this->assertSame('fo2_form_meta', $reviewedAnchor['above'] ?? null);
+        $this->assertEqualsWithDelta(6.0, (float) ($reviewedAnchor['offset_mm'] ?? 0), 0.01);
         $this->assertGreaterThan(0, (float) ($reviewedAnchor['above_offset_mm'] ?? 0));
-
-        $reviewedName = $revision->fields->firstWhere('name', 'results.analyst_name');
-        $this->assertNotNull($reviewedName);
-        $nameAnchor = is_array($reviewedName->options['anchor'] ?? null)
-            ? $reviewedName->options['anchor']
-            : [];
-        $this->assertEqualsWithDelta(
-            5.0,
-            (float) ($nameAnchor['offset_mm'] ?? 0) - (float) ($reviewedAnchor['offset_mm'] ?? 0),
-            0.01,
-            'Reviewed label→name offset must match Form Designer (~5mm).',
-        );
-
-        $notesEnd = (float) ($notesAnchor['offset_mm'] ?? 0) + (float) $notes->height;
-        $this->assertGreaterThanOrEqual(
-            $notesEnd,
-            (float) ($reviewedAnchor['offset_mm'] ?? 0),
-            'Reviewed-by must clear the notes band (offset >= notes offset + height).',
-        );
+        $this->assertIsArray($reviewed->options['signatory_block'] ?? null);
 
         foreach ([
-            'results.analyst_name',
-            'results.analyst_name_2',
-            'results.analyst_name_3',
-            'results.analyst_name_4',
+            'fo2_signatory_reviewed',
+            'fo2_signatory_certified',
+            'fo2_signatory_noted',
         ] as $signatoryField) {
             $field = $revision->fields->firstWhere('name', $signatoryField);
             $this->assertNotNull($field, $signatoryField);
             $anchor = is_array($field->options['anchor'] ?? null) ? $field->options['anchor'] : [];
-            $this->assertSame('ww_fo2_matrix', $anchor['below'] ?? null, $signatoryField);
+            $this->assertSame('fo2_notes', $anchor['below'] ?? null, $signatoryField);
             $this->assertSame('fo2_form_meta', $anchor['above'] ?? null, $signatoryField);
             $this->assertGreaterThan(0, (float) ($anchor['above_offset_mm'] ?? 0), $signatoryField);
+            $this->assertSame('multiline', $field->field_type->value, $signatoryField);
         }
+
+        $certified = $revision->fields->firstWhere('name', 'fo2_signatory_certified');
+        $people = $certified?->options['signatory_block']['people'] ?? null;
+        $this->assertIsArray($people);
+        $this->assertCount(2, $people);
     }
 
     public function test_form_meta_is_pinned_above_page_stamp(): void
@@ -362,6 +430,559 @@ class MatrixAnchorBelowTest extends TestCase
         $tall = $method->invoke($filler, $field, ['ww_fo2_matrix' => 180.0], $pageHeight);
         $this->assertEqualsWithDelta(270.0, $tall, 0.01);
         $this->assertGreaterThan($pinned, $tall);
+    }
+
+    public function test_fo2_notes_expand_clears_room_for_all_six_lines(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'expandFo2NotesHeightForFullInk');
+        $method->setAccessible(true);
+
+        $pageHeight = 279.4;
+        $expanded = $method->invoke($filler, [
+            'name' => 'fo2_notes',
+            'y' => 175.0,
+            'h' => 23.5,
+            'font_size' => 8.5,
+        ], $pageHeight);
+
+        // Short-sheet NOTES (+1pt) need ~25mm for Notes: + 6 items; designer box is 23.5.
+        $this->assertGreaterThan(24.0, (float) $expanded['h']);
+    }
+
+    public function test_fo2b_notes_leave_right_column_for_field_data(): void
+    {
+        $this->seed();
+
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2B')->firstOrFail();
+        $revision = $form->activeRevision();
+        $this->assertNotNull($revision);
+
+        $notes = $revision->fields->firstWhere('name', 'fo2_notes');
+        $fieldData = $revision->fields->firstWhere('name', 'job_orders.field_data');
+        $this->assertNotNull($notes);
+        $this->assertNotNull($fieldData);
+
+        $this->assertLessThanOrEqual(115.0, (float) $notes->width);
+        $this->assertGreaterThanOrEqual(120.0, (float) $fieldData->x);
+        $this->assertSame('ww_fo2b_matrix', $fieldData->options['anchor']['below'] ?? null);
+        $this->assertEqualsWithDelta(18.0, (float) ($fieldData->options['anchor']['offset_mm'] ?? 0), 0.01);
+    }
+
+    public function test_fo2b_field_data_raises_instead_of_clipping_to_zero(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'drawFo2bFieldDataAboveSignatories');
+        $method->setAccessible(true);
+
+        $pdf = new \setasign\Fpdi\Tcpdf\Fpdi('P', 'mm', 'A4');
+        $pdf->AddPage();
+
+        $overlay = [
+            'name' => 'job_orders.field_data',
+            'type' => 'multiline',
+            'x' => 126.0,
+            'y' => 172.0,
+            'w' => 78.0,
+            'h' => 28.0,
+            'font_size' => 8.0,
+            'font_family' => 'times',
+            'align' => 'L',
+            'options' => [
+                'anchor' => [
+                    'below' => 'ww_fo2b_matrix',
+                    'offset_mm' => 35.0,
+                ],
+                'static_text' => "**FIELD DATA:**\na) Temperature – 27\nb) Dissolved Oxygen - 5.5\nc) Time of Sampling - 8:15 AM – 8:45 AM",
+            ],
+        ];
+
+        $absoluteFieldY = ['fo2_notes' => 200.0];
+        $fieldContentBottomY = [];
+        $matrixBottomY = ['ww_fo2b_matrix' => 200.0];
+        // Designer Y = 235; ceiling 222.5 would previously clamp h→0.
+        $ceilingY = 222.5;
+
+        $method->invokeArgs($filler, [
+            $pdf,
+            $overlay,
+            null,
+            [],
+            $matrixBottomY,
+            &$absoluteFieldY,
+            &$fieldContentBottomY,
+            [],
+            false,
+            $ceilingY,
+            true,
+            false,
+        ]);
+
+        $this->assertArrayHasKey('job_orders.field_data', $fieldContentBottomY);
+        $this->assertEqualsWithDelta(200.0, $absoluteFieldY['job_orders.field_data'], 0.01);
+        // Must draw real ink (not the old h→0 clip). Content bottom tracks written lines.
+        $this->assertGreaterThan(
+            $absoluteFieldY['job_orders.field_data'] + 8.0,
+            $fieldContentBottomY['job_orders.field_data'],
+        );
+    }
+
+    public function test_fo2b_short_sheet_stacks_field_data_below_notes(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'drawFo2bFieldDataAboveSignatories');
+        $method->setAccessible(true);
+
+        $pdf = new \setasign\Fpdi\Tcpdf\Fpdi('P', 'mm', 'A4');
+        $pdf->AddPage();
+
+        $overlay = [
+            'name' => 'job_orders.field_data',
+            'type' => 'multiline',
+            'x' => 126.0,
+            'y' => 172.0,
+            'w' => 78.0,
+            'h' => 28.0,
+            'font_size' => 8.0,
+            'font_family' => 'times',
+            'align' => 'L',
+            'options' => [
+                'anchor' => [
+                    'below' => 'ww_fo2b_matrix',
+                    'offset_mm' => 18.0,
+                ],
+                'static_text' => "**FIELD DATA:**\na) Temperature – 27\nb) Dissolved Oxygen - 5.5",
+            ],
+        ];
+
+        $notesBottom = 180.0;
+        $absoluteFieldY = ['fo2_notes' => 160.0];
+        $fieldContentBottomY = ['fo2_notes' => $notesBottom];
+        $matrixBottomY = ['ww_fo2b_matrix' => 140.0];
+
+        // Non-tall (even when short-chrome flag is false) must still stack under NOTES.
+        $method->invokeArgs($filler, [
+            $pdf,
+            $overlay,
+            null,
+            [],
+            $matrixBottomY,
+            &$absoluteFieldY,
+            &$fieldContentBottomY,
+            [],
+            false,
+            null,
+            false,
+            true,
+        ]);
+
+        // Under NOTES (+7mm gap), still in the right column (Designer x kept).
+        $this->assertEqualsWithDelta(187.0, $absoluteFieldY['job_orders.field_data'], 0.01);
+        $this->assertGreaterThan($notesBottom, $absoluteFieldY['job_orders.field_data']);
+        $this->assertGreaterThan(
+            $absoluteFieldY['job_orders.field_data'] + 5.0,
+            $fieldContentBottomY['job_orders.field_data'],
+        );
+    }
+
+    public function test_fo2b_form_meta_offset_is_thirty_three(): void
+    {
+        $this->seed();
+
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2B')->firstOrFail();
+        $meta = $form->activeRevision()?->fields->firstWhere('name', 'fo2_form_meta');
+        $this->assertNotNull($meta);
+        $this->assertSame('fo2_notes', $meta->options['anchor']['below'] ?? null);
+        $this->assertEqualsWithDelta(33.0, (float) ($meta->options['anchor']['offset_mm'] ?? 0), 0.01);
+    }
+
+    public function test_fo2a_footer_pin_drops_seven_mm(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $stamp = new ReflectionMethod(ControlledPdfFiller::class, 'pageStampY');
+        $stamp->setAccessible(true);
+        $pin = new ReflectionMethod(ControlledPdfFiller::class, 'formMetaYAbovePageStamp');
+        $pin->setAccessible(true);
+
+        $pageHeight = 297.0;
+        $defaultStamp = $stamp->invoke($filler, $pageHeight, null);
+        $fo2aStamp = $stamp->invoke($filler, $pageHeight, 'LSP-7.8-FO2A');
+        $this->assertEqualsWithDelta($defaultStamp + 7.0, $fo2aStamp, 0.01);
+
+        $defaultPin = $pin->invoke($filler, 18.0, 7.0, $pageHeight, null);
+        $fo2aPin = $pin->invoke($filler, 18.0, 7.0, $pageHeight, 'LSP-7.8-FO2A');
+        $this->assertEqualsWithDelta($defaultPin + 7.0, $fo2aPin, 0.01);
+    }
+
+    public function test_fo2a_signatory_offsets_dropped_seven_mm(): void
+    {
+        $this->seed();
+
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2A')->firstOrFail();
+        $revision = $form->activeRevision();
+        $this->assertNotNull($revision);
+
+        $reviewed = $revision->fields->firstWhere('name', 'fo2_signatory_reviewed');
+        $noted = $revision->fields->firstWhere('name', 'fo2_signatory_noted');
+        $meta = $revision->fields->firstWhere('name', 'fo2_form_meta');
+        $this->assertNotNull($reviewed);
+        $this->assertNotNull($noted);
+        $this->assertNotNull($meta);
+        $this->assertEqualsWithDelta(13.0, (float) ($reviewed->options['anchor']['offset_mm'] ?? 0), 0.01);
+        $this->assertEqualsWithDelta(39.0, (float) ($noted->options['anchor']['offset_mm'] ?? 0), 0.01);
+        $this->assertEqualsWithDelta(57.0, (float) ($meta->options['anchor']['offset_mm'] ?? 0), 0.01);
+    }
+
+    public function test_fo2a_anchors_noted_under_reviewed_ink(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'anchorFo2aNotedUnderReviewed');
+        $method->setAccessible(true);
+        $apply = new ReflectionMethod(ControlledPdfFiller::class, 'applyAnchorBelow');
+        $apply->setAccessible(true);
+
+        $overlay = [
+            'name' => 'fo2_signatory_noted',
+            'h' => 20.0,
+            'options' => [
+                'anchor' => [
+                    'below' => 'fo2_notes',
+                    'offset_mm' => 55.0,
+                    'above' => 'fo2_form_meta',
+                    'above_offset_mm' => 2.0,
+                ],
+            ],
+        ];
+
+        $fieldContentBottomY = [
+            'fo2_notes' => 200.0,
+            'fo2_signatory_reviewed' => 220.0,
+        ];
+        $anchoredFew = $method->invoke($filler, $overlay, $fieldContentBottomY, 7.0);
+        $this->assertSame('fo2_signatory_reviewed', $anchoredFew['options']['anchor']['below'] ?? null);
+        $this->assertEqualsWithDelta(7.0, (float) ($anchoredFew['options']['anchor']['offset_mm'] ?? 0), 0.01);
+        $this->assertArrayNotHasKey('above', $anchoredFew['options']['anchor']);
+
+        $placedFew = $apply->invoke(
+            $filler,
+            $anchoredFew,
+            [],
+            ['fo2_form_meta' => 260.0],
+            [],
+            $fieldContentBottomY,
+        );
+        // Few-test: Reviewed ink 220 + 7mm.
+        $this->assertEqualsWithDelta(227.0, (float) $placedFew['y'], 0.01);
+
+        $anchoredTall = $method->invoke($filler, $overlay, $fieldContentBottomY, 3.0);
+        $placedTall = $apply->invoke(
+            $filler,
+            $anchoredTall,
+            [],
+            ['fo2_form_meta' => 260.0],
+            [],
+            $fieldContentBottomY,
+        );
+        // Tall/19-test: Reviewed ink 220 + 3mm.
+        $this->assertEqualsWithDelta(223.0, (float) $placedTall['y'], 0.01);
+    }
+
+    public function test_fo2a_short_sheet_drops_reviewed_certified_five_mm(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'bumpFo2aFirstRowOffsets');
+        $method->setAccessible(true);
+
+        $rows = [
+            [
+                'field' => new ControlledFormField(['name' => 'fo2_signatory_reviewed']),
+                'overlay' => [
+                    'name' => 'fo2_signatory_reviewed',
+                    'options' => [
+                        'anchor' => [
+                            'below' => 'fo2_notes',
+                            'offset_mm' => 13.0,
+                            'above' => 'fo2_form_meta',
+                            'above_offset_mm' => 44.0,
+                        ],
+                    ],
+                ],
+                'value' => null,
+            ],
+            [
+                'field' => new ControlledFormField(['name' => 'fo2_signatory_certified']),
+                'overlay' => [
+                    'name' => 'fo2_signatory_certified',
+                    'options' => [
+                        'anchor' => [
+                            'below' => 'fo2_notes',
+                            'offset_mm' => 13.0,
+                            'above' => 'fo2_form_meta',
+                            'above_offset_mm' => 44.0,
+                        ],
+                    ],
+                ],
+                'value' => null,
+            ],
+            [
+                'field' => new ControlledFormField(['name' => 'fo2_signatory_noted']),
+                'overlay' => [
+                    'name' => 'fo2_signatory_noted',
+                    'options' => [
+                        'anchor' => [
+                            'below' => 'fo2_notes',
+                            'offset_mm' => 43.0,
+                            'above' => 'fo2_form_meta',
+                            'above_offset_mm' => 14.0,
+                        ],
+                    ],
+                ],
+                'value' => null,
+            ],
+        ];
+
+        $bumped = $method->invoke($filler, $rows, 5.0);
+        $this->assertEqualsWithDelta(
+            18.0,
+            (float) $bumped[0]['overlay']['options']['anchor']['offset_mm'],
+            0.01,
+        );
+        $this->assertEqualsWithDelta(
+            18.0,
+            (float) $bumped[1]['overlay']['options']['anchor']['offset_mm'],
+            0.01,
+        );
+        // Noted By is unchanged by the first-row drop helper.
+        $this->assertEqualsWithDelta(
+            43.0,
+            (float) $bumped[2]['overlay']['options']['anchor']['offset_mm'],
+            0.01,
+        );
+    }
+
+    public function test_fo2b_matrix_band_matches_fo2_height(): void
+    {
+        $this->seed();
+
+        $fo2 = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2')->firstOrFail();
+        $fo2b = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2B')->firstOrFail();
+        $fo2Matrix = $fo2->activeRevision()?->fields->firstWhere('name', 'ww_fo2_matrix');
+        $fo2bMatrix = $fo2b->activeRevision()?->fields->firstWhere('name', 'ww_fo2b_matrix');
+        $this->assertNotNull($fo2Matrix);
+        $this->assertNotNull($fo2bMatrix);
+        $this->assertEqualsWithDelta((float) $fo2Matrix->height, (float) $fo2bMatrix->height, 0.5);
+        $this->assertSame(20, (int) ($fo2bMatrix->table_config['preview_rows'] ?? 0));
+    }
+
+    public function test_fo2_first_signatory_offset_reads_designer_gap(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'fo2FirstSignatoryOffsetMm');
+        $method->setAccessible(true);
+
+        $fields = collect([
+            new ControlledFormField([
+                'name' => 'fo2_signatory_reviewed',
+                'options' => [
+                    'anchor' => [
+                        'below' => 'fo2_notes',
+                        'offset_mm' => 25.0,
+                    ],
+                ],
+            ]),
+            new ControlledFormField([
+                'name' => 'fo2_signatory_certified',
+                'options' => [
+                    'anchor' => [
+                        'below' => 'fo2_notes',
+                        'offset_mm' => 25.0,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $this->assertEqualsWithDelta(25.0, $method->invoke($filler, $fields), 0.01);
+    }
+
+    public function test_fo2_first_signatory_offset_from_rows_uses_shrunk_gap(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'fo2FirstSignatoryOffsetFromRows');
+        $method->setAccessible(true);
+
+        $rows = [
+            [
+                'field' => new ControlledFormField(['name' => 'fo2_signatory_certified']),
+                'overlay' => [
+                    'name' => 'fo2_signatory_certified',
+                    'options' => [
+                        'anchor' => [
+                            'below' => 'fo2_notes',
+                            'offset_mm' => 1.5,
+                        ],
+                    ],
+                ],
+                'value' => null,
+            ],
+        ];
+
+        $this->assertEqualsWithDelta(1.5, $method->invoke($filler, $rows), 0.01);
+    }
+
+    public function test_fo2b_signatory_stack_clears_field_data_ink(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'estimateFo2SignatoryStackBottom');
+        $method->setAccessible(true);
+
+        $rows = [
+            [
+                'field' => new ControlledFormField(['name' => 'fo2_signatory_certified']),
+                'overlay' => [
+                    'name' => 'fo2_signatory_certified',
+                    'h' => 22.0,
+                    'options' => [
+                        'anchor' => [
+                            'below' => 'fo2_notes',
+                            'offset_mm' => 6.0,
+                        ],
+                    ],
+                ],
+                'value' => null,
+            ],
+        ];
+
+        // Synthetic chrome bottom = max(notes, field_data); certified starts 6mm below that.
+        $chromeBottom = 200.0;
+        $stackBottom = $method->invoke($filler, $rows, $chromeBottom);
+        $this->assertEqualsWithDelta(228.0, $stackBottom, 0.01);
+        $this->assertGreaterThan($chromeBottom + 5.0, $stackBottom);
+    }
+
+    public function test_fo2_tall_chrome_reduces_lab_refs_notes_fonts(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $should = new ReflectionMethod(ControlledPdfFiller::class, 'shouldReduceFo2TallChromeFont');
+        $should->setAccessible(true);
+        $apply = new ReflectionMethod(ControlledPdfFiller::class, 'applyFo2TallChromeFontReduce');
+        $apply->setAccessible(true);
+
+        foreach (['fo2_lab_conditions', 'fo2_references', 'fo2_notes', 'job_orders.field_data'] as $name) {
+            $this->assertTrue($should->invoke($filler, $name), $name);
+        }
+
+        $reduced = $apply->invoke($filler, [
+            'name' => 'fo2_notes',
+            'font_size' => 8.0,
+        ]);
+        $this->assertEqualsWithDelta(7.0, (float) $reduced['font_size'], 0.01);
+    }
+
+    public function test_fo2_tall_sheet_shrinks_notes_signatory_gap(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'shrinkFo2SignatoryNotesOffsets');
+        $method->setAccessible(true);
+
+        $reviewed = new ControlledFormField(['name' => 'fo2_signatory_reviewed']);
+        $noted = new ControlledFormField(['name' => 'fo2_signatory_noted']);
+        $rows = [
+            [
+                'field' => $reviewed,
+                'overlay' => [
+                    'name' => 'fo2_signatory_reviewed',
+                    'h' => 24.0,
+                    'options' => [
+                        'anchor' => [
+                            'below' => 'fo2_notes',
+                            'offset_mm' => 6.0,
+                            'above' => 'fo2_form_meta',
+                            'above_offset_mm' => 46.0,
+                        ],
+                    ],
+                ],
+                'value' => null,
+            ],
+            [
+                'field' => $noted,
+                'overlay' => [
+                    'name' => 'fo2_signatory_noted',
+                    'h' => 20.0,
+                    'options' => [
+                        'anchor' => [
+                            'below' => 'fo2_notes',
+                            'offset_mm' => 28.0,
+                            'above' => 'fo2_form_meta',
+                            'above_offset_mm' => 24.0,
+                        ],
+                    ],
+                ],
+                'value' => null,
+            ],
+        ];
+
+        // ~19-test overflow: only tighten the shared NOTES→first-row gap; keep
+        // Reviewed→Noted spacing (28 − 6 = 22) so Noted never lands on Reviewed.
+        $shrunk = $method->invoke($filler, $rows, 10.0);
+        $this->assertEqualsWithDelta(
+            1.5,
+            (float) $shrunk[0]['overlay']['options']['anchor']['offset_mm'],
+            0.01,
+        );
+        $this->assertEqualsWithDelta(
+            23.5,
+            (float) $shrunk[1]['overlay']['options']['anchor']['offset_mm'],
+            0.01,
+        );
+        $this->assertEqualsWithDelta(
+            22.0,
+            (float) $shrunk[1]['overlay']['options']['anchor']['offset_mm']
+                - (float) $shrunk[0]['overlay']['options']['anchor']['offset_mm'],
+            0.01,
+        );
+    }
+
+    public function test_form_meta_follows_signatory_stack_under_notes(): void
+    {
+        $filler = app(ControlledPdfFiller::class);
+        $method = new ReflectionMethod(ControlledPdfFiller::class, 'resolveFormMetaY');
+        $method->setAccessible(true);
+
+        $field = [
+            'name' => 'fo2_form_meta',
+            'h' => 18.0,
+            'font_size' => 7.0,
+            'options' => [
+                'anchor' => [
+                    'below' => 'fo2_notes',
+                    'offset_mm' => 52.0,
+                ],
+            ],
+        ];
+
+        $pageHeight = 279.4;
+        $pinned = (new ReflectionMethod(ControlledPdfFiller::class, 'formMetaYAbovePageStamp'))
+            ->invoke($filler, 18.0, 7.0, $pageHeight);
+
+        $fromNotes = $method->invoke(
+            $filler,
+            $field,
+            [],
+            $pageHeight,
+            ['fo2_notes' => 140.0],
+        );
+        $this->assertEqualsWithDelta($pinned, $fromNotes, 0.01);
+
+        $follow = $method->invoke(
+            $filler,
+            $field,
+            [],
+            $pageHeight,
+            ['fo2_notes' => 140.0],
+            250.0,
+        );
+        $this->assertEqualsWithDelta(250.0, $follow, 0.01);
+        $this->assertGreaterThan($pinned, $follow);
     }
 
     public function test_short_matrix_content_bottom_is_below_designer_box_and_anchors_follow(): void

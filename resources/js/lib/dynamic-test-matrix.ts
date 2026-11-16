@@ -793,13 +793,13 @@ export function matrixPreviewData(
 ): Array<Record<string, string>> {
     const stored = config.preview_data ?? [];
     const source = baseRows.length > 0 ? baseRows : MATRIX_DESIGNER_PREVIEW_ROWS;
-    // Prefer catalog/package length when preview_rows is stale/smaller (e.g. FO3 gained Cl rows).
+    // Designer "Preview rows" is a hard cap (e.g. 7 of 20 package members for spacing checks).
     const desired =
         typeof config.preview_rows === 'number' && config.preview_rows > 0
-            ? Math.max(config.preview_rows, source.length)
+            ? config.preview_rows
             : Math.max(source.length, stored.length);
 
-    // Same as other matrices: clamp to bound package/type preview rows from the server.
+    // Never invent rows beyond bound package/type preview data from the server.
     const count = Math.min(desired, Math.max(source.length, stored.length || source.length));
 
     return Array.from({ length: count }, (_, index) => {

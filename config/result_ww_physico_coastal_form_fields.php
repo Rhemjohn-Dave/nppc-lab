@@ -1,22 +1,13 @@
 <?php
 
-/**
- * Field blueprint for LSP-7.8-FO2B.
- * Captured from Form Designer ACTIVE revision 01
- * via `php artisan controlled-forms:export-blueprints`.
- */
-
 return array (
-  'page' => 
-  array (
+  'page' => array (
     'width' => 215.9,
     'height' => 279.4,
     'unit' => 'mm',
   ),
-  'fields' => 
-  array (
-    0 => 
-    array (
+  'fields' => array (
+    0 => array (
       'name' => 'results.customer',
       'label' => 'Customer',
       'type' => 'text',
@@ -31,8 +22,7 @@ return array (
       'align' => 'L',
       'data_source_key' => 'results.customer',
     ),
-    1 => 
-    array (
+    1 => array (
       'name' => 'results.address',
       'label' => 'Address',
       'type' => 'text',
@@ -47,8 +37,7 @@ return array (
       'align' => 'L',
       'data_source_key' => 'results.address',
     ),
-    2 => 
-    array (
+    2 => array (
       'name' => 'results.sample_description',
       'label' => 'Sample Description',
       'type' => 'text',
@@ -63,8 +52,7 @@ return array (
       'align' => 'L',
       'data_source_key' => 'results.sample_description',
     ),
-    3 => 
-    array (
+    3 => array (
       'name' => 'job_orders.sampling_site',
       'label' => 'Sampling Site',
       'type' => 'text',
@@ -79,8 +67,7 @@ return array (
       'align' => 'L',
       'data_source_key' => 'job_orders.sampling_site',
     ),
-    4 => 
-    array (
+    4 => array (
       'name' => 'results.control_no',
       'label' => 'Control No',
       'type' => 'text',
@@ -95,8 +82,7 @@ return array (
       'align' => 'L',
       'data_source_key' => 'results.control_no',
     ),
-    5 => 
-    array (
+    5 => array (
       'name' => 'results.collected_by',
       'label' => 'Sample Collected by',
       'type' => 'text',
@@ -111,8 +97,7 @@ return array (
       'align' => 'L',
       'data_source_key' => 'results.collected_by',
     ),
-    6 => 
-    array (
+    6 => array (
       'name' => 'results.collection_datetime',
       'label' => 'Date/Time of Collection',
       'type' => 'text',
@@ -127,8 +112,7 @@ return array (
       'align' => 'L',
       'data_source_key' => 'results.collection_datetime',
     ),
-    7 => 
-    array (
+    7 => array (
       'name' => 'results.receipt_at',
       'label' => 'Date/Time Submitted',
       'type' => 'text',
@@ -143,8 +127,7 @@ return array (
       'align' => 'L',
       'data_source_key' => 'results.receipt_at',
     ),
-    8 => 
-    array (
+    8 => array (
       'name' => 'results.analysis_datetime',
       'label' => 'Date/Time Analyzed',
       'type' => 'text',
@@ -159,8 +142,7 @@ return array (
       'align' => 'L',
       'data_source_key' => 'results.analysis_datetime',
     ),
-    9 => 
-    array (
+    9 => array (
       'name' => 'results.report_date',
       'label' => 'Date Reported',
       'type' => 'text',
@@ -175,8 +157,7 @@ return array (
       'align' => 'L',
       'data_source_key' => 'results.report_date',
     ),
-    10 => 
-    array (
+    10 => array (
       'name' => 'results.ref_no',
       'label' => 'Reference No',
       'type' => 'text',
@@ -191,8 +172,7 @@ return array (
       'align' => 'L',
       'data_source_key' => 'results.ref_no',
     ),
-    11 => 
-    array (
+    11 => array (
       'name' => 'ww_fo2b_matrix',
       'label' => 'Dynamic test matrix',
       'type' => 'dynamic_test_matrix',
@@ -200,17 +180,15 @@ return array (
       'x' => 28.001,
       'y' => 78.945,
       'w' => 159.492,
-      'h' => 106.055,
+      // Same plotted band as FO2 so few-test short-sheet row scale matches.
+      'h' => 120.0,
       'font_size' => 6.5,
       'font_family' => 'calibri',
       'font_color' => '#000000',
       'align' => 'L',
-      'table_config' => 
-      array (
-        'columns' => 
-        array (
-          0 => 
-          array (
+      'table_config' => array (
+        'columns' => array (
+          0 => array (
             'key' => 'test',
             'label' => 'TEST',
             'width_pct' => 34,
@@ -218,8 +196,7 @@ return array (
             'header_align' => 'C',
             'font_size' => 8,
           ),
-          1 => 
-          array (
+          1 => array (
             'key' => 'method',
             'label' => 'METHOD',
             'width_pct' => 48,
@@ -227,8 +204,7 @@ return array (
             'header_align' => 'C',
             'font_size' => 8,
           ),
-          2 => 
-          array (
+          2 => array (
             'key' => 'result',
             'label' => 'RESULTS',
             'width_pct' => 18,
@@ -241,7 +217,7 @@ return array (
         'header_row_height_mm' => 5,
         'header_row' => true,
         'border' => true,
-        'preview_rows' => 6,
+        'preview_rows' => 20,
         'test_name_bold' => true,
         'header_bold' => true,
         'method_font_size' => 6,
@@ -249,8 +225,7 @@ return array (
         'stretch_body' => false,
       ),
     ),
-    12 => 
-    array (
+    12 => array (
       'name' => 'fo2_lab_conditions',
       'label' => 'Lab conditions',
       'type' => 'multiline',
@@ -264,10 +239,8 @@ return array (
       'font_color' => '#000000',
       'align' => 'L',
       'data_source_key' => 'fo2_lab_conditions',
-      'options' => 
-      array (
-        'anchor' => 
-        array (
+      'options' => array (
+        'anchor' => array (
           'below' => 'ww_fo2b_matrix',
           'offset_mm' => 2,
         ),
@@ -275,8 +248,7 @@ return array (
 NA – Not Applicable for specified water body .',
       ),
     ),
-    13 => 
-    array (
+    13 => array (
       'name' => 'job_orders.field_data',
       'label' => 'FIELD DATA',
       'type' => 'multiline',
@@ -290,12 +262,12 @@ NA – Not Applicable for specified water body .',
       'font_color' => '#000000',
       'align' => 'L',
       'data_source_key' => 'job_orders.field_data',
-      'options' => 
-      array (
-        'anchor' => 
-        array (
+      'options' => array (
+        'anchor' => array (
+          // Right column beside NOTES (same band as fo2_notes). Tall sheets may raise
+          // further into this band so FIELD DATA is never clipped away.
           'below' => 'ww_fo2b_matrix',
-          'offset_mm' => 35,
+          'offset_mm' => 18,
         ),
         'static_text' => '**FIELD DATA:**
                        a) Temperature –
@@ -305,8 +277,7 @@ NA – Not Applicable for specified water body .',
                             (Field Sampling Logbook)',
       ),
     ),
-    14 => 
-    array (
+    14 => array (
       'name' => 'fo2_references',
       'label' => 'References',
       'type' => 'multiline',
@@ -320,10 +291,8 @@ NA – Not Applicable for specified water body .',
       'font_color' => '#000000',
       'align' => 'L',
       'data_source_key' => 'fo2_references',
-      'options' => 
-      array (
-        'anchor' => 
-        array (
+      'options' => array (
+        'anchor' => array (
           'below' => 'ww_fo2b_matrix',
           'offset_mm' => 9,
         ),
@@ -331,25 +300,22 @@ NA – Not Applicable for specified water body .',
 US – EPA',
       ),
     ),
-    15 => 
-    array (
+    15 => array (
       'name' => 'fo2_notes',
       'label' => 'Notes',
       'type' => 'multiline',
       'page' => 1,
       'x' => 12.221,
       'y' => 190.0,
-      'w' => 192.0,
+      'w' => 110.0,
       'h' => 22.0,
       'font_size' => 8.0,
       'font_family' => 'times',
       'font_color' => '#000000',
       'align' => 'L',
       'data_source_key' => 'fo2_notes',
-      'options' => 
-      array (
-        'anchor' => 
-        array (
+      'options' => array (
+        'anchor' => array (
           'below' => 'ww_fo2b_matrix',
           'offset_mm' => 18,
         ),
@@ -360,224 +326,87 @@ US – EPA',
 4. *Not EMB- DENR Accredited.',
       ),
     ),
-    16 => 
-    array (
-      'name' => 'fo2_label_reviewed',
-      'label' => 'Reviewed by label',
-      'type' => 'text',
+    16 => array (
+      'name' => 'fo2_signatory_reviewed',
+      'label' => 'Reviewed by',
+      'type' => 'multiline',
       'page' => 1,
       'x' => 12.221,
       'y' => 247.0,
-      'w' => 50.0,
-      'h' => 4.0,
-      'font_size' => 10.0,
-      'font_family' => 'times',
-      'font_color' => '#000000',
-      'align' => 'L',
-      'data_source_key' => 'fo2_label_reviewed',
-      'options' => 
-      array (
-        'anchor' => 
-        array (
-          'below' => 'ww_fo2b_matrix',
-          'offset_mm' => 70,
-          'above' => 'fo2_form_meta',
-          'above_offset_mm' => 42,
-        ),
-        'static_text' => 'Reviewed by:',
-      ),
-    ),
-    17 => 
-    array (
-      'name' => 'results.analyst_name',
-      'label' => 'Reviewed by',
-      'type' => 'text',
-      'page' => 1,
-      'x' => 12.0,
-      'y' => 252.0,
       'w' => 95.0,
-      'h' => 5.0,
+      'h' => 22.0,
       'font_size' => 10.0,
       'font_family' => 'times',
       'font_color' => '#000000',
       'align' => 'L',
-      'data_source_key' => 'results.analyst_name',
-      'options' => 
-      array (
-        'anchor' => 
-        array (
-          'below' => 'ww_fo2b_matrix',
-          'offset_mm' => 77,
+      'data_source_key' => 'fo2_signatory_reviewed',
+      'options' => array (
+        'anchor' => array (
+          'below' => 'fo2_notes',
+          'offset_mm' => 20,
           'above' => 'fo2_form_meta',
-          'above_offset_mm' => 35,
+          'above_offset_mm' => 13,
         ),
-        'static_text' => 'MA. ANTONIELA C. LANACA',
+        'signatory_block' => array (
+          'label' => 'Reviewed by:',
+          'people' => array (
+            0 => array (
+              'name_key' => 'results.analyst_name',
+              'fallback_name' => 'MA. ANTONIELA C. LANACA',
+              'lines_after_name' => array (
+                0 => 'Laboratory Analyst',
+                1 => 'Registered Chemical Technician, License #00761',
+              ),
+            ),
+          ),
+        ),
+        'static_text' => 'Reviewed by:
+MA. ANTONIELA C. LANACA
+Laboratory Analyst
+Registered Chemical Technician, License #00761',
       ),
     ),
-    18 => 
-    array (
-      'name' => 'fo2_role_reviewed',
-      'label' => 'Reviewed role',
-      'type' => 'text',
-      'page' => 1,
-      'x' => 12.0,
-      'y' => 258.0,
-      'w' => 95.0,
-      'h' => 4.0,
-      'font_size' => 10.0,
-      'font_family' => 'times',
-      'font_color' => '#000000',
-      'align' => 'L',
-      'data_source_key' => 'fo2_role_reviewed',
-      'options' => 
-      array (
-        'anchor' => 
-        array (
-          'below' => 'ww_fo2b_matrix',
-          'offset_mm' => 81,
-          'above' => 'fo2_form_meta',
-          'above_offset_mm' => 31,
-        ),
-        'static_text' => 'Laboratory Analyst',
-      ),
-    ),
-    19 => 
-    array (
-      'name' => 'fo2_lic_reviewed',
-      'label' => 'Reviewed license',
-      'type' => 'text',
-      'page' => 1,
-      'x' => 12.0,
-      'y' => 262.0,
-      'w' => 95.0,
-      'h' => 4.0,
-      'font_size' => 10.0,
-      'font_family' => 'times',
-      'font_color' => '#000000',
-      'align' => 'L',
-      'data_source_key' => 'fo2_lic_reviewed',
-      'options' => 
-      array (
-        'anchor' => 
-        array (
-          'below' => 'ww_fo2b_matrix',
-          'offset_mm' => 84,
-          'above' => 'fo2_form_meta',
-          'above_offset_mm' => 28,
-        ),
-        'static_text' => 'Registered Chemical Technician, License #00761',
-      ),
-    ),
-    20 => 
-    array (
-      'name' => 'fo2_label_certified',
-      'label' => 'Certified Correct label',
-      'type' => 'text',
+    17 => array (
+      'name' => 'fo2_signatory_certified',
+      'label' => 'Certified Correct',
+      'type' => 'multiline',
       'page' => 1,
       'x' => 116.0,
       'y' => 247.0,
-      'w' => 55.0,
-      'h' => 4.0,
-      'font_size' => 10.0,
-      'font_family' => 'times',
-      'font_color' => '#000000',
-      'align' => 'L',
-      'data_source_key' => 'fo2_label_certified',
-      'options' => 
-      array (
-        'anchor' => 
-        array (
-          'below' => 'ww_fo2b_matrix',
-          'offset_mm' => 70,
-          'above' => 'fo2_form_meta',
-          'above_offset_mm' => 42,
-        ),
-        'static_text' => 'Certified Correct:',
-      ),
-    ),
-    21 => 
-    array (
-      'name' => 'results.analyst_name_2',
-      'label' => 'Certified Correct',
-      'type' => 'text',
-      'page' => 1,
-      'x' => 116.0,
-      'y' => 252.0,
       'w' => 90.0,
-      'h' => 5.0,
+      'h' => 22.0,
       'font_size' => 10.0,
       'font_family' => 'times',
       'font_color' => '#000000',
       'align' => 'L',
-      'data_source_key' => 'results.analyst_name_2',
-      'options' => 
-      array (
-        'anchor' => 
-        array (
-          'below' => 'ww_fo2b_matrix',
-          'offset_mm' => 77,
+      'data_source_key' => 'fo2_signatory_certified',
+      'options' => array (
+        'anchor' => array (
+          'below' => 'fo2_notes',
+          'offset_mm' => 20,
           'above' => 'fo2_form_meta',
-          'above_offset_mm' => 35,
+          'above_offset_mm' => 13,
         ),
-        'static_text' => 'WENDY A. TAYSON, RCh, MEnE',
+        'signatory_block' => array (
+          'label' => 'Certified Correct:',
+          'people' => array (
+            0 => array (
+              'name_key' => 'results.analyst_name_2',
+              'fallback_name' => 'WENDY A. TAYSON, RCh, MEnE',
+              'lines_after_name' => array (
+                0 => 'Laboratory Head',
+                1 => 'Registered Chemist, License #15131',
+              ),
+            ),
+          ),
+        ),
+        'static_text' => 'Certified Correct:
+WENDY A. TAYSON, RCh, MEnE
+Laboratory Head
+Registered Chemist, License #15131',
       ),
     ),
-    22 => 
-    array (
-      'name' => 'fo2_role_certified',
-      'label' => 'Certified role',
-      'type' => 'text',
-      'page' => 1,
-      'x' => 116.0,
-      'y' => 258.0,
-      'w' => 90.0,
-      'h' => 4.0,
-      'font_size' => 10.0,
-      'font_family' => 'times',
-      'font_color' => '#000000',
-      'align' => 'L',
-      'data_source_key' => 'fo2_role_certified',
-      'options' => 
-      array (
-        'anchor' => 
-        array (
-          'below' => 'ww_fo2b_matrix',
-          'offset_mm' => 81,
-          'above' => 'fo2_form_meta',
-          'above_offset_mm' => 31,
-        ),
-        'static_text' => 'Laboratory Head',
-      ),
-    ),
-    23 => 
-    array (
-      'name' => 'fo2_lic_certified',
-      'label' => 'Certified license',
-      'type' => 'text',
-      'page' => 1,
-      'x' => 116.0,
-      'y' => 262.0,
-      'w' => 90.0,
-      'h' => 4.0,
-      'font_size' => 10.0,
-      'font_family' => 'times',
-      'font_color' => '#000000',
-      'align' => 'L',
-      'data_source_key' => 'fo2_lic_certified',
-      'options' => 
-      array (
-        'anchor' => 
-        array (
-          'below' => 'ww_fo2b_matrix',
-          'offset_mm' => 84,
-          'above' => 'fo2_form_meta',
-          'above_offset_mm' => 28,
-        ),
-        'static_text' => 'Registered Chemist, License #15131',
-      ),
-    ),
-    24 => 
-    array (
+    18 => array (
       'name' => 'fo2_form_meta',
       'label' => 'Form control footer',
       'type' => 'multiline',
@@ -591,17 +420,15 @@ US – EPA',
       'font_color' => '#000000',
       'align' => 'L',
       'data_source_key' => 'fo2_form_meta',
-      'options' => 
-      array (
+      'options' => array (
         'static_text' => 'Test Report#: CHE WW –
 NPPC-ADL
 LSP 7.8_FO2
 Rev. 17/Issue 18
 Effectivity Date: 09/16/2026',
-        'anchor' => 
-        array (
-          'below' => 'ww_fo2b_matrix',
-          'offset_mm' => 110,
+        'anchor' => array (
+          'below' => 'fo2_notes',
+          'offset_mm' => 33,
         ),
       ),
     ),

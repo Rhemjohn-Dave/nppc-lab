@@ -53,6 +53,26 @@ class DynamicTestMatrixOutcomePlacementTest extends TestCase
         $this->assertSame('Passed; Retested', $rows[0]['remarks']);
     }
 
+    public function test_duplicate_outcome_in_remarks_prints_once(): void
+    {
+        $rows = DynamicTestMatrix::placeOutcomeForColumns(
+            [$this->row('Passed')],
+            DynamicTestMatrix::drinkingWaterPhysicoColumns(),
+        );
+
+        $this->assertSame('Passed', $rows[0]['remarks']);
+    }
+
+    public function test_already_prefixed_outcome_in_remarks_prints_once(): void
+    {
+        $rows = DynamicTestMatrix::placeOutcomeForColumns(
+            [$this->row('Passed; Passed')],
+            DynamicTestMatrix::drinkingWaterPhysicoColumns(),
+        );
+
+        $this->assertSame('Passed', $rows[0]['remarks']);
+    }
+
     public function test_rows_without_outcome_are_unchanged(): void
     {
         $row = ['test' => 'pH', 'result' => '7.1', 'result_value' => '7.1', 'pass_fail' => null, 'remarks' => null];

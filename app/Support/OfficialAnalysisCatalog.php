@@ -1421,4 +1421,24 @@ TXT;
     {
         return ['MB-02A', 'MB-02B', 'DW-BACT-HPC', 'DW-BACT-TC', 'DW-BACT-FC'];
     }
+
+    /**
+     * Drinking-water physico types that require Pass/Fail on FO3/FO37
+     * (excludes Sample Prep DW-10 and E. coli DW-11).
+     *
+     * @return list<string>
+     */
+    public static function drinkingWaterPhysicoPassFailCodes(): array
+    {
+        return [
+            'DW-01', 'DW-02', 'DW-03', 'DW-04', 'DW-05', 'DW-06', 'DW-07', 'DW-08', 'DW-09',
+            'DW-12', 'DW-13', 'DW-14', 'DW-15', 'DW-16', 'DW-17', 'DW-18', 'DW-19', 'DW-20',
+        ];
+    }
+
+    public static function requiresPassFailByDefault(?string $code): bool
+    {
+        return is_string($code)
+            && in_array($code, self::drinkingWaterPhysicoPassFailCodes(), true);
+    }
 }

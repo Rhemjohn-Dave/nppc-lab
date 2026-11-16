@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Enums\ControlledFormFieldType;
 use App\Support\DynamicTestMatrix;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -9,7 +10,7 @@ use Tests\TestCase;
 class DynamicTestMatrixDesignerPreviewParityTest extends TestCase
 {
     #[Test]
-    public function preview_rows_for_designer_config_prefers_catalog_length_when_preview_rows_stale(): void
+    public function preview_rows_for_designer_config_caps_at_preview_rows(): void
     {
         $base = [
             ['test' => 'A', 'method' => 'M1'],
@@ -25,10 +26,9 @@ class DynamicTestMatrixDesignerPreviewParityTest extends TestCase
 
         $rows = DynamicTestMatrix::previewRowsForDesignerConfig($config, $base);
 
-        $this->assertCount(3, $rows);
+        $this->assertCount(2, $rows);
         $this->assertSame('edited', $rows[0]['method']);
         $this->assertSame('B', $rows[1]['test']);
-        $this->assertSame('C', $rows[2]['test']);
     }
 
     #[Test]
@@ -49,5 +49,22 @@ class DynamicTestMatrixDesignerPreviewParityTest extends TestCase
         $this->assertCount(1, $rows);
         $this->assertSame('10', $rows[0]['acceptable_values']);
         $this->assertSame('Colorimetric', $rows[0]['method']);
+    }
+
+    #[Test]
+    public function fo2_normalize_preserves_designer_preview_rows(): void
+    {
+        $normalized = DynamicTestMatrix::normalizeStoredTableConfig(
+            'ww_fo2b_matrix',
+            ControlledFormFieldType::DynamicTestMatrix,
+            [
+                'columns' => DynamicTestMatrix::wastewaterPhysicoConfig()['columns'],
+                'preview_rows' => 7,
+                'stretch_body' => false,
+            ],
+        );
+
+        $this->assertIsArray($normalized);
+        $this->assertSame(7, (int) ($normalized['preview_rows'] ?? 0));
     }
 }

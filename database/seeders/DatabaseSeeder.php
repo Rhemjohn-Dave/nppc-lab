@@ -118,6 +118,10 @@ class DatabaseSeeder extends Seeder
                 if ($acceptable !== null) {
                     $fill['acceptable_values'] = $acceptable;
                 }
+                // DW physico FO3/FO37: Pass/Fail is required end-to-end.
+                if (OfficialAnalysisCatalog::requiresPassFailByDefault($code)) {
+                    $fill['requires_pass_fail'] = true;
+                }
 
                 $type->fill($fill)->save();
             }

@@ -340,15 +340,22 @@ class ResultSignatories
             'results.analyst_prc_4',
         ];
         $licenseKeys = self::fo2LicenseKeysForForm($form);
+        $fromBlocks = self::designerSlotsFromSignatoryBlocks($revision, $form, $count);
 
         $rows = [];
         for ($i = 0; $i < $count; $i++) {
             $name = self::fieldStaticText($byKey[$nameKeys[$i]] ?? null);
+            if ($name === '') {
+                $name = $fromBlocks[$i]['name'] ?? '';
+            }
             $prc = self::normalizePrcStatic(self::fieldStaticText($byKey[$prcKeys[$i]] ?? null));
             if ($prc === null && isset($licenseKeys[$i])) {
                 $prc = self::parseLicenseNumber(
                     self::fieldStaticText($byKey[$licenseKeys[$i]] ?? null),
                 );
+            }
+            if ($prc === null) {
+                $prc = $fromBlocks[$i]['prc_id'] ?? null;
             }
 
             $rows[] = [
@@ -361,7 +368,78 @@ class ResultSignatories
     }
 
     /**
-     * FO2 / FO2A license chrome fields mapped to dialog slot order.
+     * FO2-family multiline signatory blocks → dialog slot order.
+     *
+     * @return list<array{name: string, prc_id: string|null}>
+     */
+    private static function designerSlotsFromSignatoryBlocks(
+        mixed $revision,
+        ?ControlledForm $form,
+        int $count,
+    ): array {
+        $empty = array_fill(0, $count, ['name' => '', 'prc_id' => null]);
+        if ($revision === null) {
+            return $empty;
+        }
+
+        $byName = [];
+        foreach ($revision->fields as $field) {
+            $byName[(string) $field->name] = $field;
+        }
+
+        $order = match ($form?->form_code) {
+            'LSP-7.8-FO2B' => [
+                ['fo2_signatory_reviewed', 0],
+                ['fo2_signatory_certified', 0],
+            ],
+            'LSP-7.8-FO2A' => [
+                ['fo2_signatory_reviewed', 0],
+                ['fo2_signatory_certified', 0],
+                ['fo2_signatory_noted', 0],
+            ],
+            'LSP-7.8-FO2' => [
+                ['fo2_signatory_reviewed', 0],
+                ['fo2_signatory_noted', 0],
+                ['fo2_signatory_certified', 0],
+                ['fo2_signatory_certified', 1],
+            ],
+            default => [],
+        };
+
+        $rows = [];
+        foreach ($order as [$fieldName, $personIndex]) {
+            if (count($rows) >= $count) {
+                break;
+            }
+            $field = $byName[$fieldName] ?? null;
+            $options = is_array($field?->options) ? $field->options : [];
+            $block = is_array($options['signatory_block'] ?? null) ? $options['signatory_block'] : [];
+            $people = is_array($block['people'] ?? null) ? $block['people'] : [];
+            $person = is_array($people[$personIndex] ?? null) ? $people[$personIndex] : [];
+            $name = trim((string) ($person['fallback_name'] ?? ''));
+            $prc = null;
+            $lines = is_array($person['lines_after_name'] ?? null) ? $person['lines_after_name'] : [];
+            foreach (array_reverse($lines) as $line) {
+                if (! is_string($line) && ! is_numeric($line)) {
+                    continue;
+                }
+                $prc = self::parseLicenseNumber((string) $line);
+                if ($prc !== null) {
+                    break;
+                }
+            }
+            $rows[] = ['name' => $name, 'prc_id' => $prc];
+        }
+
+        while (count($rows) < $count) {
+            $rows[] = ['name' => '', 'prc_id' => null];
+        }
+
+        return array_slice($rows, 0, $count);
+    }
+
+    /**
+     * FO2 / FO2A license chrome fields mapped to dialog slot order (legacy micro-fields).
      *
      * @return list<string>
      */

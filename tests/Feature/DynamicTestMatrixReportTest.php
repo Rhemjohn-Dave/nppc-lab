@@ -366,6 +366,14 @@ class DynamicTestMatrixReportTest extends TestCase
             ->post("/receiving/{$job->id}/receive")
             ->assertRedirect('/receiving');
 
+        $job->forceFill([
+            'result_footer' => [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'TR-FO37-001',
+            ],
+        ])->save();
+
         foreach ($job->fresh()->analyses as $line) {
             $payload = [
                 'performed_at' => '2026-07-29T15:00',
@@ -393,7 +401,8 @@ class DynamicTestMatrixReportTest extends TestCase
 
             $this->actingAs($line->assignee ?? $analyst)
                 ->post("/analyst/tasks/{$line->id}/complete", $payload)
-                ->assertRedirect();
+                ->assertRedirect()
+                ->assertSessionDoesntHaveErrors();
         }
 
         $job = $job->fresh(['analyses.analysisType', 'analyses.assignee', 'packages']);
@@ -564,35 +573,36 @@ class DynamicTestMatrixReportTest extends TestCase
         $this->assertNotNull($meta);
         $this->assertStringContainsString('CHE WW', (string) ($meta->options['static_text'] ?? ''));
         $this->assertStringContainsString('Rev. 17/Issue 18', (string) ($meta->options['static_text'] ?? ''));
-        $certified2 = $revision->fields()->where('name', 'results.analyst_name_4')->first();
-        $this->assertNotNull($certified2);
-        $this->assertSame('ww_fo2_matrix', $certified2->options['anchor']['below'] ?? null);
-        $this->assertSame('fo2_form_meta', $certified2->options['anchor']['above'] ?? null);
+        $this->assertSame('fo2_notes', $meta->options['anchor']['below'] ?? null);
+        $certified = $revision->fields()->where('name', 'fo2_signatory_certified')->first();
+        $this->assertNotNull($certified);
+        $this->assertSame('fo2_notes', $certified->options['anchor']['below'] ?? null);
+        $this->assertSame('fo2_form_meta', $certified->options['anchor']['above'] ?? null);
+        $this->assertCount(2, $certified->options['signatory_block']['people'] ?? []);
 
         $notes = $revision->fields()->where('name', 'fo2_notes')->first();
         $this->assertNotNull($notes);
-        $notesEnd = (float) ($notes->options['anchor']['offset_mm'] ?? 0) + (float) $notes->height;
+        $this->assertSame('ww_fo2_matrix', $notes->options['anchor']['below'] ?? null);
 
         foreach ([
-            'fo2_label_reviewed',
-            'results.analyst_name',
-            'results.analyst_name_2',
-            'results.analyst_name_3',
-            'results.analyst_name_4',
+            'fo2_signatory_reviewed',
+            'fo2_signatory_certified',
+            'fo2_signatory_noted',
         ] as $signatoryField) {
             $field = $revision->fields()->where('name', $signatoryField)->first();
             $this->assertNotNull($field, $signatoryField);
             $anchor = is_array($field->options['anchor'] ?? null) ? $field->options['anchor'] : [];
-            $this->assertSame('ww_fo2_matrix', $anchor['below'] ?? null, $signatoryField);
+            $this->assertSame('fo2_notes', $anchor['below'] ?? null, $signatoryField);
             $this->assertSame('fo2_form_meta', $anchor['above'] ?? null, $signatoryField);
             $this->assertGreaterThan(0, (float) ($anchor['above_offset_mm'] ?? 0), $signatoryField);
         }
 
-        $reviewed = $revision->fields()->where('name', 'fo2_label_reviewed')->first();
+        $reviewed = $revision->fields()->where('name', 'fo2_signatory_reviewed')->first();
         $this->assertNotNull($reviewed);
-        $this->assertGreaterThanOrEqual(
-            $notesEnd,
+        $this->assertEqualsWithDelta(
+            6.0,
             (float) ($reviewed->options['anchor']['offset_mm'] ?? 0),
+            0.01,
         );
 
         $rows = \App\Support\DynamicTestMatrix::previewRowsForForm($form->fresh(['analysisPackage', 'analysisTypes']));
@@ -944,6 +954,49 @@ class DynamicTestMatrixReportTest extends TestCase
         $this->assertNotNull($matched);
         $this->assertSame('LSP-7.8-FO37', $matched->form_code);
         $this->assertNotSame('LSP-7.8-FO3', $matched->form_code);
+    }
+
+    public function test_dw_physico_types_seed_with_requires_pass_fail(): void
+    {
+        $this->seed();
+
+        $codes = \App\Support\OfficialAnalysisCatalog::drinkingWaterPhysicoPassFailCodes();
+        $this->assertNotEmpty($codes);
+
+        foreach ($codes as $code) {
+            $type = AnalysisType::query()->where('code', $code)->firstOrFail();
+            $this->assertTrue(
+                (bool) $type->requires_pass_fail,
+                "{$code} should seed with requires_pass_fail",
+            );
+        }
+
+        $prep = AnalysisType::query()->where('code', 'DW-10')->firstOrFail();
+        $this->assertFalse((bool) $prep->requires_pass_fail);
+    }
+
+    public function test_dw_physico_pass_fail_moves_to_remarks_column_on_print(): void
+    {
+        $rows = [
+            [
+                'test' => 'Color (Apparent Color)',
+                'result' => '5 (Passed)',
+                'result_value' => '5',
+                'pass_fail' => 'Passed',
+                'sample_1' => '5 (Passed)',
+                'remarks' => null,
+            ],
+        ];
+        $columns = [
+            ['key' => 'test'],
+            ['key' => 'result'],
+            ['key' => 'remarks'],
+        ];
+
+        $printed = \App\Support\DynamicTestMatrix::placeOutcomeForColumns($rows, $columns);
+
+        $this->assertSame('5', $printed[0]['result']);
+        $this->assertSame('Passed', $printed[0]['remarks']);
     }
 
     public function test_unrelated_types_do_not_match_dw_old_fo3(): void

@@ -783,6 +783,8 @@ class AnalysisResultReportResolver
         $revision->loadMissing('fields');
 
         $fingerprint = hash('xxh128', json_encode([
+            // Bump when overlay print logic changes so stale 5-minute PDFs are not reused.
+            'print_logic' => 'dw-remarks-outcome-dedupe-v1',
             $revision->id,
             $revision->updated_at?->getTimestamp(),
             $this->overlayLayoutFingerprint($revision),

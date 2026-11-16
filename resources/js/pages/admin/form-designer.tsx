@@ -51,11 +51,14 @@ import type {
 import {
     fieldAnchor,
     fieldBold,
+    fieldLineHeightFactor,
     fieldListIndentMm,
     fieldListStyle,
+    fieldParagraphGapMm,
     fieldStaticText,
     parseInlineBoldSegments,
     parseMultilineListPreview,
+    previewTopMmForAnchor,
 } from '@/lib/controlled-forms';
 import {
     fitScaleToWidth,
@@ -1334,28 +1337,12 @@ export default function FormDesigner({
                                         // Natural-height tables: the box ends at the last row (field height stays as print capacity).
                                         const contentMm = isMatrix ? (matrixContentMm[id] ?? null) : null;
                                         const endsAtLastRow = contentMm !== null && contentMm > 0;
-                                        const anchor = fieldAnchor(field);
-                                        let previewTopMm = field.y;
-                                        if (anchor) {
-                                            const matrixIndex = fields.findIndex(
-                                                (item) =>
-                                                    item.page_number === field.page_number &&
-                                                    item.field_type === 'dynamic_test_matrix' &&
-                                                    item.name === anchor.below,
-                                            );
-                                            if (matrixIndex >= 0) {
-                                                const matrix = fields[matrixIndex];
-                                                const matrixId = clientId(matrix, matrixIndex);
-                                                const matrixContent =
-                                                    matrixContentMm[matrixId] ?? null;
-                                                if (matrixContent !== null && matrixContent > 0) {
-                                                    previewTopMm =
-                                                        matrix.y +
-                                                        matrixContent +
-                                                        anchor.offset_mm;
-                                                }
-                                            }
-                                        }
+                                        const previewTopMm = previewTopMmForAnchor(
+                                            field,
+                                            fields,
+                                            matrixContentMm,
+                                            clientId,
+                                        );
                                         const staticText = fieldStaticText(field);
                                         const isMultiline = field.field_type === 'multiline';
                                         const listStyle = isMultiline
@@ -1383,12 +1370,19 @@ export default function FormDesigner({
                                         // font_size is PDF points (TCPDF); match matrix preview / print.
                                         const fontSizePt = Number(field.font_size) || 11;
                                         const fontSizePx = fontSizeCssPx(fontSizePt, pxPerMm);
-                                        const lineHeightMm = Math.max(3.0, fontSizePt * 0.42);
+                                        const lineHeightFactor = fieldLineHeightFactor(field);
+                                        const paragraphGapMm = fieldParagraphGapMm(field);
+                                        const lineHeightMm =
+                                            Math.max(3.0, fontSizePt * 0.42) * lineHeightFactor;
                                         const lineHeightPx = lineHeightMm * pxPerMm;
+                                        const paragraphGapPx = paragraphGapMm * pxPerMm;
                                         const listGutterPx = Math.max(
                                             4,
                                             listIndentMm * pxPerMm,
                                         );
+                                        const previewLines = showWrappedPreview
+                                            ? previewBody.split(/\r\n|\n|\r/)
+                                            : null;
 
                                         return (
                                             <div
@@ -1540,14 +1534,37 @@ export default function FormDesigner({
                                                                         ),
                                                                     )}
                                                                 </span>
+                                                            ) : previewLines ? (
+                                                                <span className="flex w-full flex-col font-normal text-slate-800">
+                                                                    {previewLines.map(
+                                                                        (line, lineIndex) => (
+                                                                            <span
+                                                                                key={`l-${lineIndex}`}
+                                                                                className="whitespace-pre-wrap break-words"
+                                                                                style={{
+                                                                                    minHeight: `${lineHeightPx}px`,
+                                                                                    marginBottom:
+                                                                                        line === '' &&
+                                                                                        paragraphGapPx >
+                                                                                            0
+                                                                                            ? `${paragraphGapPx}px`
+                                                                                            : undefined,
+                                                                                }}
+                                                                            >
+                                                                                {line === ''
+                                                                                    ? '\u00a0'
+                                                                                    : renderInlineBoldPreview(
+                                                                                          line,
+                                                                                          fieldBold(
+                                                                                              field,
+                                                                                          ),
+                                                                                      )}
+                                                                            </span>
+                                                                        ),
+                                                                    )}
+                                                                </span>
                                                             ) : (
-                                                                <span
-                                                                    className={
-                                                                        showWrappedPreview
-                                                                            ? 'w-full whitespace-pre-wrap break-words font-normal text-slate-800'
-                                                                            : 'truncate font-normal text-slate-800'
-                                                                    }
-                                                                >
+                                                                <span className="truncate font-normal text-slate-800">
                                                                     {renderInlineBoldPreview(
                                                                         previewBody,
                                                                         fieldBold(field),

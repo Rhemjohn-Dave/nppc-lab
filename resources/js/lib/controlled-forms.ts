@@ -211,6 +211,81 @@ export function textLineHeightMm(fontSize: number): number {
 }
 
 /**
+ * Approximate multiline ink height from static_text (Designer preview).
+ * Counts source lines; blank lines add paragraph_gap_mm like the PDF filler.
+ */
+export function estimateMultilineContentHeightMm(field: DesignerField): number {
+    const text = fieldStaticText(field);
+    const lineHeight =
+        textLineHeightMm(field.font_size) * fieldLineHeightFactor(field);
+    if (text.trim() === '') {
+        return Math.max(lineHeight, field.height);
+    }
+
+    const lines = text.replace(/\r\n/g, '\n').split('\n');
+    const paragraphGap = fieldParagraphGapMm(field);
+    let height = 0;
+    for (const line of lines) {
+        if (line.trim() === '') {
+            height += lineHeight + paragraphGap;
+        } else {
+            height += lineHeight;
+        }
+    }
+
+    return Math.max(lineHeight, Math.round(height * 1000) / 1000);
+}
+
+/**
+ * Preview Y for a field with options.anchor.below.
+ * Matrix targets use matrix content height; fo2_notes uses estimated NOTES ink.
+ */
+export function previewTopMmForAnchor(
+    field: DesignerField,
+    fields: DesignerField[],
+    matrixContentByClientId: Record<string, number | null>,
+    clientIdFor: (f: DesignerField, index: number) => string,
+): number {
+    const anchor = fieldAnchor(field);
+    if (!anchor) {
+        return field.y;
+    }
+
+    const belowIndex = fields.findIndex(
+        (item) =>
+            item.page_number === field.page_number && item.name === anchor.below,
+    );
+    if (belowIndex < 0) {
+        return field.y;
+    }
+
+    const belowField = fields[belowIndex];
+    if (belowField.field_type === 'dynamic_test_matrix') {
+        const matrixId = clientIdFor(belowField, belowIndex);
+        const matrixContent = matrixContentByClientId[matrixId] ?? null;
+        if (matrixContent !== null && matrixContent > 0) {
+            return belowField.y + matrixContent + anchor.offset_mm;
+        }
+
+        return field.y;
+    }
+
+    if (belowField.name === 'fo2_notes' || belowField.field_type === 'multiline') {
+        const notesTop = previewTopMmForAnchor(
+            belowField,
+            fields,
+            matrixContentByClientId,
+            clientIdFor,
+        );
+        const notesHeight = estimateMultilineContentHeightMm(belowField);
+
+        return notesTop + notesHeight + anchor.offset_mm;
+    }
+
+    return field.y;
+}
+
+/**
  * Shift a field's flow offset and designer Y together.
  * When metaOffsetMm is provided, above_offset_mm stays in sync so PDF clamp
  * gaps match Designer Δoffset.
@@ -345,6 +420,76 @@ export function fieldListIndentMm(field: DesignerField): number {
     const raw = Number(field.options?.list_indent_mm);
 
     return Number.isFinite(raw) && raw > 0 ? raw : 6;
+}
+
+/** Multiplies PDF/canvas line step max(3, fontPt * 0.42). Clamped 0.75–2.0. */
+export function fieldLineHeightFactor(field: DesignerField): number {
+    const raw = Number(field.options?.line_height_factor);
+    if (!Number.isFinite(raw) || raw <= 0) {
+        return 1;
+    }
+
+    return Math.min(2, Math.max(0.75, raw));
+}
+
+/** Extra mm after a blank source line. Clamped 0–12. */
+export function fieldParagraphGapMm(field: DesignerField): number {
+    const raw = Number(field.options?.paragraph_gap_mm);
+    if (!Number.isFinite(raw) || raw <= 0) {
+        return 0;
+    }
+
+    return Math.min(12, raw);
+}
+
+/** Insert text at a textarea selection. */
+export function insertTextAtSelection(
+    value: string,
+    selectionStart: number,
+    selectionEnd: number,
+    insert: string,
+): { value: string; selectionStart: number; selectionEnd: number } {
+    const start = Math.max(0, Math.min(selectionStart, selectionEnd));
+    const end = Math.max(0, Math.max(selectionStart, selectionEnd));
+    const next = `${value.slice(0, start)}${insert}${value.slice(end)}`;
+    const cursor = start + insert.length;
+
+    return {
+        value: next,
+        selectionStart: cursor,
+        selectionEnd: cursor,
+    };
+}
+
+/**
+ * Tab indent: insert 4 spaces at the start of each line touching the selection
+ * (code-editor style), not at the raw cursor (which often sits at end-of-line).
+ */
+export function indentStaticTextLines(
+    value: string,
+    selectionStart: number,
+    selectionEnd: number,
+    indent = '    ',
+): { value: string; selectionStart: number; selectionEnd: number } {
+    const start = Math.max(0, Math.min(selectionStart, selectionEnd));
+    const end = Math.max(0, Math.max(selectionStart, selectionEnd));
+    const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+    let lineEnd = value.indexOf('\n', end);
+    if (lineEnd === -1) {
+        lineEnd = value.length;
+    }
+
+    const block = value.slice(lineStart, lineEnd);
+    const lines = block.split('\n');
+    const indented = lines.map((line) => `${indent}${line}`).join('\n');
+    const next = `${value.slice(0, lineStart)}${indented}${value.slice(lineEnd)}`;
+    const added = indent.length * lines.length;
+
+    return {
+        value: next,
+        selectionStart: start + indent.length,
+        selectionEnd: end + added,
+    };
 }
 
 export type MultilineListPreview = {

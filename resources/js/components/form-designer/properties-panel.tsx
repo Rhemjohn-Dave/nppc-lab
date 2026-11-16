@@ -11,9 +11,12 @@ import {
     metaOffsetForAbove,
     patchFieldAnchor,
     fieldBold,
+    fieldLineHeightFactor,
     fieldListIndentMm,
     fieldListStyle,
+    fieldParagraphGapMm,
     fieldStaticText,
+    indentStaticTextLines,
     minAnchorOffsetMm,
     patchFieldOptions,
     sharedAnchorBelow,
@@ -493,17 +496,15 @@ export default function PropertiesPanel({
     const staticText = fieldStaticText(selected);
     const listStyle = fieldListStyle(selected);
     const listIndentMm = fieldListIndentMm(selected);
+    const lineHeightFactor = fieldLineHeightFactor(selected);
+    const paragraphGapMm = fieldParagraphGapMm(selected);
 
-    function applyInlineBoldSelection() {
-        const el = staticTextRef.current;
-        if (!el || !canEdit || !selected) {
+    function applyStaticTextEdit(
+        next: { value: string; selectionStart: number; selectionEnd: number },
+    ) {
+        if (!selected) {
             return;
         }
-        const next = toggleInlineBoldSelection(
-            el.value,
-            el.selectionStart ?? 0,
-            el.selectionEnd ?? 0,
-        );
         onUpdate({
             options: patchFieldOptions(selected.options, {
                 static_text: next.value.trim() === '' ? null : next.value,
@@ -517,6 +518,34 @@ export default function PropertiesPanel({
             node.focus();
             node.setSelectionRange(next.selectionStart, next.selectionEnd);
         });
+    }
+
+    function applyInlineBoldSelection() {
+        const el = staticTextRef.current;
+        if (!el || !canEdit || !selected) {
+            return;
+        }
+        applyStaticTextEdit(
+            toggleInlineBoldSelection(
+                el.value,
+                el.selectionStart ?? 0,
+                el.selectionEnd ?? 0,
+            ),
+        );
+    }
+
+    function insertStaticTextTabIndent() {
+        const el = staticTextRef.current;
+        if (!el || !canEdit || !selected) {
+            return;
+        }
+        applyStaticTextEdit(
+            indentStaticTextLines(
+                staticText,
+                el.selectionStart ?? 0,
+                el.selectionEnd ?? 0,
+            ),
+        );
     }
     const matrixAnchors = pageFields.filter(
         (field) =>
@@ -742,7 +771,7 @@ export default function PropertiesPanel({
                                 ref={staticTextRef}
                                 className="min-h-36 w-full rounded-md border bg-white px-2 py-1.5 font-mono text-xs leading-snug"
                                 disabled={!canEdit}
-                                placeholder="Printed when no data source value (notes, labels, titles…). Select text and click Bold selection."
+                                placeholder="Printed when no data source value (notes, labels, titles…). Select text and click Bold selection. Tab inserts 4 spaces."
                                 value={staticText}
                                 onChange={(event) =>
                                     onUpdate({
@@ -758,10 +787,86 @@ export default function PropertiesPanel({
                                         ),
                                     })
                                 }
+                                onKeyDown={(event) => {
+                                    if (event.key !== 'Tab' || !canEdit) {
+                                        return;
+                                    }
+                                    event.preventDefault();
+                                    insertStaticTextTabIndent();
+                                }}
                                 onBlur={() => onUpdate({}, true)}
                             />
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                    <Label htmlFor="prop-line-height-factor">
+                                        Line spacing
+                                    </Label>
+                                    <Input
+                                        id="prop-line-height-factor"
+                                        type="number"
+                                        min={0.75}
+                                        max={2}
+                                        step={0.05}
+                                        disabled={!canEdit}
+                                        value={lineHeightFactor}
+                                        onChange={(event) => {
+                                            const raw = Number(event.target.value);
+                                            const next = Number.isFinite(raw)
+                                                ? Math.min(2, Math.max(0.75, raw))
+                                                : 1;
+                                            onUpdate({
+                                                options: patchFieldOptions(
+                                                    selected.options,
+                                                    {
+                                                        line_height_factor:
+                                                            next === 1
+                                                                ? null
+                                                                : next,
+                                                    },
+                                                ),
+                                            });
+                                        }}
+                                        onBlur={() => onUpdate({}, true)}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label htmlFor="prop-paragraph-gap">
+                                        Blank-line gap (mm)
+                                    </Label>
+                                    <Input
+                                        id="prop-paragraph-gap"
+                                        type="number"
+                                        min={0}
+                                        max={12}
+                                        step={0.5}
+                                        disabled={!canEdit}
+                                        value={paragraphGapMm}
+                                        onChange={(event) => {
+                                            const raw = Number(event.target.value);
+                                            const next = Number.isFinite(raw)
+                                                ? Math.min(12, Math.max(0, raw))
+                                                : 0;
+                                            onUpdate({
+                                                options: patchFieldOptions(
+                                                    selected.options,
+                                                    {
+                                                        paragraph_gap_mm:
+                                                            next === 0
+                                                                ? null
+                                                                : next,
+                                                    },
+                                                ),
+                                            });
+                                        }}
+                                        onBlur={() => onUpdate({}, true)}
+                                    />
+                                </div>
+                            </div>
                             <p className="text-[11px] leading-snug text-muted-foreground">
-                                Line breaks match the PDF. Wrap phrases in{' '}
+                                Line breaks match the PDF. Line spacing multiplies
+                                row height; blank-line gap adds space after empty
+                                lines.                                 Tab indents the current line (4 spaces) for
+                                PDF preview. Wrap phrases in{' '}
                                 <span className="font-mono">**bold**</span> (or
                                 use Bold selection). Whole-field Bold in
                                 Appearance still bolds everything.

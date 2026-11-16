@@ -11,6 +11,7 @@ use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
 use App\Support\BulkSampleRemarks;
 use App\Support\DynamicTestMatrix;
+use App\Support\Fo2SignatoryBlockComposer;
 use App\Support\OfficialAnalysisCatalog;
 use App\Support\ResultFooter;
 use App\Support\ResultSignatories;
@@ -162,6 +163,7 @@ class FieldValueResolver
         $bag['analyst_name'] = $bag['results.analyst_name'];
 
         $revision->loadMissing('fields');
+        $this->putFo2SignatoryBlocks($bag, $revision);
         $usesMatrix = DynamicTestMatrix::revisionUsesMatrix($revision)
             || DynamicTestMatrix::packageUsesMatrix($form?->analysisPackage)
             || DynamicTestMatrix::formUsesMatrix($form, $revision);
@@ -249,6 +251,22 @@ class FieldValueResolver
         $mapped = $this->mapFields($revision, $bag, $jobOrder);
         if (isset($bag['fo2_footer_variant'])) {
             $mapped['fo2_footer_variant'] = $bag['fo2_footer_variant'];
+        }
+        // Keep analyst slot keys even when FO2 plots multiline blocks instead of per-line fields.
+        foreach ([
+            'results.analyst_name',
+            'results.analyst_name_2',
+            'results.analyst_name_3',
+            'results.analyst_name_4',
+            'results.analyst_prc',
+            'results.analyst_prc_2',
+            'results.analyst_prc_3',
+            'results.analyst_prc_4',
+            'analyst_name',
+        ] as $analystKey) {
+            if (array_key_exists($analystKey, $bag)) {
+                $mapped[$analystKey] = $bag[$analystKey];
+            }
         }
 
         return $mapped;
@@ -1172,7 +1190,7 @@ class FieldValueResolver
     ): void {
         $values = ResultSignatories::bagValues($jobOrder, $form, $orderedAnalyses);
 
-        // Name and PRC are separate overlay fields — do not append PRC to the name.
+        // Name and PRC stay in the bag for sources / signatory block composition.
         $bag['results.analyst_name'] = $values['name'] ?? $values['line'];
         $bag['results.analyst_name_2'] = $values['name_2'] ?? $values['line_2'];
         $bag['results.analyst_name_3'] = $values['name_3'] ?? $values['line_3'];
@@ -1182,6 +1200,38 @@ class FieldValueResolver
         $bag['results.analyst_prc_3'] = $values['prc_3'];
         $bag['results.analyst_prc_4'] = $values['prc_4'];
         $bag['analyst_name'] = $bag['results.analyst_name'];
+    }
+
+    /**
+     * Compose FO2-family multiline signatory blocks from field options + analyst bag.
+     *
+     * @param  array<string, mixed>  $bag
+     */
+    private function putFo2SignatoryBlocks(array &$bag, ControlledFormRevision $revision): void
+    {
+        foreach ($revision->fields as $field) {
+            $options = is_array($field->options) ? $field->options : [];
+            $block = $options['signatory_block'] ?? null;
+            if (! is_array($block)) {
+                continue;
+            }
+
+            $staticText = (string) ($options['static_text'] ?? '');
+            $text = Fo2SignatoryBlockComposer::resolve(
+                $block,
+                $bag,
+                trim($staticText) !== '' ? $staticText : null,
+            );
+            if ($text === '') {
+                continue;
+            }
+
+            $bag[$field->name] = $text;
+            $source = trim((string) ($field->data_source_key ?? ''));
+            if ($source !== '' && $source !== $field->name) {
+                $bag[$source] = $text;
+            }
+        }
     }
 
     private function resultAnalystName(JobOrder $jobOrder, ?Collection $orderedAnalyses = null): ?string

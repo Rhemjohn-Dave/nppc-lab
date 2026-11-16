@@ -608,7 +608,10 @@ class AnalystController extends Controller
                 'string',
                 'max:255',
             ],
+            // nullable must sit with string: ConvertEmptyStringsToNull turns "" into null,
+            // and required_without alone still runs string on that null.
             'result_raw' => [
+                'nullable',
                 $rawFinish && ! $isPrep
                     ? 'required_without:result_finish'
                     : ($residualCl && ! $isPrep
@@ -618,6 +621,7 @@ class AnalystController extends Controller
                 'max:255',
             ],
             'result_finish' => [
+                'nullable',
                 $rawFinish && ! $isPrep
                     ? 'required_without:result_raw'
                     : ($residualCl && ! $isPrep
@@ -627,6 +631,7 @@ class AnalystController extends Controller
                 'max:255',
             ],
             'result_chlorinated' => [
+                'nullable',
                 $residualCl && ! $isPrep
                     ? 'required_without_all:result_raw,result_finish'
                     : 'nullable',

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\ControlledFormFieldType;
 use App\Models\ControlledFormRevision;
 use App\Support\DynamicTestMatrix;
+use App\Support\Fo2SignatoryBlockComposer;
 use App\Support\ResultFooter;
 use App\Support\TcpdfCalibriFont;
 use setasign\Fpdi\Tcpdf\Fpdi;
@@ -129,6 +130,12 @@ class ControlledPdfFiller
     ): void {
         /** @var array<string, float> $matrixBottomY */
         $matrixBottomY = [];
+        /** @var array<string, float> $fo2BelowOnlyNudgeMm */
+        $fo2BelowOnlyNudgeMm = [];
+        $fo2ShortSheetChrome = false;
+        $pageHeight = (float) $pdf->getPageHeight();
+        $revision->loadMissing('form');
+        $formCode = $revision->form?->form_code;
 
         foreach ($pageFields as $field) {
             if ($field->field_type !== ControlledFormFieldType::DynamicTestMatrix) {
@@ -141,18 +148,58 @@ class ControlledPdfFiller
             }
 
             $overlay = $field->toOverlayArray();
+            $rows = $values[$name];
+            if (! is_array($rows)) {
+                continue;
+            }
+
+            // Short FO2-family sheets: drop the matrix a few mm (trial) so chrome
+            // can pack toward pinned CHE without stretching rows.
+            if ($this->isFo2FamilyStackMatrix($name)) {
+                $metaAnchor = $this->fo2FormMetaAnchorForMatrix($pageFields, $name);
+                if ($metaAnchor !== null) {
+                    $plottedY = (float) ($overlay['y'] ?? 0.0);
+                    $plottedH = (float) ($overlay['h'] ?? 0.0);
+                    $plottedX = (float) ($overlay['x'] ?? 0.0);
+                    $plottedW = (float) ($overlay['w'] ?? 0.0);
+                    $naturalBottom = $this->measureNaturalMatrixBottomY(
+                        $pdf,
+                        $overlay,
+                        $rows,
+                        $values,
+                    );
+                    $pinned = $this->formMetaYAbovePageStamp(
+                        (float) ($metaAnchor['h'] ?? 18.0),
+                        (float) ($metaAnchor['font_size'] ?? 7.0),
+                        $pageHeight,
+                        $formCode,
+                    );
+                    $spare = $pinned - $naturalBottom - (float) $metaAnchor['offset_mm'];
+                    if ($spare >= self::SIGNATORY_NUDGE_MIN_SPARE_MM) {
+                        $nudge = self::FO2_MATRIX_NUDGE_MM;
+                        $this->fillWhiteRect($pdf, $plottedX, $plottedY, $plottedW, $nudge);
+                        $overlay['y'] = $plottedY + $nudge;
+                        $overlay['h'] = max(0.0, $plottedH - $nudge);
+                        // NOTES/refs/lab (below-only) get the same extra drop.
+                        $fo2BelowOnlyNudgeMm[$name] = $nudge;
+                        $fo2ShortSheetChrome = true;
+                        $overlay = $this->applyFo2ShortSheetMatrixScale($overlay);
+                    }
+                }
+            }
+
             $matrixBottomY[$name] = $this->writeDynamicTestMatrix(
                 $pdf,
                 $overlay,
-                $values[$name],
+                $rows,
                 $values,
             );
         }
 
-        $pageHeight = (float) $pdf->getPageHeight();
-
         /** @var array<string, float> $absoluteFieldY */
         $absoluteFieldY = [];
+        /** @var array<string, float> $fieldContentBottomY */
+        $fieldContentBottomY = [];
         foreach ($pageFields as $field) {
             if ($field->field_type === ControlledFormFieldType::DynamicTestMatrix) {
                 continue;
@@ -160,33 +207,56 @@ class ControlledPdfFiller
             $absoluteFieldY[$field->name] = (float) $field->y;
         }
 
+        $usesFo2NotesBottom = $this->pageUsesFo2NotesBottomAnchors($pageFields);
+
         $formMetaStampY = null;
-        foreach ($pageFields as $field) {
-            if (! $this->isFixedFormMetaField($field->name)) {
-                continue;
+        if (! $usesFo2NotesBottom) {
+            foreach ($pageFields as $field) {
+                if (! $this->isFixedFormMetaField($field->name)) {
+                    continue;
+                }
+                $overlayMeta = $field->toOverlayArray();
+                $metaY = $this->resolveFormMetaY(
+                    $overlayMeta,
+                    $matrixBottomY,
+                    $pageHeight,
+                    [],
+                    null,
+                    $formCode,
+                );
+                $absoluteFieldY[$field->name] = $metaY;
+                $formMetaStampY = $this->pageStampYBelowFormMeta(
+                    $metaY,
+                    (float) ($overlayMeta['h'] ?? $field->height),
+                    (float) ($overlayMeta['font_size'] ?? $field->font_size ?? 7.0),
+                    $pageHeight,
+                    $formCode,
+                );
             }
-            $overlayMeta = $field->toOverlayArray();
-            $metaY = $this->resolveFormMetaY(
-                $overlayMeta,
-                $matrixBottomY,
-                $pageHeight,
-            );
-            $absoluteFieldY[$field->name] = $metaY;
-            $formMetaStampY = $this->pageStampYBelowFormMeta(
-                $metaY,
-                (float) ($overlayMeta['h'] ?? $field->height),
-                (float) ($overlayMeta['font_size'] ?? $field->font_size ?? 7.0),
-                $pageHeight,
-            );
+        } else {
+            // Provisional clamp target: park meta at the stamp pin until NOTES +
+            // signatories are measured, then re-resolve under the stack.
+            foreach ($pageFields as $field) {
+                if ($field->name !== 'fo2_form_meta') {
+                    continue;
+                }
+                $overlayMeta = $field->toOverlayArray();
+                $pinned = $this->formMetaYAbovePageStamp(
+                    (float) ($overlayMeta['h'] ?? $field->height ?? 18.0),
+                    (float) ($overlayMeta['font_size'] ?? $field->font_size ?? 7.0),
+                    $pageHeight,
+                    $formCode,
+                );
+                $absoluteFieldY[$field->name] = $pinned;
+            }
         }
 
         $activeFooterVariant = trim((string) ($values['fo2_footer_variant'] ?? ''));
+        $drawableFields = [];
         foreach ($pageFields as $field) {
             if ($field->field_type === ControlledFormFieldType::DynamicTestMatrix) {
                 continue;
             }
-
-            $name = $field->name;
             $overlay = $field->toOverlayArray();
             $options = is_array($overlay['options'] ?? null) ? $overlay['options'] : [];
             $fieldFooterVariant = trim((string) ($options['footer_variant'] ?? ''));
@@ -198,23 +268,846 @@ class ControlledPdfFiller
                 continue;
             }
             $staticText = trim((string) ($options['static_text'] ?? ''));
-            $hasValue = array_key_exists($name, $values);
+            $hasValue = array_key_exists($field->name, $values);
             if (! $hasValue && $staticText === '') {
                 continue;
             }
+            $drawableFields[] = [
+                'field' => $field,
+                'overlay' => $overlay,
+                'value' => $hasValue ? $values[$field->name] : null,
+            ];
+        }
 
-            $value = $hasValue ? $values[$name] : null;
-            if ($this->isFixedFormMetaField($name)) {
-                $overlay['y'] = $absoluteFieldY[$name];
-            } else {
-                $overlay = $this->clampFo28SignatoriesAboveFormMeta($overlay, $pageFields);
-                $overlay = $this->syncAboveOffsetFromMetaOffset($overlay, $pageFields);
-                $overlay = $this->applyAnchorBelow($overlay, $matrixBottomY, $absoluteFieldY);
+        if ($usesFo2NotesBottom) {
+            $early = [];
+            $fieldDataRows = [];
+            $signatories = [];
+            $metaRows = [];
+            $rest = [];
+            foreach ($drawableFields as $row) {
+                $name = (string) ($row['field']->name ?? '');
+                if ($name === 'fo2_form_meta') {
+                    $metaRows[] = $row;
+                } elseif ($this->isFo2NotesBottomSignatoryField($row['overlay'])) {
+                    $signatories[] = $row;
+                } elseif ($name === 'job_orders.field_data') {
+                    // FO2B FIELD DATA: draw after NOTES so height can end above signatories.
+                    $fieldDataRows[] = $row;
+                } elseif ($this->isFo2EarlyChromeField($row['overlay'])) {
+                    $early[] = $row;
+                } else {
+                    $rest[] = $row;
+                }
             }
-            $this->writeField($pdf, $overlay, $value, $values);
+
+            $fo2PinnedMetaY = $this->resolveFo2PinnedMetaY($pageFields, $pageHeight, $formCode);
+            $fo2TallChrome = $this->detectFo2TallChrome(
+                $pageFields,
+                $matrixBottomY,
+                $signatories,
+                $fo2PinnedMetaY,
+                $fo2ShortSheetChrome,
+            );
+
+            foreach ($early as $row) {
+                $overlay = $row['overlay'];
+                if ($fo2TallChrome) {
+                    $overlay = $this->applyFo2TallChromeFontReduce($overlay);
+                }
+                $this->drawAnchoredOverlayField(
+                    $pdf,
+                    $overlay,
+                    $row['value'],
+                    $values,
+                    $matrixBottomY,
+                    $absoluteFieldY,
+                    $fieldContentBottomY,
+                    $fo2BelowOnlyNudgeMm,
+                    $fo2ShortSheetChrome,
+                    $pageFields,
+                    $pageHeight,
+                );
+            }
+
+            $notesBottom = $fieldContentBottomY['fo2_notes'] ?? null;
+
+            // FO2B: non-tall sheets stack FIELD DATA under NOTES (right column,
+            // official FO2 look) — do not gate only on short-chrome spare, which
+            // misses real 6-test rows with Date/Time sublines. Full/tall sheets
+            // keep FIELD DATA beside NOTES. Soft ceiling never zero-clips height.
+            $fieldDataCeil = $fo2PinnedMetaY !== null
+                ? (float) $fo2PinnedMetaY - 30.0
+                : null;
+            $stackFieldDataBelowNotes = $notesBottom !== null && ! $fo2TallChrome;
+            foreach ($fieldDataRows as $row) {
+                $this->drawFo2bFieldDataAboveSignatories(
+                    $pdf,
+                    $row['overlay'],
+                    $row['value'],
+                    $values,
+                    $matrixBottomY,
+                    $absoluteFieldY,
+                    $fieldContentBottomY,
+                    $fo2BelowOnlyNudgeMm,
+                    $fo2ShortSheetChrome,
+                    $fieldDataCeil,
+                    $fo2TallChrome,
+                    $stackFieldDataBelowNotes,
+                );
+            }
+
+            $fieldDataBottom = $fieldContentBottomY['job_orders.field_data'] ?? null;
+            $chromeBottom = $notesBottom;
+            if ($fieldDataBottom !== null) {
+                $chromeBottom = $chromeBottom === null
+                    ? (float) $fieldDataBottom
+                    : max((float) $chromeBottom, (float) $fieldDataBottom);
+            }
+            // Signatories still use below: fo2_notes — raise the synthetic NOTES bottom
+            // so Reviewed/Certified clear both NOTES and FIELD DATA.
+            if ($chromeBottom !== null) {
+                $fieldContentBottomY['fo2_notes'] = (float) $chromeBottom;
+            }
+
+            $fo2ParkMetaAtPin = false;
+            // FO2A few-test sheets: drop Reviewed/Certified a little under NOTES.
+            if (
+                $formCode === 'LSP-7.8-FO2A'
+                && ! $fo2TallChrome
+                && $signatories !== []
+            ) {
+                $signatories = $this->bumpFo2aFirstRowOffsets(
+                    $signatories,
+                    self::FO2A_SHORT_FIRST_ROW_DROP_MM,
+                );
+            }
+            if ($chromeBottom !== null) {
+                $stackEstimate = $this->estimateFo2SignatoryStackBottom(
+                    $signatories,
+                    (float) $chromeBottom,
+                );
+                foreach ($pageFields as $field) {
+                    if ($field->name !== 'fo2_form_meta') {
+                        continue;
+                    }
+                    $pinned = (float) ($fo2PinnedMetaY ?? $this->formMetaYAbovePageStamp(
+                        18.0,
+                        7.0,
+                        $pageHeight,
+                        $formCode,
+                    ));
+                    $fo2PinnedMetaY = $pinned;
+                    $preferredMeta = $stackEstimate + self::FO2_SIGNATORY_TO_META_GAP_MM;
+                    if ($preferredMeta > $pinned + 0.01) {
+                        $fo2TallChrome = true;
+                        $signatories = $this->shrinkFo2SignatoryNotesOffsets(
+                            $signatories,
+                            $preferredMeta - $pinned,
+                        );
+                        $stackAfterShrink = $this->estimateFo2SignatoryStackBottom(
+                            $signatories,
+                            (float) $chromeBottom,
+                        );
+                        $metaAfterShrink = $stackAfterShrink + self::FO2_SIGNATORY_TO_META_GAP_MM;
+                        if ($metaAfterShrink <= $pinned + 0.01) {
+                            $absoluteFieldY[$field->name] = $pinned;
+                            $fo2ParkMetaAtPin = true;
+                        } else {
+                            $absoluteFieldY[$field->name] = $metaAfterShrink;
+                            $fo2ParkMetaAtPin = false;
+                        }
+                    } else {
+                        // Keep Reviewed/Certified under NOTES/FIELD DATA (official FO2
+                        // short-sheet look). Park Test Report at the stamp pin; do not
+                        // drop signatories into the bottom spare.
+                        $absoluteFieldY[$field->name] = max($preferredMeta, $pinned);
+                        $fo2ParkMetaAtPin = $absoluteFieldY[$field->name] <= $pinned + 0.01;
+                    }
+                }
+            }
+            // FO2A: draw Reviewed/Certified first, then park Noted under measured
+            // Reviewed ink (+7mm). Designer NOTES+offset left a large dead band on
+            // tall sheets after shrink (Reviewed→1.5mm, Noted stayed ~42mm).
+            $signatoryStackBottom = null;
+            $fo2aNotedRows = [];
+            foreach ($signatories as $row) {
+                $name = (string) ($row['field']->name ?? $row['overlay']['name'] ?? '');
+                if ($formCode === 'LSP-7.8-FO2A' && $name === 'fo2_signatory_noted') {
+                    $fo2aNotedRows[] = $row;
+                    continue;
+                }
+                if ($fo2TallChrome) {
+                    $row['overlay']['font_size'] = max(
+                        6.0,
+                        (float) ($row['overlay']['font_size'] ?? 9.0)
+                            - self::FO2_TALL_CHROME_FONT_REDUCE_PT,
+                    );
+                }
+                $bottom = $this->drawAnchoredOverlayField(
+                    $pdf,
+                    $row['overlay'],
+                    $row['value'],
+                    $values,
+                    $matrixBottomY,
+                    $absoluteFieldY,
+                    $fieldContentBottomY,
+                    $fo2BelowOnlyNudgeMm,
+                    $fo2ShortSheetChrome,
+                    $pageFields,
+                    $pageHeight,
+                );
+                if ($bottom !== null) {
+                    $signatoryStackBottom = $signatoryStackBottom === null
+                        ? $bottom
+                        : max($signatoryStackBottom, $bottom);
+                }
+            }
+            foreach ($fo2aNotedRows as $row) {
+                if ($fo2TallChrome) {
+                    $row['overlay']['font_size'] = max(
+                        6.0,
+                        (float) ($row['overlay']['font_size'] ?? 9.0)
+                            - self::FO2_TALL_CHROME_FONT_REDUCE_PT,
+                    );
+                }
+                $row['overlay'] = $this->anchorFo2aNotedUnderReviewed(
+                    $row['overlay'],
+                    $fieldContentBottomY,
+                    $fo2TallChrome
+                        ? self::FO2A_TALL_NOTED_EXTRA_GAP_MM
+                        : self::FO2A_SHORT_NOTED_EXTRA_GAP_MM,
+                );
+                $bottom = $this->drawAnchoredOverlayField(
+                    $pdf,
+                    $row['overlay'],
+                    $row['value'],
+                    $values,
+                    $matrixBottomY,
+                    $absoluteFieldY,
+                    $fieldContentBottomY,
+                    $fo2BelowOnlyNudgeMm,
+                    $fo2ShortSheetChrome,
+                    $pageFields,
+                    $pageHeight,
+                );
+                if ($bottom !== null) {
+                    $signatoryStackBottom = $signatoryStackBottom === null
+                        ? $bottom
+                        : max($signatoryStackBottom, $bottom);
+                }
+            }
+
+            foreach ($metaRows as $row) {
+                $overlayMeta = $row['overlay'];
+                if ($fo2ParkMetaAtPin && $fo2PinnedMetaY !== null) {
+                    $metaY = $fo2PinnedMetaY;
+                } else {
+                    $followY = $signatoryStackBottom !== null
+                        ? $signatoryStackBottom + self::FO2_SIGNATORY_TO_META_GAP_MM
+                        : ($chromeBottom !== null
+                            ? (float) $chromeBottom + self::FO2_NOTES_TO_SIGNATORY_GAP_MM
+                                + self::FO2_NOTES_STACK_RESERVE_MM
+                            : null);
+                    $metaY = $this->resolveFormMetaY(
+                        $overlayMeta,
+                        $matrixBottomY,
+                        $pageHeight,
+                        $fieldContentBottomY,
+                        $followY,
+                        $formCode,
+                    );
+                }
+                $absoluteFieldY['fo2_form_meta'] = $metaY;
+                $overlayMeta['y'] = $metaY;
+                if ($fo2ShortSheetChrome && $this->shouldBoostFo2ShortSheetChromeFont('fo2_form_meta', $overlayMeta)) {
+                    $overlayMeta['font_size'] = (float) ($overlayMeta['font_size'] ?? 8.0)
+                        + self::FO2_MATRIX_SHORT_FONT_EXTRA_PT;
+                } elseif ($fo2TallChrome) {
+                    $overlayMeta['font_size'] = max(
+                        6.0,
+                        (float) ($overlayMeta['font_size'] ?? 7.0)
+                            - self::FO2_TALL_CHROME_FONT_REDUCE_PT,
+                    );
+                }
+                $this->writeField($pdf, $overlayMeta, $row['value'], $values);
+                $formMetaStampY = $this->pageStampYBelowFormMeta(
+                    $metaY,
+                    (float) ($overlayMeta['h'] ?? 18.0),
+                    (float) ($overlayMeta['font_size'] ?? 7.0),
+                    $pageHeight,
+                    $formCode,
+                );
+            }
+
+            foreach ($rest as $row) {
+                $this->drawAnchoredOverlayField(
+                    $pdf,
+                    $row['overlay'],
+                    $row['value'],
+                    $values,
+                    $matrixBottomY,
+                    $absoluteFieldY,
+                    $fieldContentBottomY,
+                    $fo2BelowOnlyNudgeMm,
+                    $fo2ShortSheetChrome,
+                    $pageFields,
+                    $pageHeight,
+                );
+            }
+        } else {
+            foreach ($drawableFields as $row) {
+                $this->drawAnchoredOverlayField(
+                    $pdf,
+                    $row['overlay'],
+                    $row['value'],
+                    $values,
+                    $matrixBottomY,
+                    $absoluteFieldY,
+                    $fieldContentBottomY,
+                    $fo2BelowOnlyNudgeMm,
+                    $fo2ShortSheetChrome,
+                    $pageFields,
+                    $pageHeight,
+                );
+            }
         }
 
         $this->writeCenteredPageStamp($pdf, $revision, $pageNo, $pageCount, $formMetaStampY);
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, \App\Models\ControlledFormField>  $pageFields
+     */
+    private function pageUsesFo2NotesBottomAnchors($pageFields): bool
+    {
+        foreach ($pageFields as $field) {
+            if ($field->name !== 'fo2_notes') {
+                continue;
+            }
+            foreach ($pageFields as $other) {
+                $anchor = is_array($other->options['anchor'] ?? null) ? $other->options['anchor'] : [];
+                if (trim((string) ($anchor['below'] ?? '')) === 'fo2_notes') {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $overlay
+     */
+    private function isFo2EarlyChromeField(array $overlay): bool
+    {
+        $name = (string) ($overlay['name'] ?? '');
+        if ($this->isFixedFormMetaField($name) || $this->isFo2NotesBottomSignatoryField($overlay)) {
+            return false;
+        }
+
+        $options = is_array($overlay['options'] ?? null) ? $overlay['options'] : [];
+        $anchor = is_array($options['anchor'] ?? null) ? $options['anchor'] : [];
+        $below = trim((string) ($anchor['below'] ?? ''));
+        $above = trim((string) ($anchor['above'] ?? ''));
+
+        return $below !== '' && $above === '' && $this->isFo2FamilyStackMatrix($below);
+    }
+
+    /**
+     * @param  array<string, mixed>  $overlay
+     */
+    private function isFo2NotesBottomSignatoryField(array $overlay): bool
+    {
+        $name = (string) ($overlay['name'] ?? '');
+        if (str_starts_with($name, 'fo2_signatory_')) {
+            return true;
+        }
+
+        $options = is_array($overlay['options'] ?? null) ? $overlay['options'] : [];
+        $anchor = is_array($options['anchor'] ?? null) ? $options['anchor'] : [];
+
+        return trim((string) ($anchor['below'] ?? '')) === 'fo2_notes'
+            && trim((string) ($anchor['above'] ?? '')) === 'fo2_form_meta';
+    }
+
+    /**
+     * @param  list<array{field: \App\Models\ControlledFormField, overlay: array<string, mixed>, value: mixed}>  $signatories
+     */
+    private function estimateFo2SignatoryStackBottom(array $signatories, float $notesBottom): float
+    {
+        $maxBottom = $notesBottom + self::FO2_NOTES_TO_SIGNATORY_GAP_MM;
+        foreach ($signatories as $row) {
+            $overlay = $row['overlay'];
+            $options = is_array($overlay['options'] ?? null) ? $overlay['options'] : [];
+            $anchor = is_array($options['anchor'] ?? null) ? $options['anchor'] : [];
+            $offset = is_numeric($anchor['offset_mm'] ?? null)
+                ? (float) $anchor['offset_mm']
+                : self::FO2_NOTES_TO_SIGNATORY_GAP_MM;
+            $h = (float) ($overlay['h'] ?? 20.0);
+            $maxBottom = max($maxBottom, $notesBottom + $offset + $h);
+        }
+
+        return $maxBottom;
+    }
+
+    /**
+     * Drop FO2A Reviewed / Certified under NOTES on few-test sheets.
+     *
+     * @param  list<array{field: \App\Models\ControlledFormField, overlay: array<string, mixed>, value: mixed}>  $signatories
+     * @return list<array{field: \App\Models\ControlledFormField, overlay: array<string, mixed>, value: mixed}>
+     */
+    private function bumpFo2aFirstRowOffsets(array $signatories, float $dropMm): array
+    {
+        $drop = max(0.0, $dropMm);
+        if ($drop < 0.01 || $signatories === []) {
+            return $signatories;
+        }
+
+        $out = [];
+        foreach ($signatories as $row) {
+            $name = (string) ($row['overlay']['name'] ?? $row['field']->name ?? '');
+            if (
+                $name !== 'fo2_signatory_reviewed'
+                && $name !== 'fo2_signatory_certified'
+            ) {
+                $out[] = $row;
+                continue;
+            }
+            $overlay = $row['overlay'];
+            $options = is_array($overlay['options'] ?? null) ? $overlay['options'] : [];
+            $anchor = is_array($options['anchor'] ?? null) ? $options['anchor'] : [];
+            $offset = is_numeric($anchor['offset_mm'] ?? null)
+                ? (float) $anchor['offset_mm']
+                : self::FO2_NOTES_TO_SIGNATORY_GAP_MM;
+            $anchor['offset_mm'] = $offset + $drop;
+            if (is_numeric($anchor['above_offset_mm'] ?? null)) {
+                $anchor['above_offset_mm'] = max(
+                    0.0,
+                    (float) $anchor['above_offset_mm'] - $drop,
+                );
+            }
+            $options['anchor'] = $anchor;
+            $overlay['options'] = $options;
+            $row['overlay'] = $overlay;
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    /**
+     * FO2A Noted By: sit under measured Reviewed ink (not NOTES+designer offset).
+     *
+     * @param  array<string, mixed>  $overlay
+     * @param  array<string, float>  $fieldContentBottomY
+     * @return array<string, mixed>
+     */
+    private function anchorFo2aNotedUnderReviewed(
+        array $overlay,
+        array $fieldContentBottomY,
+        float $gapMm,
+    ): array {
+        if (! isset($fieldContentBottomY['fo2_signatory_reviewed'])) {
+            return $overlay;
+        }
+
+        $options = is_array($overlay['options'] ?? null) ? $overlay['options'] : [];
+        $anchor = is_array($options['anchor'] ?? null) ? $options['anchor'] : [];
+        $anchor['below'] = 'fo2_signatory_reviewed';
+        $anchor['offset_mm'] = max(0.0, $gapMm);
+        // Drop above-meta clamp — tall sheets were parking Noted near Test Report.
+        unset($anchor['above'], $anchor['above_offset_mm']);
+        $options['anchor'] = $anchor;
+        $overlay['options'] = $options;
+
+        return $overlay;
+    }
+
+    /**
+     * Pull FO2 signatory offsets toward NOTES when the preferred 6mm stack would
+     * overrun the pinned Test Report (full matrix / ~19 tests).
+     *
+     * @param  list<array{field: \App\Models\ControlledFormField, overlay: array<string, mixed>, value: mixed}>  $signatories
+     * @return list<array{field: \App\Models\ControlledFormField, overlay: array<string, mixed>, value: mixed}>
+     */
+    private function shrinkFo2SignatoryNotesOffsets(array $signatories, float $overflowMm): array
+    {
+        $shrink = max(0.0, $overflowMm);
+        if ($shrink < 0.01 || $signatories === []) {
+            return $signatories;
+        }
+
+        $minGap = self::FO2_NOTES_TO_SIGNATORY_GAP_TIGHT_MM;
+        $minOffset = null;
+        foreach ($signatories as $row) {
+            $overlay = $row['overlay'];
+            $options = is_array($overlay['options'] ?? null) ? $overlay['options'] : [];
+            $anchor = is_array($options['anchor'] ?? null) ? $options['anchor'] : [];
+            $offset = is_numeric($anchor['offset_mm'] ?? null)
+                ? (float) $anchor['offset_mm']
+                : self::FO2_NOTES_TO_SIGNATORY_GAP_MM;
+            $minOffset = $minOffset === null ? $offset : min($minOffset, $offset);
+        }
+
+        // Only tighten the shared NOTES→first-row gap. Subtracting the full overflow
+        // from every offset collapsed Noted onto Reviewed (same Y) on 19-test sheets.
+        $baseShrink = min($shrink, max(0.0, (float) $minOffset - $minGap));
+        if ($baseShrink < 0.01) {
+            return $signatories;
+        }
+
+        $out = [];
+        foreach ($signatories as $row) {
+            $overlay = $row['overlay'];
+            $options = is_array($overlay['options'] ?? null) ? $overlay['options'] : [];
+            $anchor = is_array($options['anchor'] ?? null) ? $options['anchor'] : [];
+            $offset = is_numeric($anchor['offset_mm'] ?? null)
+                ? (float) $anchor['offset_mm']
+                : self::FO2_NOTES_TO_SIGNATORY_GAP_MM;
+            $anchor['offset_mm'] = max($minGap, $offset - $baseShrink);
+            $options['anchor'] = $anchor;
+            $overlay['options'] = $options;
+            $row['overlay'] = $overlay;
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    /**
+     * FO2B FIELD DATA: right column beside NOTES on full sheets; under NOTES on
+     * short sheets (same right-column x/w as Designer — official FO2 look).
+     * Never clip height to zero.
+     *
+     * @param  array<string, mixed>  $overlay
+     * @param  array<string, mixed>  $values
+     * @param  array<string, float>  $matrixBottomY
+     * @param  array<string, float>  $absoluteFieldY
+     * @param  array<string, float>  $fieldContentBottomY
+     * @param  array<string, float>  $fo2BelowOnlyNudgeMm
+     */
+    private function drawFo2bFieldDataAboveSignatories(
+        Fpdi $pdf,
+        array $overlay,
+        mixed $value,
+        array $values,
+        array $matrixBottomY,
+        array &$absoluteFieldY,
+        array &$fieldContentBottomY,
+        array $fo2BelowOnlyNudgeMm,
+        bool $fo2ShortSheetChrome,
+        ?float $ceilingY,
+        bool $tallChrome = false,
+        bool $stackBelowNotes = false,
+    ): void {
+        $h = max(1.0, (float) ($overlay['h'] ?? 0.0));
+        $overlay['h'] = $h;
+
+        if (
+            $stackBelowNotes
+            && isset($fieldContentBottomY['fo2_notes'])
+        ) {
+            // Few tests: keep right-column x/w; drop Y under NOTES ink (FO2 layout).
+            $overlay['y'] = (float) $fieldContentBottomY['fo2_notes']
+                + self::FO2B_FIELD_DATA_BELOW_NOTES_GAP_MM;
+        } else {
+            // Full sheets: honor Designer x/w and matrix offset (beside NOTES).
+            $overlay = $this->applyAnchorBelow(
+                $overlay,
+                $matrixBottomY,
+                $absoluteFieldY,
+                $fo2BelowOnlyNudgeMm,
+                $fieldContentBottomY,
+            );
+
+            $y = (float) ($overlay['y'] ?? 0.0);
+            $overlay['h'] = $h;
+
+            // Tall matrices can push Designer Y past the Test Report reserve —
+            // raise into the NOTES band and keep full height.
+            if ($ceilingY !== null && $y + $h > $ceilingY) {
+                $notesTop = isset($absoluteFieldY['fo2_notes'])
+                    ? (float) $absoluteFieldY['fo2_notes']
+                    : null;
+                $raisedY = $ceilingY - $h;
+                if ($notesTop !== null) {
+                    $overlay['y'] = max($raisedY, $notesTop);
+                } elseif ($raisedY > 0.0) {
+                    $overlay['y'] = $raisedY;
+                }
+                $overlay['h'] = $h;
+            }
+        }
+
+        $name = (string) ($overlay['name'] ?? 'job_orders.field_data');
+        if ($fo2ShortSheetChrome && $this->shouldBoostFo2ShortSheetChromeFont($name, $overlay)) {
+            $overlay['font_size'] = (float) ($overlay['font_size'] ?? 8.0)
+                + self::FO2_MATRIX_SHORT_FONT_EXTRA_PT;
+        } elseif ($tallChrome) {
+            $overlay['font_size'] = max(
+                6.0,
+                (float) ($overlay['font_size'] ?? 8.0) - self::FO2_TALL_CHROME_FONT_REDUCE_PT,
+            );
+        }
+
+        $absoluteFieldY[$name] = (float) ($overlay['y'] ?? 0.0);
+        $bottom = $this->writeField($pdf, $overlay, $value, $values);
+        if ($bottom !== null) {
+            $fieldContentBottomY[$name] = $bottom;
+        } else {
+            $fieldContentBottomY[$name] = (float) ($overlay['y'] ?? 0.0)
+                + (float) ($overlay['h'] ?? 0.0);
+        }
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, \App\Models\ControlledFormField>  $pageFields
+     */
+    private function resolveFo2PinnedMetaY(
+        $pageFields,
+        float $pageHeight,
+        ?string $formCode = null,
+    ): ?float {
+        foreach ($pageFields as $field) {
+            if ($field->name !== 'fo2_form_meta') {
+                continue;
+            }
+            $overlayMeta = $field->toOverlayArray();
+
+            return $this->formMetaYAbovePageStamp(
+                (float) ($overlayMeta['h'] ?? $field->height ?? 18.0),
+                (float) ($overlayMeta['font_size'] ?? $field->font_size ?? 7.0),
+                $pageHeight,
+                $formCode,
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * True when NOTES + FIELD DATA + signatory stack would overrun the stamp pin
+     * (typical ~17–19 test FO2/FO2B sheets). Short-sheet chrome wins instead.
+     *
+     * @param  \Illuminate\Support\Collection<int, \App\Models\ControlledFormField>  $pageFields
+     * @param  array<string, float>  $matrixBottomY
+     * @param  list<array{field: \App\Models\ControlledFormField, overlay: array<string, mixed>, value: mixed}>  $signatories
+     */
+    private function detectFo2TallChrome(
+        $pageFields,
+        array $matrixBottomY,
+        array $signatories,
+        ?float $pinnedMetaY,
+        bool $fo2ShortSheetChrome,
+    ): bool {
+        if ($fo2ShortSheetChrome || $pinnedMetaY === null) {
+            return false;
+        }
+
+        $matrixBottom = null;
+        $notesOffset = 18.0;
+        $notesH = 22.0;
+        $fieldDataOffset = null;
+        $fieldDataH = 28.0;
+        foreach ($pageFields as $field) {
+            $name = (string) $field->name;
+            if ($this->isFo2FamilyStackMatrix($name) && array_key_exists($name, $matrixBottomY)) {
+                $matrixBottom = $matrixBottom === null
+                    ? (float) $matrixBottomY[$name]
+                    : max($matrixBottom, (float) $matrixBottomY[$name]);
+            }
+            $anchor = is_array($field->options['anchor'] ?? null) ? $field->options['anchor'] : [];
+            if ($name === 'fo2_notes' && is_numeric($anchor['offset_mm'] ?? null)) {
+                $notesOffset = (float) $anchor['offset_mm'];
+                $notesH = (float) $field->height;
+            }
+            if ($name === 'job_orders.field_data' && is_numeric($anchor['offset_mm'] ?? null)) {
+                $fieldDataOffset = (float) $anchor['offset_mm'];
+                $fieldDataH = (float) $field->height;
+            }
+        }
+        if ($matrixBottom === null) {
+            return false;
+        }
+
+        $chromeBottom = $matrixBottom + $notesOffset + $notesH;
+        if ($fieldDataOffset !== null) {
+            $chromeBottom = max($chromeBottom, $matrixBottom + $fieldDataOffset + $fieldDataH);
+        }
+
+        $stackBottom = $this->estimateFo2SignatoryStackBottom($signatories, $chromeBottom);
+
+        return ($stackBottom + self::FO2_SIGNATORY_TO_META_GAP_MM) > ($pinnedMetaY + 0.01);
+    }
+
+    /**
+     * @param  array<string, mixed>  $overlay
+     * @return array<string, mixed>
+     */
+    private function applyFo2TallChromeFontReduce(array $overlay): array
+    {
+        $name = (string) ($overlay['name'] ?? '');
+        if (! $this->shouldReduceFo2TallChromeFont($name)) {
+            return $overlay;
+        }
+
+        $overlay['font_size'] = max(
+            6.0,
+            (float) ($overlay['font_size'] ?? 8.0) - self::FO2_TALL_CHROME_FONT_REDUCE_PT,
+        );
+
+        return $overlay;
+    }
+
+    private function shouldReduceFo2TallChromeFont(string $name): bool
+    {
+        return in_array($name, [
+            'fo2_lab_conditions',
+            'fo2_references',
+            'fo2_notes',
+            'job_orders.field_data',
+            'fo2_form_meta',
+            'fo2_signatory_reviewed',
+            'fo2_signatory_certified',
+            'fo2_signatory_noted',
+        ], true) || str_starts_with($name, 'fo2_signatory_');
+    }
+
+    /**
+     * Smallest fo2_signatory_* offset under fo2_notes from resolved overlay rows.
+     *
+     * @param  list<array{field: \App\Models\ControlledFormField, overlay: array<string, mixed>, value: mixed}>  $signatories
+     */
+    private function fo2FirstSignatoryOffsetFromRows(array $signatories): float
+    {
+        $min = null;
+        foreach ($signatories as $row) {
+            $overlay = $row['overlay'];
+            $options = is_array($overlay['options'] ?? null) ? $overlay['options'] : [];
+            $anchor = is_array($options['anchor'] ?? null) ? $options['anchor'] : [];
+            if (trim((string) ($anchor['below'] ?? '')) !== 'fo2_notes') {
+                continue;
+            }
+            if (! is_numeric($anchor['offset_mm'] ?? null)) {
+                continue;
+            }
+            $offset = (float) $anchor['offset_mm'];
+            $min = $min === null ? $offset : min($min, $offset);
+        }
+
+        return $min ?? self::FO2_NOTES_TO_SIGNATORY_GAP_MM;
+    }
+
+    /**
+     * Smallest fo2_signatory_* offset under fo2_notes (Designer gap), else preferred 6mm.
+     *
+     * @param  \Illuminate\Support\Collection<int, \App\Models\ControlledFormField>  $pageFields
+     */
+    private function fo2FirstSignatoryOffsetMm($pageFields): float
+    {
+        $min = null;
+        foreach ($pageFields as $field) {
+            if (! str_starts_with((string) $field->name, 'fo2_signatory_')) {
+                continue;
+            }
+            $anchor = is_array($field->options['anchor'] ?? null) ? $field->options['anchor'] : [];
+            if (trim((string) ($anchor['below'] ?? '')) !== 'fo2_notes') {
+                continue;
+            }
+            if (! is_numeric($anchor['offset_mm'] ?? null)) {
+                continue;
+            }
+            $offset = (float) $anchor['offset_mm'];
+            $min = $min === null ? $offset : min($min, $offset);
+        }
+
+        return $min ?? self::FO2_NOTES_TO_SIGNATORY_GAP_MM;
+    }
+
+    /**
+     * Anchor + write one overlay field; record multiline content bottoms for FO2 notes chain.
+     *
+     * @param  array<string, mixed>  $overlay
+     * @param  array<string, mixed>  $values
+     * @param  array<string, float>  $matrixBottomY
+     * @param  array<string, float>  $absoluteFieldY
+     * @param  array<string, float>  $fieldContentBottomY
+     * @param  array<string, float>  $fo2BelowOnlyNudgeMm
+     * @param  \Illuminate\Support\Collection<int, \App\Models\ControlledFormField>  $pageFields
+     */
+    private function drawAnchoredOverlayField(
+        Fpdi $pdf,
+        array $overlay,
+        mixed $value,
+        array $values,
+        array $matrixBottomY,
+        array &$absoluteFieldY,
+        array &$fieldContentBottomY,
+        array $fo2BelowOnlyNudgeMm,
+        bool $fo2ShortSheetChrome,
+        $pageFields,
+        float $pageHeight,
+    ): ?float {
+        $name = (string) ($overlay['name'] ?? '');
+        if ($this->isFixedFormMetaField($name)) {
+            $overlay['y'] = $absoluteFieldY[$name] ?? (float) ($overlay['y'] ?? 0.0);
+        } else {
+            $overlay = $this->clampFo28SignatoriesAboveFormMeta($overlay, $pageFields);
+            $overlay = $this->syncAboveOffsetFromMetaOffset($overlay, $pageFields);
+            $overlay = $this->applyAnchorBelow(
+                $overlay,
+                $matrixBottomY,
+                $absoluteFieldY,
+                $fo2BelowOnlyNudgeMm,
+                $fieldContentBottomY,
+            );
+        }
+
+        if ($fo2ShortSheetChrome && $this->shouldBoostFo2ShortSheetChromeFont($name, $overlay)) {
+            $overlay['font_size'] = (float) ($overlay['font_size'] ?? 8.0)
+                + self::FO2_MATRIX_SHORT_FONT_EXTRA_PT;
+        }
+
+        if ($name === 'fo2_notes') {
+            $overlay = $this->expandFo2NotesHeightForFullInk($overlay, $pageHeight);
+        }
+
+        $absoluteFieldY[$name] = (float) ($overlay['y'] ?? 0.0);
+        $bottom = $this->writeField($pdf, $overlay, $value, $values);
+        if ($bottom !== null) {
+            $fieldContentBottomY[$name] = $bottom;
+        } else {
+            // Always record a bottom so FO2A Noted can chain under Reviewed ink.
+            $fieldContentBottomY[$name] = (float) ($overlay['y'] ?? 0.0)
+                + (float) ($overlay['h'] ?? 0.0);
+        }
+
+        return $bottom ?? ($fieldContentBottomY[$name] ?? null);
+    }
+
+    /**
+     * Let NOTES print past the designer box when short sheets leave room under the stamp.
+     *
+     * @param  array<string, mixed>  $overlay
+     * @return array<string, mixed>
+     */
+    private function expandFo2NotesHeightForFullInk(array $overlay, float $pageHeight): array
+    {
+        $y = (float) ($overlay['y'] ?? 0.0);
+        $h = (float) ($overlay['h'] ?? 0.0);
+        $pinned = $this->formMetaYAbovePageStamp(18.0, 7.0, $pageHeight);
+        // Leave only the NOTES→signatory gap above the pinned Test Report band.
+        // A large stack reserve was clipping note 6 on mid/tall FO2 sheets once
+        // short-sheet chrome bumped the NOTES font +1pt (~25mm needed vs 23.5mm box).
+        $limitBottom = $pinned - self::FO2_NOTES_TO_SIGNATORY_GAP_MM;
+        if ($limitBottom > $y + 0.01) {
+            $overlay['h'] = max($h, $limitBottom - $y);
+        }
+
+        return $overlay;
     }
 
     public function calibrationOverlay(ControlledFormRevision $revision): string
@@ -296,6 +1189,18 @@ class ControlledPdfFiller
     /** Distance from page bottom to the centered `- page n/total -` baseline (short sheets). */
     private const PAGE_STAMP_BOTTOM_MM = 26.0;
 
+    /** FO2A (abstracted): drop Test Report + page stamp this far into the bottom margin. */
+    private const FO2A_FOOTER_DROP_MM = 7.0;
+
+    /** FO2A few-test: gap from Reviewed ink bottom to Noted By. */
+    private const FO2A_SHORT_NOTED_EXTRA_GAP_MM = 7.0;
+
+    /** FO2A tall/full (~19 tests): tighter Reviewed→Noted gap. */
+    private const FO2A_TALL_NOTED_EXTRA_GAP_MM = 3.0;
+
+    /** FO2A few-test sheets: drop Reviewed / Certified this far under NOTES. */
+    private const FO2A_SHORT_FIRST_ROW_DROP_MM = 5.0;
+
     /** Gap between form-meta block bottom and the page stamp. */
     private const FORM_META_ABOVE_STAMP_MM = 3.5;
 
@@ -309,18 +1214,47 @@ class ControlledPdfFiller
     /** Small extra drop under notes when space remains above the Test Report footer. */
     private const SIGNATORY_NUDGE_MM = 20.0;
 
-    /**
-     * FO2 family keeps label→name spacing close to Form Designer; a 20mm short-sheet
-     * nudge opened a large band under "Reviewed by:" / "Certified Correct:".
-     */
-    private const FO2_SIGNATORY_NUDGE_MM = 0.0;
-
     /** Minimum spare room (clamp − flow) before the short-sheet nudge applies. */
     private const SIGNATORY_NUDGE_MIN_SPARE_MM = 24.0;
 
-    private function pageStampY(float $pageHeight): float
+    /** Preferred gap from FO2 NOTES ink bottom to the first signatory row. */
+    private const FO2_NOTES_TO_SIGNATORY_GAP_MM = 6.0;
+
+    /** Minimum NOTES→signatory gap on full sheets that must pack under Test Report. */
+    private const FO2_NOTES_TO_SIGNATORY_GAP_TIGHT_MM = 1.5;
+
+    /** Shrink FO2 chrome fonts on tall sheets (~17–19 tests) so the stack fits. */
+    private const FO2_TALL_CHROME_FONT_REDUCE_PT = 1.0;
+
+    /** Gap from the last FO2 signatory ink to Test Report meta. */
+    private const FO2_SIGNATORY_TO_META_GAP_MM = 5.0;
+
+    /**
+     * Vertical reserve under NOTES for signatories + meta when expanding NOTES height
+     * (must stay above the pinned Test Report / page stamp band).
+     */
+    private const FO2_NOTES_STACK_RESERVE_MM = 55.0;
+
+    /** Trial downward shift for short FO2-family matrices (3–5mm range). */
+    private const FO2_MATRIX_NUDGE_MM = 4.0;
+
+    /** Extra body-row min height on short FO2 sheets (few tests). */
+    private const FO2_MATRIX_SHORT_ROW_EXTRA_MM = 2.0;
+
+    /** Extra body/test/method and chrome font size on short FO2 sheets. */
+    private const FO2_MATRIX_SHORT_FONT_EXTRA_PT = 1.0;
+
+    /** FO2B: gap from NOTES ink bottom to stacked FIELD DATA (right column). */
+    private const FO2B_FIELD_DATA_BELOW_NOTES_GAP_MM = 7.0;
+
+    private function pageStampY(float $pageHeight, ?string $formCode = null): float
     {
-        return max(4.0, $pageHeight - self::PAGE_STAMP_BOTTOM_MM);
+        $fromBottom = self::PAGE_STAMP_BOTTOM_MM;
+        if ($formCode === 'LSP-7.8-FO2A') {
+            $fromBottom = max(8.0, $fromBottom - self::FO2A_FOOTER_DROP_MM);
+        }
+
+        return max(4.0, $pageHeight - $fromBottom);
     }
 
     /**
@@ -330,27 +1264,42 @@ class ControlledPdfFiller
         float $fieldHeight,
         float $fontSize,
         float $pageHeight,
+        ?string $formCode = null,
     ): float {
         $lineHeight = max(3.0, $fontSize * 0.42);
         $contentHeight = min(max($fieldHeight, $lineHeight), $lineHeight * 5.0);
 
-        return $this->pageStampY($pageHeight) - self::FORM_META_ABOVE_STAMP_MM - $contentHeight;
+        return $this->pageStampY($pageHeight, $formCode)
+            - self::FORM_META_ABOVE_STAMP_MM
+            - $contentHeight;
     }
 
     /**
-     * Dynamic Test Report Y: max(matrixBottom + offset, pinnedAboveStamp).
-     * Short sheets keep the footer band; tall sheets drop meta below the chrome stack.
+     * Dynamic Test Report Y: max(followY or content/matrix bottom + offset, pinnedAboveStamp).
+     * FO2 notes-bottom sheets pass the measured signatory stack follow Y.
      *
      * @param  array<string, mixed>  $field
      * @param  array<string, float>  $matrixBottomY
+     * @param  array<string, float>  $fieldContentBottomY
      */
-    private function resolveFormMetaY(array $field, array $matrixBottomY, float $pageHeight): float
-    {
+    private function resolveFormMetaY(
+        array $field,
+        array $matrixBottomY,
+        float $pageHeight,
+        array $fieldContentBottomY = [],
+        ?float $followY = null,
+        ?string $formCode = null,
+    ): float {
         $pinned = $this->formMetaYAbovePageStamp(
             (float) ($field['h'] ?? 18.0),
             (float) ($field['font_size'] ?? 7.0),
             $pageHeight,
+            $formCode,
         );
+
+        if ($followY !== null) {
+            return max($followY, $pinned);
+        }
 
         $options = is_array($field['options'] ?? null) ? $field['options'] : [];
         $anchor = is_array($options['anchor'] ?? null) ? $options['anchor'] : null;
@@ -358,6 +1307,10 @@ class ControlledPdfFiller
         $offset = is_array($anchor) && is_numeric($anchor['offset_mm'] ?? null)
             ? (float) $anchor['offset_mm']
             : 0.0;
+
+        if ($below !== '' && array_key_exists($below, $fieldContentBottomY)) {
+            return max($fieldContentBottomY[$below] + $offset, $pinned);
+        }
 
         if ($below !== '' && array_key_exists($below, $matrixBottomY)) {
             return max($matrixBottomY[$below] + $offset, $pinned);
@@ -374,11 +1327,12 @@ class ControlledPdfFiller
         float $fieldHeight,
         float $fontSize,
         float $pageHeight,
+        ?string $formCode = null,
     ): float {
         $lineHeight = max(3.0, $fontSize * 0.42);
         $contentHeight = min(max($fieldHeight, $lineHeight), $lineHeight * 5.0);
         $belowMeta = $metaY + $contentHeight + self::FORM_META_ABOVE_STAMP_MM;
-        $pinned = $this->pageStampY($pageHeight);
+        $pinned = $this->pageStampY($pageHeight, $formCode);
 
         return min(max($pinned, $belowMeta), max(4.0, $pageHeight - 4.0));
     }
@@ -399,12 +1353,17 @@ class ControlledPdfFiller
         $pageHeight = (float) $pdf->getPageHeight();
         $pageWidth = (float) $pdf->getPageWidth();
         $fontSize = 7.5;
+        $formCode = $revision->form?->form_code;
         // FO28 page mark sits in the bottom margin, under the plotted footer.
         // Other stamped sheets keep the raised position used with Test Report.
-        if ($revision->form?->form_code === 'LSP-7.8-FO28') {
+        if ($formCode === 'LSP-7.8-FO28') {
             $y = max(4.0, $pageHeight - 10.0);
         } else {
-            $y = max(4.0, ($yOverride ?? $this->pageStampY($pageHeight)) - self::PAGE_STAMP_NUDGE_UP_MM);
+            $y = max(
+                4.0,
+                ($yOverride ?? $this->pageStampY($pageHeight, $formCode))
+                    - self::PAGE_STAMP_NUDGE_UP_MM,
+            );
         }
 
         $pdf->SetTextColor(0, 0, 0);
@@ -418,26 +1377,27 @@ class ControlledPdfFiller
     /**
      * @param  array{name: string, type: string, page: int, x: float, y: float, w: float, h: float, font_size: float, align: string, font_family?: string, font_color?: string, table_config?: array<int|string, mixed>|null}  $field
      * @param  array<string, mixed>  $allValues
+     * @return float|null Content bottom Y for multiline fields; null when not applicable.
      */
-    private function writeField(Fpdi $pdf, array $field, mixed $value, array $allValues = []): void
+    private function writeField(Fpdi $pdf, array $field, mixed $value, array $allValues = []): ?float
     {
         $type = $field['type'] ?? 'text';
 
         if ($type === ControlledFormFieldType::DynamicTestMatrix->value && is_array($value)) {
             $this->writeDynamicTestMatrix($pdf, $field, $value, $allValues);
 
-            return;
+            return null;
         }
 
         if ($type === ControlledFormFieldType::Table->value && is_array($value)) {
             $this->writeTable($pdf, $field, $value);
 
-            return;
+            return null;
         }
 
         if (in_array($type, [ControlledFormFieldType::Checkbox->value, ControlledFormFieldType::Radio->value], true)) {
             if (! $value) {
-                return;
+                return null;
             }
 
             $this->applyTcpdfFont($pdf, (string) ($field['font_family'] ?? TcpdfCalibriFont::FAMILY), 'B', 8);
@@ -445,11 +1405,11 @@ class ControlledPdfFiller
             $pdf->SetXY((float) $field['x'], (float) $field['y']);
             $pdf->Cell((float) $field['w'], (float) $field['h'], 'X', 0, 0, 'C');
 
-            return;
+            return null;
         }
 
         if ((float) $field['w'] < 1 || (float) $field['h'] < 1) {
-            return;
+            return null;
         }
 
         $fontSize = (float) ($field['font_size'] ?? 11);
@@ -470,15 +1430,30 @@ class ControlledPdfFiller
             $pdf->Rect($x, $y, $w, $h, 'F');
         }
 
-        $staticText = trim((string) ($options['static_text'] ?? ''));
-        if ($staticText !== '' && ($options['prefer_static'] ?? false) === true) {
+        $staticTextRaw = (string) ($options['static_text'] ?? '');
+        $staticText = trim($staticTextRaw) === '' ? '' : $staticTextRaw;
+
+        $signatoryBlock = is_array($options['signatory_block'] ?? null)
+            ? $options['signatory_block']
+            : null;
+        if ($signatoryBlock !== null) {
+            // Designer static_text owns layout (blank lines, tabs); live names/PRCs inject when present.
+            $resolved = Fo2SignatoryBlockComposer::resolve(
+                $signatoryBlock,
+                $allValues,
+                $staticText !== '' ? $staticText : null,
+            );
+            if ($resolved !== '') {
+                $value = $resolved;
+            }
+        } elseif ($staticText !== '' && ($options['prefer_static'] ?? false) === true) {
             $value = $staticText;
         } elseif (($value === null || $value === '') && $staticText !== '') {
             $value = $staticText;
         }
 
         if ($value === null || $value === '') {
-            return;
+            return null;
         }
 
         $this->applyColor($pdf, $field['font_color'] ?? null);
@@ -491,17 +1466,19 @@ class ControlledPdfFiller
         if ($scientific !== null && ! \App\Support\InlineBoldMarkup::hasMarkup((string) $value)) {
             $this->writeScientificInBox($pdf, $scientific, $x, $y, $w, $h, $align, $family, $fontSize);
 
-            return;
+            return null;
         }
 
         $value = $this->plainScientific((string) $value);
         $pdf->SetXY($x, $y);
 
         if ($type === ControlledFormFieldType::Multiline->value) {
-            $lineHeight = max(3.0, $fontSize * 0.42);
+            $lineHeightFactor = $this->resolveLineHeightFactor($options);
+            $paragraphGapMm = $this->resolveParagraphGapMm($options);
+            $lineHeight = max(3.0, $fontSize * 0.42) * $lineHeightFactor;
             $listStyle = strtolower(trim((string) ($options['list_style'] ?? '')));
             if (in_array($listStyle, ['numbered', 'bullet'], true)) {
-                $this->writeMultilineList(
+                return $this->writeMultilineList(
                     $pdf,
                     (string) $value,
                     $listStyle,
@@ -515,12 +1492,11 @@ class ControlledPdfFiller
                     $family,
                     $fontSize,
                     $forceBold,
+                    $paragraphGapMm,
                 );
-
-                return;
             }
 
-            $this->writeStyledMultiline(
+            return $this->writeStyledMultiline(
                 $pdf,
                 (string) $value,
                 $x,
@@ -531,9 +1507,8 @@ class ControlledPdfFiller
                 $family,
                 $fontSize,
                 $forceBold,
+                $paragraphGapMm,
             );
-
-            return;
         }
 
         $this->writeStyledSingleLine(
@@ -548,6 +1523,8 @@ class ControlledPdfFiller
             $fontSize,
             $forceBold,
         );
+
+        return null;
     }
 
     /**
@@ -568,7 +1545,8 @@ class ControlledPdfFiller
         string $family = TcpdfCalibriFont::FAMILY,
         float $fontSize = 11.0,
         bool $forceBold = false,
-    ): void {
+        float $paragraphGapMm = 0.0,
+    ): float {
         $gutter = max(4.0, min($gutterMm, max(4.0, $w * 0.35)));
         $bodyWidth = max(1.0, $w - $gutter);
         $bottom = $y + $h;
@@ -578,7 +1556,7 @@ class ControlledPdfFiller
 
         foreach ($headers as $header) {
             if ($cursorY + $lineHeight > $bottom + 0.01) {
-                return;
+                return $cursorY;
             }
             $remaining = max($lineHeight, $bottom - $cursorY);
             $cursorY = $this->writeStyledMultiline(
@@ -592,12 +1570,13 @@ class ControlledPdfFiller
                 $family,
                 $fontSize,
                 $forceBold,
+                $paragraphGapMm,
             );
         }
 
         foreach ($items as $item) {
             if ($cursorY + $lineHeight > $bottom + 0.01) {
-                return;
+                return $cursorY;
             }
 
             $marker = (string) ($item['marker'] ?? '');
@@ -620,9 +1599,93 @@ class ControlledPdfFiller
                 $family,
                 $fontSize,
                 $forceBold,
+                $paragraphGapMm,
             );
             $cursorY = max($cursorY + $lineHeight, $bodyEndY);
         }
+
+        return $cursorY;
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function resolveLineHeightFactor(array $options): float
+    {
+        $raw = $options['line_height_factor'] ?? null;
+        if (! is_numeric($raw)) {
+            return 1.0;
+        }
+        $factor = (float) $raw;
+        if ($factor <= 0) {
+            return 1.0;
+        }
+
+        return max(0.75, min(2.0, $factor));
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function resolveParagraphGapMm(array $options): float
+    {
+        $raw = $options['paragraph_gap_mm'] ?? null;
+        if (! is_numeric($raw)) {
+            return 0.0;
+        }
+        $gap = (float) $raw;
+        if ($gap <= 0) {
+            return 0.0;
+        }
+
+        return min(12.0, $gap);
+    }
+
+    /**
+     * Count leading indent units (space = 1, tab = 4) and return the rest of the line.
+     *
+     * @return array{0: int, 1: string}
+     */
+    private function splitLeadingIndent(string $line): array
+    {
+        $units = 0;
+        $length = strlen($line);
+        $index = 0;
+        while ($index < $length) {
+            $char = $line[$index];
+            if ($char === ' ') {
+                $units++;
+                $index++;
+                continue;
+            }
+            if ($char === "\t") {
+                $units += 4;
+                $index++;
+                continue;
+            }
+            break;
+        }
+
+        return [$units, substr($line, $index)];
+    }
+
+    /**
+     * Horizontal indent for leading spaces/tabs. TCPDF can report 0-width spaces
+     * for some embedded fonts — fall back to an em-based width.
+     */
+    private function leadingIndentMm(Fpdi $pdf, float $fontSize, int $indentUnits): float
+    {
+        if ($indentUnits <= 0) {
+            return 0.0;
+        }
+
+        $spaceWidth = (float) $pdf->GetStringWidth(' ');
+        if ($spaceWidth < 0.05) {
+            $en = (float) $pdf->GetStringWidth('n');
+            $spaceWidth = $en >= 0.05 ? $en * 0.5 : max(0.35, $fontSize * 0.3528 * 0.25);
+        }
+
+        return $spaceWidth * $indentUnits;
     }
 
     /**
@@ -639,6 +1702,7 @@ class ControlledPdfFiller
         string $family,
         float $fontSize,
         bool $forceBold,
+        float $paragraphGapMm = 0.0,
     ): float {
         $bottom = $y + $h;
         $cursorY = $y;
@@ -650,12 +1714,19 @@ class ControlledPdfFiller
             }
 
             if ($line === '') {
-                $cursorY += $lineHeight;
+                $cursorY += $lineHeight + max(0.0, $paragraphGapMm);
 
                 continue;
             }
 
-            $segments = \App\Support\InlineBoldMarkup::segments($line);
+            [$indentUnits, $lineBody] = $this->splitLeadingIndent($line);
+            if ($lineBody === '') {
+                $cursorY += $lineHeight + max(0.0, $paragraphGapMm);
+
+                continue;
+            }
+
+            $segments = \App\Support\InlineBoldMarkup::segments($lineBody);
             if ($forceBold) {
                 $segments = array_map(
                     static fn (array $seg): array => ['text' => $seg['text'], 'bold' => true],
@@ -663,7 +1734,9 @@ class ControlledPdfFiller
                 );
             }
 
-            $cursorX = $x;
+            $this->applyTcpdfFont($pdf, $family, $forceBold ? 'B' : '', $fontSize);
+            $indentX = $x + $this->leadingIndentMm($pdf, $fontSize, $indentUnits);
+            $cursorX = $indentX;
             $tokens = $this->tokenizeStyledSegments($segments);
 
             foreach ($tokens as $token) {
@@ -681,9 +1754,9 @@ class ControlledPdfFiller
                 $chunkWidth = (float) $pdf->GetStringWidth($chunk);
                 $lineRight = $x + $w;
 
-                if ($cursorX > $x + 0.01 && $cursorX + $chunkWidth > $lineRight + 0.01) {
+                if ($cursorX > $indentX + 0.01 && $cursorX + $chunkWidth > $lineRight + 0.01) {
                     $cursorY += $lineHeight;
-                    $cursorX = $x;
+                    $cursorX = $indentX;
                     if ($cursorY + $lineHeight > $bottom + 0.01) {
                         return $cursorY;
                     }
@@ -702,9 +1775,9 @@ class ControlledPdfFiller
                         break;
                     }
 
-                    if ($cursorX > $x + 0.01) {
+                    if ($cursorX > $indentX + 0.01) {
                         $cursorY += $lineHeight;
-                        $cursorX = $x;
+                        $cursorX = $indentX;
                         if ($cursorY + $lineHeight > $bottom + 0.01) {
                             return $cursorY;
                         }
@@ -1207,6 +2280,267 @@ class ControlledPdfFiller
         return in_array($name, ['fo2_form_meta', 'fo3_form_meta', 'fo37_form_meta', 'fo28_form_meta'], true);
     }
 
+    private function isFo2FamilyStackMatrix(string $name): bool
+    {
+        return in_array($name, ['ww_fo2_matrix', 'ww_fo2a_matrix', 'ww_fo2b_matrix'], true);
+    }
+
+    /**
+     * Taller body rows and +1pt test/method fonts when few FO2 tests leave spare room.
+     *
+     * @param  array<string, mixed>  $overlay
+     * @return array<string, mixed>
+     */
+    private function applyFo2ShortSheetMatrixScale(array $overlay): array
+    {
+        $extraPt = self::FO2_MATRIX_SHORT_FONT_EXTRA_PT;
+        $overlay['font_size'] = (float) ($overlay['font_size'] ?? 8.0) + $extraPt;
+
+        $config = is_array($overlay['table_config'] ?? null) ? $overlay['table_config'] : [];
+        $config['row_height_mm'] = (float) ($config['row_height_mm'] ?? 7.0)
+            + self::FO2_MATRIX_SHORT_ROW_EXTRA_MM;
+
+        if (
+            isset($config['method_font_size'])
+            && is_numeric($config['method_font_size'])
+            && (float) $config['method_font_size'] > 0
+        ) {
+            $config['method_font_size'] = (float) $config['method_font_size'] + $extraPt;
+        }
+
+        $columns = is_array($config['columns'] ?? null) ? $config['columns'] : [];
+        foreach ($columns as $index => $column) {
+            if (! is_array($column)) {
+                continue;
+            }
+            $key = (string) ($column['key'] ?? '');
+            if ($key !== 'test' && $key !== 'method') {
+                continue;
+            }
+            if (! isset($column['font_size']) || ! is_numeric($column['font_size'])) {
+                continue;
+            }
+            $columns[$index]['font_size'] = (float) $column['font_size'] + $extraPt;
+        }
+        $config['columns'] = $columns;
+        $overlay['table_config'] = $config;
+
+        return $overlay;
+    }
+
+    /**
+     * NOTES, references, signatory stack, and Test Report meta on short FO2 sheets.
+     *
+     * @param  array<string, mixed>  $overlay
+     */
+    private function shouldBoostFo2ShortSheetChromeFont(string $name, array $overlay): bool
+    {
+        if (in_array($name, [
+            'fo2_notes',
+            'fo2_references',
+            'fo2_form_meta',
+            'fo2_signatory_reviewed',
+            'fo2_signatory_certified',
+            'fo2_signatory_noted',
+        ], true)) {
+            return true;
+        }
+
+        if (
+            str_starts_with($name, 'fo2_label_')
+            || str_starts_with($name, 'fo2_role_')
+            || str_starts_with($name, 'fo2_lic_')
+            || str_starts_with($name, 'fo2_signatory_')
+        ) {
+            return true;
+        }
+
+        $options = is_array($overlay['options'] ?? null) ? $overlay['options'] : [];
+        $anchor = is_array($options['anchor'] ?? null) ? $options['anchor'] : [];
+
+        return ($anchor['above'] ?? null) === 'fo2_form_meta';
+    }
+
+    private function fillWhiteRect(Fpdi $pdf, float $x, float $y, float $w, float $h): void
+    {
+        if ($w <= 0.01 || $h <= 0.01) {
+            return;
+        }
+
+        $pdf->SetFillColor(255, 255, 255);
+        $pdf->Rect($x, $y, $w, $h, 'F');
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, \App\Models\ControlledFormField>  $pageFields
+     * @return array{offset_mm: float, h: float, font_size: float}|null
+     */
+    private function fo2FormMetaAnchorForMatrix($pageFields, string $matrixName): ?array
+    {
+        $notesOffsetUnderMatrix = null;
+        foreach ($pageFields as $field) {
+            if ($field->name !== 'fo2_notes') {
+                continue;
+            }
+            $notesAnchor = is_array($field->options['anchor'] ?? null) ? $field->options['anchor'] : [];
+            if (trim((string) ($notesAnchor['below'] ?? '')) !== $matrixName) {
+                break;
+            }
+            $notesOffsetUnderMatrix = is_numeric($notesAnchor['offset_mm'] ?? null)
+                ? (float) $notesAnchor['offset_mm']
+                : 0.0;
+            break;
+        }
+
+        foreach ($pageFields as $field) {
+            if ($field->name !== 'fo2_form_meta') {
+                continue;
+            }
+            $overlay = $field->toOverlayArray();
+            $options = is_array($overlay['options'] ?? null) ? $overlay['options'] : [];
+            $anchor = is_array($options['anchor'] ?? null) ? $options['anchor'] : null;
+            $below = is_array($anchor) ? trim((string) ($anchor['below'] ?? '')) : '';
+            $metaOffset = is_array($anchor) && is_numeric($anchor['offset_mm'] ?? null)
+                ? (float) $anchor['offset_mm']
+                : 0.0;
+
+            // Legacy: meta below matrix. Notes-bottom: meta below fo2_notes — fold NOTES
+            // offset so short-sheet spare still measures from the matrix bottom.
+            if ($below === $matrixName) {
+                $offsetMm = $metaOffset;
+            } elseif ($below === 'fo2_notes' && $notesOffsetUnderMatrix !== null) {
+                $offsetMm = $notesOffsetUnderMatrix + $metaOffset;
+            } else {
+                continue;
+            }
+
+            return [
+                'offset_mm' => $offsetMm,
+                'h' => (float) ($overlay['h'] ?? $field->height ?? 18.0),
+                'font_size' => (float) ($overlay['font_size'] ?? $field->font_size ?? 7.0),
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Natural content bottom Y for a dynamic matrix (no stretch, no draw).
+     *
+     * @param  array<string, mixed>  $field
+     * @param  list<mixed>  $rows
+     * @param  array<string, mixed>  $values
+     */
+    private function measureNaturalMatrixBottomY(
+        Fpdi $pdf,
+        array $field,
+        array $rows,
+        array $values = [],
+    ): float {
+        $rawConfig = is_array($field['table_config'] ?? null) ? $field['table_config'] : DynamicTestMatrix::defaultConfig();
+        $config = DynamicTestMatrix::normalizeStoredTableConfig(
+            (string) ($field['name'] ?? ''),
+            ControlledFormFieldType::DynamicTestMatrix,
+            $rawConfig,
+            null,
+        );
+        if (! is_array($config)) {
+            $config = DynamicTestMatrix::defaultConfig();
+        }
+        $columns = is_array($config['columns'] ?? null) && $config['columns'] !== []
+            ? $config['columns']
+            : DynamicTestMatrix::defaultConfig()['columns'];
+        $columns = DynamicTestMatrix::resolveHeaderSources($columns, $values);
+        $rows = DynamicTestMatrix::placeOutcomeForColumns($rows, $columns);
+        $rows = DynamicTestMatrix::applyDesignerTextEdits($rows, $config);
+        $rows = array_map(
+            static fn ($row) => is_array($row)
+                ? DynamicTestMatrix::sanitizeRawFinishAcceptableValues($row)
+                : $row,
+            $rows,
+        );
+
+        $rowHeight = (float) ($config['row_height_mm'] ?? 7);
+        $headerRow = (bool) ($config['header_row'] ?? true);
+        $fontSize = (float) ($field['font_size'] ?? 8);
+        $requestedFamily = (string) ($field['font_family'] ?? TcpdfCalibriFont::FAMILY);
+        $methodFontSize = isset($config['method_font_size'])
+            && is_numeric($config['method_font_size'])
+            && (float) $config['method_font_size'] > 0
+            ? (float) $config['method_font_size']
+            : max(6, $fontSize - 1);
+        $testNameBold = ($config['test_name_bold'] ?? true) !== false;
+        $headerFontSize = isset($config['header_font_size']) && is_numeric($config['header_font_size'])
+            ? (float) $config['header_font_size']
+            : $fontSize;
+        $configuredHeaderHeight = isset($config['header_row_height_mm']) && is_numeric($config['header_row_height_mm'])
+            ? (float) $config['header_row_height_mm']
+            : null;
+        $bodyRowHeight = $rowHeight;
+
+        $y = (float) $field['y'];
+        $w = (float) $field['w'];
+        $h = (float) $field['h'];
+        $maxY = $y + $h;
+
+        $headerHeight = 0.0;
+        if ($headerRow) {
+            $headerHeight = $this->measureMatrixHeaderRowHeight(
+                $columns,
+                $rowHeight,
+                $headerFontSize,
+                $configuredHeaderHeight,
+            );
+            if ($y + $headerHeight > $maxY) {
+                return $y;
+            }
+        }
+
+        [$bodyColumns, $bodyFontSize, $bodyMethodFontSize] = $this->fitMatrixBodyFonts(
+            $pdf,
+            $rows,
+            $columns,
+            $w,
+            $bodyRowHeight,
+            $fontSize,
+            $methodFontSize,
+            $requestedFamily,
+            $testNameBold,
+            $maxY - ($y + $headerHeight),
+            $config,
+        );
+
+        $naturalBodyTotal = 0.0;
+        $cursorAfterHeader = $y + $headerHeight;
+
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $natural = $this->measureMatrixBodyRowHeight(
+                $pdf,
+                $row,
+                $bodyColumns,
+                $w,
+                DynamicTestMatrix::rowMinHeightMm($config, $row, $bodyRowHeight),
+                $bodyFontSize,
+                $bodyMethodFontSize,
+                $requestedFamily,
+                $testNameBold,
+                DynamicTestMatrix::rowSpanRole($row) === 'continue',
+            ) + DynamicTestMatrix::rowExtraMm($config);
+
+            if ($cursorAfterHeader + $naturalBodyTotal + $natural > $maxY + 0.01) {
+                break;
+            }
+
+            $naturalBodyTotal += $natural;
+        }
+
+        return $cursorAfterHeader + $naturalBodyTotal;
+    }
+
     /**
      * Signatory chrome that drops into the open rows under a short FO28 matrix.
      *
@@ -1305,7 +2639,12 @@ class ControlledPdfFiller
             }
             $metaAnchor = is_array($pageField->options['anchor'] ?? null) ? $pageField->options['anchor'] : [];
             $metaBelow = trim((string) ($metaAnchor['below'] ?? ''));
-            if ($metaBelow !== '' && $metaBelow !== $below) {
+            // Same matrix, or both chained under fo2_notes (notes-bottom FO2 stack).
+            $compatibleBelow = $metaBelow === ''
+                || $metaBelow === $below
+                || ($below === 'fo2_notes' && $metaBelow === 'fo2_notes')
+                || ($below === 'fo2_notes' && $this->isFo2FamilyStackMatrix($metaBelow));
+            if (! $compatibleBelow) {
                 break;
             }
             if (is_numeric($metaAnchor['offset_mm'] ?? null)) {
@@ -1334,21 +2673,27 @@ class ControlledPdfFiller
     }
 
     /**
-     * Rewrite field y from options.anchor.below (matrix) and/or options.anchor.above (fixed field).
-     * When both are set: y = min(matrixBottom + offset_mm + optionalNudge, aboveY - above_offset_mm).
-     * Nudge applies only when spare room above the Test Report clamp is large (short sheets);
-     * long matrices use normal flow/clamp with no nudge.
+     * Rewrite field y from options.anchor.below (matrix or measured field content)
+     * and/or options.anchor.above (fixed field).
+     * When both are set: y = min(below + offset_mm + optionalNudge, aboveY - above_offset_mm).
+     * FO2 notes-bottom signatories skip SIGNATORY_NUDGE_MM (gap is the designer offset).
+     * FO3/FO37 still use SIGNATORY_NUDGE_MM when spare is large.
+     * Below-only FO2 fields (NOTES/refs/lab) may get FO2_MATRIX_NUDGE_MM on short sheets.
      * Form-meta fields are never repositioned here (resolved separately).
      *
      * @param  array<string, mixed>  $field
      * @param  array<string, float>  $matrixBottomY
      * @param  array<string, float>  $absoluteFieldY
+     * @param  array<string, float>  $fo2BelowOnlyNudgeMm
+     * @param  array<string, float>  $fieldContentBottomY
      * @return array<string, mixed>
      */
     private function applyAnchorBelow(
         array $field,
         array $matrixBottomY,
         array $absoluteFieldY = [],
+        array $fo2BelowOnlyNudgeMm = [],
+        array $fieldContentBottomY = [],
     ): array {
         if ($this->isFixedFormMetaField((string) ($field['name'] ?? ''))) {
             return $field;
@@ -1370,7 +2715,9 @@ class ControlledPdfFiller
             : 0.0;
 
         $fromBelow = null;
-        if ($below !== '' && array_key_exists($below, $matrixBottomY)) {
+        if ($below !== '' && array_key_exists($below, $fieldContentBottomY)) {
+            $fromBelow = $fieldContentBottomY[$below] + $offset;
+        } elseif ($below !== '' && array_key_exists($below, $matrixBottomY)) {
             $fromBelow = $matrixBottomY[$below] + $offset;
         }
 
@@ -1390,17 +2737,26 @@ class ControlledPdfFiller
             // the form block. A full sheet has no spare, so the plotted gaps stay.
             if ($above === 'fo28_form_meta' && $spare >= self::SIGNATORY_NUDGE_MIN_SPARE_MM) {
                 $field['y'] = $fromAbove;
+            } elseif (
+                $below === 'fo2_notes'
+                || str_starts_with($below, 'fo2_signatory_')
+            ) {
+                // Always stay under NOTES / prior signatory ink + offset_mm.
+                // Never clamp toward Test Report (that dropped FO2A Noted on tall sheets).
+                $field['y'] = $fromBelow;
             } else {
-                $nudgeAmount = $above === 'fo2_form_meta'
-                    ? self::FO2_SIGNATORY_NUDGE_MM
-                    : self::SIGNATORY_NUDGE_MM;
+                // FO3/FO37 (and legacy FO2 matrix-anchored) short-sheet nudge.
                 $nudge = $spare >= self::SIGNATORY_NUDGE_MIN_SPARE_MM
-                    ? $nudgeAmount
+                    ? self::SIGNATORY_NUDGE_MM
                     : 0.0;
                 $field['y'] = min($fromBelow + $nudge, $fromAbove);
             }
         } elseif ($fromBelow !== null) {
-            $field['y'] = $fromBelow;
+            // Below-only FO2 chrome (NOTES/refs/lab): same 4mm short-sheet drop as matrix.
+            $belowOnlyNudge = ($above === '' && $below !== '' && $this->isFo2FamilyStackMatrix($below))
+                ? (float) ($fo2BelowOnlyNudgeMm[$below] ?? 0.0)
+                : 0.0;
+            $field['y'] = $fromBelow + $belowOnlyNudge;
         } else {
             $field['y'] = $fromAbove;
         }

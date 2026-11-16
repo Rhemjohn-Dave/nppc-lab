@@ -25,10 +25,11 @@ class Fo2aLayoutTest extends TestCase
         $this->assertStringContainsString('LSP 7.8_FO2', $metaText);
         $this->assertStringContainsString('CHE WW', $metaText);
         $this->assertStringContainsString('Rev. 17/Issue 18', $metaText);
+        $this->assertSame('fo2_notes', $meta->options['anchor']['below'] ?? null);
 
-        $reviewed = $revision->fields->firstWhere('name', 'fo2_label_reviewed');
-        $certified = $revision->fields->firstWhere('name', 'fo2_label_certified');
-        $noted = $revision->fields->firstWhere('name', 'fo2_label_noted');
+        $reviewed = $revision->fields->firstWhere('name', 'fo2_signatory_reviewed');
+        $certified = $revision->fields->firstWhere('name', 'fo2_signatory_certified');
+        $noted = $revision->fields->firstWhere('name', 'fo2_signatory_noted');
         $this->assertNotNull($reviewed);
         $this->assertNotNull($certified);
         $this->assertNotNull($noted);
@@ -37,25 +38,30 @@ class Fo2aLayoutTest extends TestCase
         $certifiedOffset = (float) ($certified->options['anchor']['offset_mm'] ?? 0);
         $notedOffset = (float) ($noted->options['anchor']['offset_mm'] ?? 0);
 
+        $this->assertSame('fo2_notes', $reviewed->options['anchor']['below'] ?? null);
+        $this->assertEqualsWithDelta(13.0, $reviewedOffset, 0.01);
         $this->assertEqualsWithDelta($reviewedOffset, $certifiedOffset, 0.01);
         $this->assertGreaterThan($reviewedOffset, $notedOffset);
-
-        $this->assertNull($revision->fields->firstWhere('name', 'results.analyst_prc'));
-
-        $roleReviewed = $revision->fields->firstWhere('name', 'fo2_role_reviewed');
-        $licReviewed = $revision->fields->firstWhere('name', 'fo2_lic_reviewed');
-        $this->assertNotNull($roleReviewed);
-        $this->assertNotNull($licReviewed);
-        $this->assertSame('Laboratory Analyst', (string) ($roleReviewed->options['static_text'] ?? ''));
-        $this->assertStringContainsString(
-            'Registered Chemical Technician, License #00761',
-            (string) ($licReviewed->options['static_text'] ?? ''),
+        // Noted = Reviewed offset + box h + 4mm clearance (designer baseline).
+        $this->assertEqualsWithDelta(39.0, $notedOffset, 0.01);
+        $this->assertEqualsWithDelta(
+            $reviewedOffset + (float) $reviewed->height + 4.0,
+            $notedOffset,
+            0.01,
         );
 
-        $nameReviewed = $revision->fields->firstWhere('name', 'results.analyst_name');
+        $this->assertIsArray($reviewed->options['signatory_block'] ?? null);
         $this->assertStringContainsString(
             'LANACA',
-            (string) ($nameReviewed?->options['static_text'] ?? ''),
+            (string) ($reviewed->options['static_text'] ?? ''),
+        );
+        $this->assertStringContainsString(
+            'Laboratory Analyst',
+            (string) ($reviewed->options['static_text'] ?? ''),
+        );
+        $this->assertStringContainsString(
+            'Registered Chemical Technician, License #00761',
+            (string) ($reviewed->options['static_text'] ?? ''),
         );
     }
 }

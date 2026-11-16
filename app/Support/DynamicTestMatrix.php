@@ -205,8 +205,17 @@ class DynamicTestMatrix
 
         $merged = array_merge($tableConfig, [
             'columns' => $columns,
-            'preview_rows' => $preset['preview_rows'],
         ]);
+
+        // Residue presets lock preview_rows; FO2 keeps the designer's Preview rows value.
+        $storedPreviewRows = $tableConfig['preview_rows'] ?? null;
+        if ($isLockedResidueMatrix && isset($preset['preview_rows'])) {
+            $merged['preview_rows'] = $preset['preview_rows'];
+        } elseif (is_numeric($storedPreviewRows) && (int) $storedPreviewRows > 0) {
+            $merged['preview_rows'] = (int) $storedPreviewRows;
+        } elseif (isset($preset['preview_rows'])) {
+            $merged['preview_rows'] = $preset['preview_rows'];
+        }
 
         // Residue sheets: keep official headers; do not force designer preview_data placeholders.
         if ($isLockedResidueMatrix && array_key_exists('stretch_body', $preset)) {
@@ -320,9 +329,9 @@ class DynamicTestMatrix
         }
 
         $source = $baseRows !== [] ? $baseRows : self::sampleRows();
-        // Prefer catalog/package length when preview_rows is stale/smaller (e.g. FO3 gained Cl rows).
+        // Designer "Preview rows" is a hard cap (e.g. 7 of 20 package members for spacing checks).
         $desired = isset($config['preview_rows']) && is_numeric($config['preview_rows']) && (int) $config['preview_rows'] > 0
-            ? max((int) $config['preview_rows'], count($source))
+            ? (int) $config['preview_rows']
             : max(count($source), count($stored));
 
         $count = min($desired, max(count($source), count($stored) > 0 ? count($stored) : count($source)));
@@ -1047,6 +1056,12 @@ class DynamicTestMatrix
             );
         }
 
+        $remarks = filled($line->result_remarks) ? (string) $line->result_remarks : null;
+        // Formal Pass/Fail owns the Remarks outcome; drop redundant shortcut copies.
+        if ($passFail !== null && $remarks !== null && strcasecmp(trim($remarks), $passFail) === 0) {
+            $remarks = null;
+        }
+
         return [
             'test' => $testName,
             'test_method' => $method,
@@ -1058,7 +1073,7 @@ class DynamicTestMatrix
             'pass_fail' => $passFail,
             'sample_1' => $value,
             'sample_2' => null,
-            'remarks' => filled($line->result_remarks) ? (string) $line->result_remarks : null,
+            'remarks' => $remarks,
         ];
     }
 
@@ -1260,10 +1275,40 @@ class DynamicTestMatrix
             $row['result'] = $row['result_value'];
 
             $existing = trim((string) ($row['remarks'] ?? ''));
-            $row['remarks'] = $existing !== '' ? $outcome.'; '.$existing : $outcome;
+            $row['remarks'] = self::mergeOutcomeIntoRemarks($outcome, $existing);
 
             return $row;
         }, $rows);
+    }
+
+    /**
+     * Prefixed Pass/Fail into Remarks without duplicating when remarks already hold the same outcome
+     * (e.g. legacy Remarks-shortcut "Passed" + formal result_pass_fail "Passed").
+     */
+    public static function mergeOutcomeIntoRemarks(string $outcome, string $existingRemarks): string
+    {
+        $outcome = trim($outcome);
+        if ($outcome === '') {
+            return trim($existingRemarks);
+        }
+
+        $existing = trim($existingRemarks);
+        if ($existing === '') {
+            return $outcome;
+        }
+
+        $parts = array_values(array_filter(
+            array_map('trim', explode(';', $existing)),
+            static fn (string $part): bool => $part !== '',
+        ));
+
+        while ($parts !== [] && strcasecmp($parts[0], $outcome) === 0) {
+            array_shift($parts);
+        }
+
+        $rest = implode('; ', $parts);
+
+        return $rest !== '' ? $outcome.'; '.$rest : $outcome;
     }
 
     /**

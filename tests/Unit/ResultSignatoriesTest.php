@@ -169,25 +169,22 @@ class ResultSignatoriesTest extends TestCase
         $revision = $form->activeRevision();
         $this->assertNotNull($revision);
 
-        $nameField = $revision->fields()
-            ->where('data_source_key', 'results.analyst_name')
+        $reviewed = $revision->fields()
+            ->where('name', 'fo2_signatory_reviewed')
             ->firstOrFail();
-        $nameField->update([
-            'options' => array_merge(
-                is_array($nameField->options) ? $nameField->options : [],
-                ['static_text' => 'Designer Reviewed Name'],
-            ),
+        $options = is_array($reviewed->options) ? $reviewed->options : [];
+        $block = is_array($options['signatory_block'] ?? null) ? $options['signatory_block'] : [];
+        $people = is_array($block['people'] ?? null) ? $block['people'] : [[]];
+        $people[0] = array_merge(is_array($people[0] ?? null) ? $people[0] : [], [
+            'fallback_name' => 'Designer Reviewed Name',
+            'lines_after_name' => [
+                'Laboratory Analyst',
+                'Registered Chemical Technician, License #00761',
+            ],
         ]);
-
-        $licField = $revision->fields()
-            ->where('data_source_key', 'fo2_lic_reviewed')
-            ->firstOrFail();
-        $licField->update([
-            'options' => array_merge(
-                is_array($licField->options) ? $licField->options : [],
-                ['static_text' => 'Registered Chemical Technician, License #00761'],
-            ),
-        ]);
+        $block['people'] = $people;
+        $options['signatory_block'] = $block;
+        $reviewed->update(['options' => $options]);
 
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
         $job = JobOrder::query()->create([
@@ -223,19 +220,30 @@ class ResultSignatoriesTest extends TestCase
         $revision = $form->activeRevision();
         $this->assertNotNull($revision);
 
-        foreach (['results.analyst_name', 'results.analyst_name_2', 'results.analyst_name_3', 'results.analyst_name_4'] as $key) {
-            ControlledFormField::query()
-                ->where('controlled_form_revision_id', $revision->id)
-                ->where(function ($query) use ($key) {
-                    $query->where('data_source_key', $key)->orWhere('name', $key);
-                })
-                ->get()
-                ->each(function (ControlledFormField $field) {
-                    $options = is_array($field->options) ? $field->options : [];
-                    unset($options['static_text']);
-                    $field->update(['options' => $options]);
-                });
-        }
+        ControlledFormField::query()
+            ->where('controlled_form_revision_id', $revision->id)
+            ->whereIn('name', [
+                'fo2_signatory_reviewed',
+                'fo2_signatory_certified',
+                'fo2_signatory_noted',
+            ])
+            ->get()
+            ->each(function (ControlledFormField $field) {
+                $options = is_array($field->options) ? $field->options : [];
+                $block = is_array($options['signatory_block'] ?? null) ? $options['signatory_block'] : [];
+                $people = is_array($block['people'] ?? null) ? $block['people'] : [];
+                foreach ($people as $index => $person) {
+                    if (! is_array($person)) {
+                        continue;
+                    }
+                    unset($person['fallback_name']);
+                    $people[$index] = $person;
+                }
+                $block['people'] = $people;
+                $options['signatory_block'] = $block;
+                unset($options['static_text']);
+                $field->update(['options' => $options]);
+            });
 
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
         $job = JobOrder::query()->create([
