@@ -210,7 +210,6 @@ return array (
       'font_family' => 'calibri',
       'font_color' => '#000000',
       'align' => 'L',
-      'data_source_key' => null,
       'options' => 
       array (
         'cover' => true,

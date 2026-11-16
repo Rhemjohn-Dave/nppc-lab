@@ -167,15 +167,6 @@ return array (
         'test_name_bold' => true,
         'header_bold' => true,
         'method_font_size' => 9,
-        'preview_data' => 
-        array (
-          0 => 
-          array (
-            'control_no' => 'CAP-2026-001',
-            'sample_description' => 'Prawn sample',
-            'result' => NULL,
-          ),
-        ),
       ),
     ),
     7 => 

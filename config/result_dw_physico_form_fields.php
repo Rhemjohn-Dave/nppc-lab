@@ -240,7 +240,7 @@ return array (
             'test' => 'Color (Apparent Color)',
             'test_method' => 'Colorimetric Method (2120 B)',
             'result' => NULL,
-            'method' => 'Colorimetric Method (2120 B)',
+            'method' => 'Colorimetric Method',
           ),
           1 => 
           array (
@@ -537,7 +537,7 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
           'above' => 'fo37_form_meta',
           'above_offset_mm' => 35,
         ),
-        'static_text' => 'MA. ANTONIELA C. LANACA',
+        'static_text' => '**MA. ANTONIELA C. LANACA**',
       ),
     ),
     17 => 
@@ -564,7 +564,7 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
           'above' => 'fo37_form_meta',
           'above_offset_mm' => 35,
         ),
-        'static_text' => 'JAYRAYNE ERIC G. BARNUEVO, RCh',
+        'static_text' => '**JAYRAYNE ERIC G. BARNUEVO, RCh**',
       ),
     ),
     18 => 
@@ -780,7 +780,7 @@ Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L
           'above' => 'fo37_form_meta',
           'above_offset_mm' => 15,
         ),
-        'static_text' => 'WENDY A. TAYSON, RCh, MEnE',
+        'static_text' => '**WENDY A. TAYSON, RCh, MEnE**',
       ),
     ),
     26 => 
