@@ -442,6 +442,81 @@ class ResultFooterTest extends TestCase
             ->assertJsonPath('footer.field_data_complete', true);
     }
 
+    public function test_multi_sample_wastewater_then_coastal_requires_field_data(): void
+    {
+        Storage::fake('local');
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+        $wwTypeIds = AnalysisType::query()
+            ->whereIn('code', array_slice(OfficialAnalysisCatalog::wastewaterPhysicoIssue18TypeCodes(), 0, 1))
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+        $coastalTypeIds = AnalysisType::query()
+            ->whereIn('code', OfficialAnalysisCatalog::wastewaterPhysicoCoastalTypeCodes())
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        $this->actingAs($receiving)
+            ->post('/intake/job-orders', [
+                'customer_name' => 'WW Then Coastal',
+                'customer_email' => 'ww-then-coastal@example.com',
+                'classification' => 'Wastewater',
+                'samples' => [
+                    [
+                        'description' => 'Wastewater',
+                        'matrix' => 'Liquid',
+                        'analysis_type_ids' => $wwTypeIds,
+                        'package_ids' => [],
+                    ],
+                    [
+                        'description' => 'Coastal Water',
+                        'matrix' => 'Liquid',
+                        'analysis_type_ids' => $coastalTypeIds,
+                        'package_ids' => [],
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $this->priceApproveReceiveAssign($job, $analyst);
+
+        $payload = ResultFooter::manifestPayload($job->fresh(['samples']), null, null);
+        $this->assertTrue($payload['requires_field_data']);
+        $this->assertTrue($payload['show_field_data']);
+        $this->assertFalse($payload['field_data_complete']);
+
+        $this->actingAs($analyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'CW-MULTI',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['field_data_temperature']);
+
+        $this->actingAs($analyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'CW-MULTI',
+                'field_data_temperature' => '27',
+                'field_data_dissolved_oxygen' => '5.5',
+                'field_data_time_of_sampling_from' => '8:15 AM',
+                'field_data_time_of_sampling_to' => '8:45 AM',
+            ])
+            ->assertOk()
+            ->assertJsonPath('footer.show_field_data', true)
+            ->assertJsonPath('footer.requires_field_data', true)
+            ->assertJsonPath('footer.field_data_complete', true);
+
+        $this->assertStringContainsString('Temperature – 27', (string) $job->fresh()->field_data);
+    }
+
     public function test_fo37_footer_fills_lab_conditions_bag(): void
     {
         Storage::fake('local');

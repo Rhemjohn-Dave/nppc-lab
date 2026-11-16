@@ -182,16 +182,30 @@ class ResultFooter
     public static function formShowsFieldData(?ControlledForm $form, ?JobOrder $jobOrder = null): bool
     {
         $jobOrder?->loadMissing('samples');
-        $description = trim((string) ($jobOrder?->samples->first()?->description ?? ''));
+        $descriptions = collect($jobOrder?->samples ?? [])
+            ->map(static fn ($sample): string => trim((string) ($sample->description ?? '')))
+            ->filter(static fn (string $description): bool => $description !== '')
+            ->values();
 
-        // Sample kind wins: Wastewater / River / Abstracted never require FIELD DATA,
-        // even when sheet resolve accidentally picks FO2B.
-        if ($description !== '' && in_array($description, OfficialAnalysisCatalog::wastewaterKinds(), true)) {
-            return OfficialAnalysisCatalog::isWastewaterCoastalKind($description);
+        // JO-level FIELD DATA: any Coastal Water sample requires it (not only samples->first()).
+        if ($descriptions->contains(
+            static fn (string $description): bool => OfficialAnalysisCatalog::isWastewaterCoastalKind($description),
+        )) {
+            return true;
         }
 
-        return $form?->form_code === 'LSP-7.8-FO2B'
-            || OfficialAnalysisCatalog::isWastewaterCoastalKind($description);
+        // Non-coastal WW kinds never require FIELD DATA, even if sheet resolve picks FO2B.
+        if ($descriptions->contains(
+            static fn (string $description): bool => in_array(
+                $description,
+                OfficialAnalysisCatalog::wastewaterKinds(),
+                true,
+            ),
+        )) {
+            return false;
+        }
+
+        return $form?->form_code === 'LSP-7.8-FO2B';
     }
 
     /**
