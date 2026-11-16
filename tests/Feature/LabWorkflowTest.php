@@ -612,7 +612,12 @@ class LabWorkflowTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('head/results')
-                ->where('filters.tab', 'unsigned'));
+                ->where('filters.tab', 'unsigned')
+                ->where('filters.day', '')
+                ->where('filters.analyst_id', null)
+                ->has('analysts')
+                ->has('today')
+                ->has('yesterday'));
 
         $this->actingAs($head)
             ->get('/history?status=unsigned')
@@ -627,6 +632,93 @@ class LabWorkflowTest extends TestCase
             ->assertInertia(fn ($page) => $page
                 ->component('analyst/index')
                 ->where('filters.status', 'returned'));
+    }
+
+    public function test_head_results_filters_by_release_day_and_analyst(): void
+    {
+        $this->seed();
+
+        $head = User::where('email', 'head@nppc.local')->firstOrFail();
+        $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+        $other = User::query()->create([
+            'name' => 'Filter Other Analyst',
+            'email' => 'filter-other-analyst@nppc.local',
+            'password' => 'password',
+            'email_verified_at' => now(),
+        ]);
+        $other->assignRole('analyst');
+
+        $type = AnalysisType::query()->where('code', 'WW-08')->firstOrFail();
+        $labTz = (string) config('app.lab_timezone', 'Asia/Manila');
+        $today = now($labTz)->toDateString();
+        $yesterday = now($labTz)->subDay()->toDateString();
+
+        $releasedToday = JobOrder::query()->create([
+            'reference_no' => 'NPPC-FILTER-TODAY',
+            'customer_name' => 'Released Today',
+            'customer_email' => 'released-today@example.com',
+            'status' => JobOrderStatus::ReadyForPickup,
+            'total_cost' => 100,
+            'reviewed_at' => now($labTz)->startOfDay()->addHours(10),
+            'reviewed_by' => $head->id,
+        ]);
+        $releasedToday->analyses()->create([
+            'analysis_type_id' => $type->id,
+            'name' => $type->name,
+            'status' => JobOrderAnalysisStatus::Completed,
+            'assigned_to' => $analyst->id,
+            'unit_price' => 100,
+            'quantity' => 1,
+            'total_cost' => 100,
+        ]);
+
+        $releasedYesterday = JobOrder::query()->create([
+            'reference_no' => 'NPPC-FILTER-YDAY',
+            'customer_name' => 'Released Yesterday',
+            'customer_email' => 'released-yesterday@example.com',
+            'status' => JobOrderStatus::ReadyForPickup,
+            'total_cost' => 100,
+            'reviewed_at' => now($labTz)->subDay()->startOfDay()->addHours(10),
+            'reviewed_by' => $head->id,
+        ]);
+        $releasedYesterday->analyses()->create([
+            'analysis_type_id' => $type->id,
+            'name' => $type->name,
+            'status' => JobOrderAnalysisStatus::Completed,
+            'assigned_to' => $other->id,
+            'unit_price' => 100,
+            'quantity' => 1,
+            'total_cost' => 100,
+        ]);
+
+        $this->actingAs($head)
+            ->get('/head/results?tab=signed&day='.$yesterday)
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('head/results')
+                ->where('filters.tab', 'signed')
+                ->where('filters.day', $yesterday)
+                ->has('orders.data', 1)
+                ->where('orders.data.0.id', $releasedYesterday->id));
+
+        $this->actingAs($head)
+            ->get('/head/results?tab=signed&day='.$today.'&analyst_id='.$analyst->id)
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('head/results')
+                ->where('filters.tab', 'signed')
+                ->where('filters.day', $today)
+                ->where('filters.analyst_id', $analyst->id)
+                ->has('orders.data', 1)
+                ->where('orders.data.0.id', $releasedToday->id));
+
+        $this->actingAs($head)
+            ->get('/head/results?tab=signed&day='.$today.'&analyst_id='.$other->id)
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('head/results')
+                ->where('filters.analyst_id', $other->id)
+                ->has('orders.data', 0));
     }
 
     public function test_completing_tests_does_not_send_to_head_until_designated_analyst_submits(): void

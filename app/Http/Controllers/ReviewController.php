@@ -6,6 +6,7 @@ use App\Enums\JobOrderStatus;
 use App\Models\ControlledFormRevision;
 use App\Models\JobOrder;
 use App\Models\JobOrderAnalysis;
+use App\Models\User;
 use App\Services\AnalysisResultReportResolver;
 use App\Services\JobOrderService;
 use App\Support\AnalysisResultPdfExporter;
@@ -17,6 +18,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -83,8 +85,32 @@ class ReviewController extends Controller
         }
         $search = trim($request->string('q')->toString());
 
+        $labTz = (string) config('app.lab_timezone', 'Asia/Manila');
+        $today = Carbon::now($labTz)->toDateString();
+        $yesterday = Carbon::now($labTz)->subDay()->toDateString();
+
+        $day = $request->string('day')->toString();
+        $dayRange = null;
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $day) && checkdate((int) substr($day, 5, 2), (int) substr($day, 8, 2), (int) substr($day, 0, 4))) {
+            $labStart = Carbon::createFromFormat('Y-m-d', $day, $labTz)->startOfDay();
+            $appTz = (string) config('app.timezone', 'UTC');
+            $dayRange = [$labStart->copy()->timezone($appTz), $labStart->copy()->endOfDay()->timezone($appTz)];
+        } else {
+            $day = '';
+        }
+
+        $analystId = $request->integer('analyst_id');
+        if ($analystId > 0) {
+            $analystExists = User::role('analyst')->whereKey($analystId)->exists();
+            if (! $analystExists) {
+                $analystId = 0;
+            }
+        } else {
+            $analystId = 0;
+        }
+
         // Whole JO pending review, or still in analysis with at least one submitted sample.
-        $unsignedQuery = JobOrder::query()
+        $unsignedBase = JobOrder::query()
             ->whereNull('reviewed_at')
             ->where(function ($query) {
                 $query->where('status', JobOrderStatus::PendingReview)
@@ -97,19 +123,35 @@ class ReviewController extends Controller
                     });
             });
 
-        $signedTodayQuery = JobOrder::query()
+        $signedBase = JobOrder::query()
             ->where('status', JobOrderStatus::ReadyForPickup)
-            ->whereNotNull('reviewed_at')
-            ->whereDate('reviewed_at', today());
+            ->whereNotNull('reviewed_at');
 
         $counts = [
-            'unsigned' => (clone $unsignedQuery)->count(),
-            'signed_today' => (clone $signedTodayQuery)->count(),
+            'unsigned' => (clone $unsignedBase)->count(),
+            'signed_today' => (clone $signedBase)->whereDate('reviewed_at', $today)->count(),
         ];
 
+        $unsignedQuery = clone $unsignedBase;
+        $signedQuery = clone $signedBase;
+
+        if ($dayRange !== null) {
+            $unsignedQuery->whereHas('samples', function ($samples) use ($dayRange) {
+                $samples->whereNotNull('submitted_for_review_at')
+                    ->whereNull('released_at')
+                    ->whereBetween('submitted_for_review_at', $dayRange);
+            });
+            $signedQuery->whereBetween('reviewed_at', $dayRange);
+        }
+
+        if ($analystId > 0) {
+            $unsignedQuery->whereHas('analyses', fn ($query) => $query->where('assigned_to', $analystId));
+            $signedQuery->whereHas('analyses', fn ($query) => $query->where('assigned_to', $analystId));
+        }
+
         $listQuery = $tab === 'signed'
-            ? (clone $signedTodayQuery)->latest('reviewed_at')
-            : (clone $unsignedQuery)->latest('updated_at');
+            ? $signedQuery->latest('reviewed_at')
+            : $unsignedQuery->latest('updated_at');
 
         $orders = $this->paginateHeadOrders(
             $listQuery,
@@ -118,12 +160,27 @@ class ReviewController extends Controller
             previewUser: $user,
         );
 
+        $analysts = User::role('analyst')
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn (User $analyst): array => [
+                'id' => $analyst->id,
+                'name' => $analyst->name,
+            ])
+            ->values()
+            ->all();
+
         return Inertia::render('head/results', [
             'orders' => $orders,
             'counts' => $counts,
+            'analysts' => $analysts,
+            'today' => $today,
+            'yesterday' => $yesterday,
             'filters' => [
                 'tab' => $tab,
                 'q' => $search,
+                'day' => $day,
+                'analyst_id' => $analystId > 0 ? $analystId : null,
             ],
         ]);
     }

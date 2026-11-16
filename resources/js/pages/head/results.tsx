@@ -39,6 +39,11 @@ type Order = {
     result_pdf_url?: string | null;
 };
 
+type AnalystOption = {
+    id: number;
+    name: string;
+};
+
 type Props = {
     orders: {
         data: Order[];
@@ -54,14 +59,26 @@ type Props = {
     filters: {
         tab: 'unsigned' | 'signed';
         q: string;
+        day?: string;
+        analyst_id?: number | null;
     };
+    analysts?: AnalystOption[];
+    today?: string;
+    yesterday?: string;
 };
 
 function money(value: string | number) {
     return `₱${Number(value || 0).toFixed(2)}`;
 }
 
-export default function HeadResultsIndex({ orders, counts, filters }: Props) {
+export default function HeadResultsIndex({
+    orders,
+    counts,
+    filters,
+    analysts = [],
+    today = '',
+    yesterday = '',
+}: Props) {
     const [query, setQuery] = useState(filters.q ?? '');
     const [selected, setSelected] = useState<number[]>([]);
     const [confirmBatch, setConfirmBatch] = useState(false);
@@ -72,6 +89,8 @@ export default function HeadResultsIndex({ orders, counts, filters }: Props) {
     const unsignedTab = filters.tab === 'unsigned';
     const signedTab = filters.tab === 'signed';
     const canSelect = unsignedTab;
+    const dayFilter = filters.day ?? '';
+    const analystId = filters.analyst_id ?? null;
 
     const pageIds = useMemo(
         () => orders.data.map((order) => order.id),
@@ -83,6 +102,15 @@ export default function HeadResultsIndex({ orders, counts, filters }: Props) {
     useEffect(() => {
         setQuery(filters.q ?? '');
     }, [filters.q]);
+
+    // Released tab defaults to today so the list matches the "Released today" chip
+    // until Head picks another day or All days.
+    useEffect(() => {
+        if (signedTab && !dayFilter && today) {
+            applyFilters({ day: today });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- only when landing on signed without day
+    }, [signedTab, dayFilter, today]);
 
     useEffect(() => {
         const trimmed = query.trim();
@@ -96,15 +124,34 @@ export default function HeadResultsIndex({ orders, counts, filters }: Props) {
         }, 350);
 
         return () => window.clearTimeout(id);
-    }, [query, filters.q, filters.tab]);
+    }, [query, filters.q, filters.tab, dayFilter, analystId]);
 
-    function applyFilters(next: { q?: string; tab?: string }) {
+    function applyFilters(next: {
+        q?: string;
+        tab?: string;
+        day?: string;
+        analyst_id?: number | null;
+    }) {
         setSelected([]);
+        const nextTab = (next.tab ?? filters.tab) as 'unsigned' | 'signed';
+        let nextDay = next.day !== undefined ? next.day : dayFilter;
+        if (next.tab === 'signed' && next.day === undefined && !nextDay && today) {
+            nextDay = today;
+        }
+        if (next.tab === 'unsigned' && next.day === undefined && filters.tab === 'signed') {
+            // Keep current day when switching from released → awaiting.
+            nextDay = dayFilter;
+        }
+        const nextAnalyst =
+            next.analyst_id !== undefined ? next.analyst_id : analystId;
+
         router.get(
             '/head/results',
             {
                 q: next.q ?? query,
-                tab: next.tab ?? filters.tab,
+                tab: nextTab,
+                day: nextDay || undefined,
+                analyst_id: nextAnalyst || undefined,
             },
             {
                 preserveState: true,
@@ -144,16 +191,26 @@ export default function HeadResultsIndex({ orders, counts, filters }: Props) {
         );
     }
 
-    const emptyTitle = filters.q
+    const hasExtraFilters = Boolean(filters.q || dayFilter || analystId);
+    const emptyTitle = hasExtraFilters
         ? 'No matching job orders'
         : unsignedTab
           ? 'Queue is clear'
           : 'No releases today';
-    const emptyBody = filters.q
-        ? 'No job orders match your search.'
+    const emptyBody = hasExtraFilters
+        ? 'No job orders match your filters.'
         : unsignedTab
           ? 'No finished jobs awaiting result release.'
           : 'No results released today yet.';
+    const rangeSuffix = unsignedTab
+        ? dayFilter
+            ? `finished files awaiting release submitted on ${dayFilter}.`
+            : 'finished files awaiting result release.'
+        : dayFilter
+          ? dayFilter === today
+              ? 'results released today.'
+              : `results released on ${dayFilter}.`
+          : 'released results.';
 
     const kpiTotal = Math.max(counts.unsigned + counts.signed_today, 1);
     const summaryCards = [
@@ -233,6 +290,10 @@ export default function HeadResultsIndex({ orders, counts, filters }: Props) {
                                     applyFilters({
                                         tab: id,
                                         q: query.trim(),
+                                        day:
+                                            id === 'signed'
+                                                ? dayFilter || today
+                                                : dayFilter,
                                     })
                                 }
                                 query={query}
@@ -240,8 +301,26 @@ export default function HeadResultsIndex({ orders, counts, filters }: Props) {
                                 onSearch={submitSearch}
                                 onClear={() => {
                                     setQuery('');
-                                    applyFilters({ q: '' });
+                                    applyFilters({
+                                        q: '',
+                                        analyst_id: null,
+                                        day: signedTab ? today : '',
+                                    });
                                 }}
+                                dayValue={dayFilter}
+                                onDayChange={(next) =>
+                                    applyFilters({ day: next })
+                                }
+                                dayLabel={
+                                    signedTab ? 'Released:' : 'Submitted:'
+                                }
+                                today={today || undefined}
+                                yesterday={yesterday || undefined}
+                                analystValue={analystId}
+                                onAnalystChange={(next) =>
+                                    applyFilters({ analyst_id: next })
+                                }
+                                analystOptions={analysts}
                             />
 
                             {canSelect && selected.length > 0 ? (
@@ -277,11 +356,7 @@ export default function HeadResultsIndex({ orders, counts, filters }: Props) {
                                 from={orders.from}
                                 to={orders.to}
                                 total={orders.total}
-                                suffix={
-                                    unsignedTab
-                                        ? 'finished files awaiting result release.'
-                                        : 'results released today.'
-                                }
+                                suffix={rangeSuffix}
                             />
                         </div>
 

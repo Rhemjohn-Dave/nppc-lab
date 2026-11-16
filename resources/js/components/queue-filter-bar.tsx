@@ -14,6 +14,11 @@ export type QueueSortOption = {
     label: string;
 };
 
+export type QueueAnalystOption = {
+    id: number;
+    name: string;
+};
+
 type Props = {
     chips: readonly QueueChip[];
     activeId: string;
@@ -31,6 +36,10 @@ type Props = {
     dayLabel?: string;
     today?: string;
     yesterday?: string;
+    analystValue?: number | null;
+    onAnalystChange?: (value: number | null) => void;
+    analystOptions?: readonly QueueAnalystOption[];
+    analystLabel?: string;
 };
 
 export default function QueueFilterBar({
@@ -50,6 +59,10 @@ export default function QueueFilterBar({
     dayLabel = 'Intake:',
     today,
     yesterday,
+    analystValue = null,
+    onAnalystChange,
+    analystOptions,
+    analystLabel = 'Analyst:',
 }: Props) {
     function submit(event: FormEvent) {
         event.preventDefault();
@@ -62,6 +75,9 @@ export default function QueueFilterBar({
         typeof onSortChange === 'function';
 
     const showDay = typeof onDayChange === 'function';
+    const showAnalyst =
+        Boolean(analystOptions?.length) &&
+        typeof onAnalystChange === 'function';
     const dayPresets = [
         ...(today ? [{ id: today, label: 'Today' }] : []),
         ...(yesterday ? [{ id: yesterday, label: 'Yesterday' }] : []),
@@ -152,6 +168,30 @@ export default function QueueFilterBar({
                     </div>
                 ) : null}
 
+                {showAnalyst ? (
+                    <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 shadow-xs">
+                        <span className="text-slate-400">{analystLabel}</span>
+                        <select
+                            className="max-w-[10rem] cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-slate-800 focus:ring-0"
+                            value={analystValue ?? ''}
+                            onChange={(event) => {
+                                const raw = event.target.value;
+                                onAnalystChange?.(
+                                    raw === '' ? null : Number(raw),
+                                );
+                            }}
+                            aria-label="Filter by analyst"
+                        >
+                            <option value="">All analysts</option>
+                            {analystOptions!.map((analyst) => (
+                                <option key={analyst.id} value={analyst.id}>
+                                    {analyst.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                ) : null}
+
                 {showDay ? (
                     <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 shadow-xs">
                         <span className="pl-0.5 text-slate-400">{dayLabel}</span>
@@ -172,7 +212,7 @@ export default function QueueFilterBar({
                         ))}
                         <input
                             type="date"
-                            aria-label="Filter by intake day"
+                            aria-label="Filter by day"
                             value={dayValue}
                             max={today}
                             onChange={(event) =>
