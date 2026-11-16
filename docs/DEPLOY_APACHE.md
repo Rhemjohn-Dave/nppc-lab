@@ -155,6 +155,52 @@ Generate Reverb credentials with `php artisan reverb:install` (or set `REVERB_*`
 
 **Preferred for SMTP:** configure **Admin → Email Settings** after first login ([EMAIL_SETTINGS.md](EMAIL_SETTINGS.md)). Keep `APP_KEY` stable.
 
+### LAN / IP access (HTTP, no TLS yet)
+
+When staff open the app as `http://192.168.x.x` (or any LAN IP) instead of a public HTTPS hostname:
+
+1. **`VITE_REVERB_HOST` must be that LAN IP** (or a DNS name every browser can resolve). Never leave `localhost` / `127.0.0.1` after `npm run build` — the browser would open WebSockets on *the user’s PC*, not the lab server.
+2. Set `APP_URL` to the same URL staff use, and **`SESSION_SECURE_COOKIE=false`** on plain HTTP (otherwise CSRF/session cookies break and lab-conditions `PUT` returns **419**).
+3. Keep Apache’s `/app` → `127.0.0.1:8080` proxy (vhost above) and Reverb listening on `0.0.0.0:8080`.
+
+Example (replace the IP with yours):
+
+```env
+APP_URL=http://192.168.192.114
+SESSION_SECURE_COOKIE=false
+
+BROADCAST_CONNECTION=reverb
+REVERB_APP_ID=nppc-lab
+REVERB_APP_KEY=nppc-local-key
+REVERB_APP_SECRET=<same as installed>
+REVERB_HOST=192.168.192.114
+REVERB_PORT=8080
+REVERB_SCHEME=http
+REVERB_SERVER_HOST=0.0.0.0
+REVERB_SERVER_PORT=8080
+
+VITE_REVERB_APP_KEY=nppc-local-key
+VITE_REVERB_HOST=192.168.192.114
+VITE_REVERB_PORT=8080
+VITE_REVERB_SCHEME=http
+```
+
+Then rebuild and restart so the JS bundle picks up the new host:
+
+```bash
+cd /var/www/nppc-lab
+sudo php artisan config:clear && sudo php artisan config:cache
+sudo npm ci && sudo npm run build
+sudo supervisorctl restart nppc-lab-reverb
+sudo systemctl reload apache2 php8.3-fpm
+```
+
+Hard-refresh browsers (or clear cache). DevTools → Network / console should show `ws://192.168.192.114:...`, not `localhost`. Prefer same-host path `/app` later under TLS (`REVERB_PORT`/`VITE_REVERB_PORT` = `443`, `SCHEME=https`); for plain HTTP LAN, host+port `8080` or proxied `/app` both work if the firewall allows it.
+
+**Lab conditions save (analyst result footer):** `PUT /analyst/job-orders/{id}/result-footer` needs a working session (see `SESSION_SECURE_COOKIE` above) and, for FO2–FO37 sheets, **Temperature °C**, **Humidity %**, and **Test Report #**. Empty required fields → **422**; broken Secure cookie on HTTP → **419**. WebSocket noise does not block this PUT.
+
+**FIELD DATA block:** shown only for **LSP-7.8-FO2B** or a first sample whose description is Coastal Water. FO2 / FO2A / FO3 / FO37 correctly show lab atmosphere + Test Report # only — no FIELD DATA UI.
+
 ---
 
 ## 5. Permissions, migrate, seed once, build
@@ -430,5 +476,9 @@ npm run build
 | 404 on every route except `/` | `mod_rewrite` / `AllowOverride All` / `FallbackResource /index.php` |
 | `.php` downloads or 503 | `php8.3-fpm` running; socket `/run/php/php8.3-fpm.sock`; only one PHP handler |
 | Live updates dead | Reverb Supervisor up; Apache `/app` proxy + websocket rewrite; `VITE_REVERB_*` rebuilt |
+| WS to `localhost:8080` from phones/other PCs | `VITE_REVERB_HOST` still baked as `localhost` — set LAN IP/hostname, `npm run build`, hard-refresh (see [LAN / IP access](#lan--ip-access-http-no-tls-yet)) |
+| Lab conditions save 419 on HTTP | `SESSION_SECURE_COOKIE=false`, `APP_URL=http://…`, then `php artisan config:cache` + reload PHP-FPM |
+| Lab conditions save 422 | Fill Temp, Humidity, Test Report # (and FIELD DATA when FO2B/Coastal) |
+| FIELD DATA missing on FO2/FO3/FO37 | Expected — only FO2B or Coastal Water sample shows that block |
 | Port 80/443 conflict | Another site or Nginx may own the port — disable conflicting vhosts / stop Nginx if unused |
 | `Unit apache2.service not found` | On Ubuntu: `sudo apt install -y apache2` then `sudo systemctl enable --now apache2`. On RHEL-family the unit is `httpd`, not `apache2`. |

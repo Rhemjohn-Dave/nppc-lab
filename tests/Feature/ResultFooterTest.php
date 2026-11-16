@@ -386,6 +386,62 @@ class ResultFooterTest extends TestCase
                     ->etc()));
     }
 
+    public function test_wastewater_kind_ignores_fo2b_for_field_data_gate(): void
+    {
+        Storage::fake('local');
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $fo2b = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2B')->firstOrFail();
+        $typeIds = AnalysisType::query()
+            ->whereIn('code', OfficialAnalysisCatalog::wastewaterPhysicoCoastalTypeCodes())
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        $this->actingAs($receiving)
+            ->post('/intake/job-orders', [
+                'customer_name' => 'WW No Field Data',
+                'customer_email' => 'ww-no-field-data@example.com',
+                'classification' => 'Wastewater',
+                'samples' => [
+                    [
+                        'description' => 'Wastewater',
+                        'matrix' => 'Liquid',
+                        'analysis_type_ids' => $typeIds,
+                        'package_ids' => [],
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $this->priceApproveReceiveAssign(
+            $job,
+            User::where('email', 'analyst@nppc.local')->firstOrFail(),
+        );
+
+        $resolved = app(\App\Services\AnalysisResultReportResolver::class)
+            ->forJobOrder($job->fresh(), User::where('email', 'analyst@nppc.local')->firstOrFail());
+        $this->assertSame('LSP-7.8-FO2', $resolved->controlledForm?->form_code);
+
+        // Even if the sheet object is FO2B, Wastewater kind must not require FIELD DATA.
+        $payload = ResultFooter::manifestPayload($job->fresh(['samples']), $fo2b, null);
+        $this->assertFalse($payload['requires_field_data']);
+        $this->assertFalse($payload['show_field_data']);
+        $this->assertTrue($payload['field_data_complete']);
+
+        $this->actingAs(User::where('email', 'analyst@nppc.local')->firstOrFail())
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'temperature_c' => '25',
+                'humidity_pct' => '55',
+                'test_report_no' => 'WW-1',
+            ])
+            ->assertOk()
+            ->assertJsonPath('footer.requires_field_data', false)
+            ->assertJsonPath('footer.field_data_complete', true);
+    }
+
     public function test_fo37_footer_fills_lab_conditions_bag(): void
     {
         Storage::fake('local');

@@ -136,7 +136,6 @@ class ResultFooter
         $showFieldData = self::formShowsFieldData($form, $jobOrder);
         $fieldDataRaw = trim((string) ($jobOrder->field_data ?? ''));
         $fieldComplete = self::isCoastalFieldDataComplete($fieldDataRaw);
-        // Answer boxes stay empty until the analyst has saved complete FIELD DATA.
         $emptyParts = [
             'temperature' => '',
             'dissolved_oxygen' => '',
@@ -144,11 +143,13 @@ class ResultFooter
             'time_of_sampling_from' => '',
             'time_of_sampling_to' => '',
         ];
-        $fieldParts = ($showFieldData && $fieldComplete)
+        // Keep parsed answers visible even when incomplete so a failed completeness
+        // check does not look like the values were discarded after save.
+        $fieldParts = ($showFieldData && $fieldDataRaw !== '')
             ? self::parseCoastalFieldData($fieldDataRaw)
             : $emptyParts;
         $fieldDataPreview = $showFieldData
-            ? ($fieldComplete
+            ? ($fieldDataRaw !== ''
                 ? $fieldDataRaw
                 : OfficialAnalysisCatalog::coastalFieldDataTemplate())
             : '';
@@ -180,14 +181,17 @@ class ResultFooter
 
     public static function formShowsFieldData(?ControlledForm $form, ?JobOrder $jobOrder = null): bool
     {
-        if ($form?->form_code === 'LSP-7.8-FO2B') {
-            return true;
-        }
-
         $jobOrder?->loadMissing('samples');
         $description = trim((string) ($jobOrder?->samples->first()?->description ?? ''));
 
-        return OfficialAnalysisCatalog::isWastewaterCoastalKind($description);
+        // Sample kind wins: Wastewater / River / Abstracted never require FIELD DATA,
+        // even when sheet resolve accidentally picks FO2B.
+        if ($description !== '' && in_array($description, OfficialAnalysisCatalog::wastewaterKinds(), true)) {
+            return OfficialAnalysisCatalog::isWastewaterCoastalKind($description);
+        }
+
+        return $form?->form_code === 'LSP-7.8-FO2B'
+            || OfficialAnalysisCatalog::isWastewaterCoastalKind($description);
     }
 
     /**

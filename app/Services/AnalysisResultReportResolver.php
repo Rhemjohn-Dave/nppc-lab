@@ -572,24 +572,35 @@ class AnalysisResultReportResolver
         $wantAbstracted = OfficialAnalysisCatalog::isWastewaterAbstractedKind($description);
         $wantCoastal = OfficialAnalysisCatalog::isWastewaterCoastalKind($description);
 
-        if ($wantCoastal && $fo2b instanceof ControlledForm && $contained($fo2b)) {
-            return $fo2b;
+        if ($wantCoastal) {
+            if ($fo2b instanceof ControlledForm && $contained($fo2b)) {
+                return $fo2b;
+            }
+
+            // Coastal types still print on the full FO2 panel if FO2B is unavailable.
+            if ($fo2 instanceof ControlledForm && $contained($fo2)) {
+                return $fo2;
+            }
+
+            return null;
         }
 
-        if ($wantAbstracted && $fo2a instanceof ControlledForm && $contained($fo2a)) {
-            return $fo2a;
+        if ($wantAbstracted) {
+            if ($fo2a instanceof ControlledForm && $contained($fo2a)) {
+                return $fo2a;
+            }
+
+            if ($fo2 instanceof ControlledForm && $contained($fo2)) {
+                return $fo2;
+            }
+
+            return null;
         }
 
+        // Wastewater / River / unknown: never fall through to FO2B (that forced
+        // FIELD DATA on non-coastal jobs and blocked encoding).
         if ($fo2 instanceof ControlledForm && $contained($fo2)) {
             return $fo2;
-        }
-
-        if ($fo2b instanceof ControlledForm && $contained($fo2b)) {
-            return $fo2b;
-        }
-
-        if ($fo2a instanceof ControlledForm && $contained($fo2a)) {
-            return $fo2a;
         }
 
         return null;
