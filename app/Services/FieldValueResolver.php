@@ -81,11 +81,12 @@ class FieldValueResolver
                 $fo2Description !== '' ? $fo2Description : null,
                 $form?->form_code,
                 $jobOrder,
+                $focusSample,
             );
         }
 
         if (in_array($form?->form_code, ['LSP-7.8-FO3', 'LSP-7.8-FO37'], true)) {
-            $this->putDwLabConditionsBag($bag, $form?->form_code, $jobOrder);
+            $this->putDwLabConditionsBag($bag, $form?->form_code, $jobOrder, $focusSample);
         }
 
         if ($orderedAnalyses !== null) {
@@ -134,6 +135,8 @@ class FieldValueResolver
             }
             $bag['samples.sample_code'] = $focusSample->sample_code;
             $bag['samples.description'] = $focusSample->description;
+            $sampleFieldData = ResultFooter::fieldDataTextForSample($focusSample, $jobOrder);
+            $bag['job_orders.field_data'] = $sampleFieldData !== '' ? $sampleFieldData : null;
             if ($sampleClassification !== '') {
                 $bag['results.classification'] = $this->listedOrSpecified($sampleClassification);
             }
@@ -282,6 +285,7 @@ class FieldValueResolver
         ?string $description,
         ?string $formCode = null,
         ?JobOrder $jobOrder = null,
+        ?\App\Models\Sample $focusSample = null,
     ): void {
         $kindHint = match ($formCode) {
             'LSP-7.8-FO2A' => 'Abstracted water',
@@ -297,10 +301,11 @@ class FieldValueResolver
             default => OfficialAnalysisCatalog::fo2FullNotesText(),
         };
 
-        $footer = is_array($jobOrder?->result_footer) ? $jobOrder->result_footer : [];
         $form = $formCode !== null
             ? new \App\Models\ControlledForm(['form_code' => $formCode])
             : null;
+        $storedRoot = is_array($jobOrder?->result_footer) ? $jobOrder->result_footer : [];
+        $footer = ResultFooter::bucketForSheet($storedRoot, $focusSample?->id, $form);
         $bag['fo2_lab_conditions'] = ResultFooter::composeLabConditionsText($form, $footer, $variant);
         $bag['fo2_form_meta'] = ResultFooter::composeFo2FormMeta(
             $footer['test_report_no'] ?? null,
@@ -332,11 +337,13 @@ class FieldValueResolver
         array &$bag,
         ?string $formCode,
         ?JobOrder $jobOrder = null,
+        ?\App\Models\Sample $focusSample = null,
     ): void {
-        $footer = is_array($jobOrder?->result_footer) ? $jobOrder->result_footer : [];
         $form = $formCode !== null
             ? new \App\Models\ControlledForm(['form_code' => $formCode])
             : null;
+        $storedRoot = is_array($jobOrder?->result_footer) ? $jobOrder->result_footer : [];
+        $footer = ResultFooter::bucketForSheet($storedRoot, $focusSample?->id, $form);
         $text = ResultFooter::composeLabConditionsText($form, $footer);
         $testReportNo = $footer['test_report_no'] ?? null;
 

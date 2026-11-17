@@ -224,6 +224,8 @@ export default function AnalystIndex({
     );
     const [editSignatorySaving, setEditSignatorySaving] = useState(false);
     const [footerJobId, setFooterJobId] = useState<number | null>(null);
+    const [footerSampleId, setFooterSampleId] = useState<number | null>(null);
+    const [footerFormId, setFooterFormId] = useState<number | null>(null);
     const [footerContinueSubmit, setFooterContinueSubmit] = useState(false);
     const [footerError, setFooterError] = useState<string | null>(null);
     const [footerSaving, setFooterSaving] = useState(false);
@@ -1311,10 +1313,17 @@ export default function AnalystIndex({
             consolidation?.form_id ??
             active?.report?.form_id ??
             null;
-        const footer = consolidation?.footer;
+        const sheetFooter =
+            readySample?.reports?.find(
+                (report) =>
+                    resolvedFormId != null &&
+                    Number(report.form_id) === Number(resolvedFormId),
+            )?.footer ??
+            readySample?.reports?.find((report) => report.footer)?.footer ??
+            consolidation?.footer;
         if (
-            footer?.requires_atmosphere &&
-            !footer.atmosphere_complete
+            sheetFooter?.requires_atmosphere &&
+            !sheetFooter.atmosphere_complete
         ) {
             setSendGateError(
                 'Enter lab temperature and humidity (Lab conditions) before Send to Head.',
@@ -1324,8 +1333,8 @@ export default function AnalystIndex({
         }
 
         if (
-            footer?.requires_field_data &&
-            !footer.field_data_complete
+            sheetFooter?.requires_field_data &&
+            !sheetFooter.field_data_complete
         ) {
             setSendGateError(
                 'Enter FIELD DATA for Coastal Water before Send to Head.',
@@ -1343,6 +1352,10 @@ export default function AnalystIndex({
         setFooterError(null);
         setSendGateError(null);
         setFooterContinueSubmit(false);
+        const sampleId = active?.sample_id ?? null;
+        const formId = active?.report?.form_id ?? null;
+        setFooterSampleId(sampleId != null ? Number(sampleId) : null);
+        setFooterFormId(formId != null ? Number(formId) : null);
         setFooterJobId(jobId);
     }
 
@@ -1382,7 +1395,19 @@ export default function AnalystIndex({
                     'Content-Type': 'application/json',
                     ...(csrfToken() ? { 'X-XSRF-TOKEN': csrfToken() } : {}),
                 },
-                body: JSON.stringify(values),
+                body: JSON.stringify({
+                    ...values,
+                    ...(config.sample_id != null
+                        ? { sample_id: config.sample_id }
+                        : footerSampleId != null
+                          ? { sample_id: footerSampleId }
+                          : {}),
+                    ...(config.form_id != null
+                        ? { form_id: config.form_id }
+                        : footerFormId != null
+                          ? { form_id: footerFormId }
+                          : {}),
+                }),
             });
 
             const payload = (await response.json().catch(() => null)) as {
@@ -1404,6 +1429,8 @@ export default function AnalystIndex({
             const continueSubmit = footerContinueSubmit;
             const jobId = footerJobId;
             setFooterJobId(null);
+            setFooterSampleId(null);
+            setFooterFormId(null);
             setFooterContinueSubmit(false);
 
             router.reload({
@@ -1521,12 +1548,43 @@ export default function AnalystIndex({
             return null;
         }
 
-        return (
-            consolidationsById.get(footerJobId)?.footer ??
-            releasedById.get(footerJobId)?.footer ??
-            null
+        const consolidation = consolidationsById.get(footerJobId);
+        const released = releasedById.get(footerJobId);
+        const sample = consolidation?.samples?.find(
+            (row) =>
+                footerSampleId != null &&
+                Number(row.id) === Number(footerSampleId),
         );
-    }, [footerJobId, consolidationsById, releasedById]);
+        const reportFooter =
+            sample?.reports?.find(
+                (report) =>
+                    footerFormId != null &&
+                    Number(report.form_id) === Number(footerFormId),
+            )?.footer ??
+            sample?.reports?.find((report) => report.footer)?.footer ??
+            null;
+
+        const base =
+            reportFooter ??
+            consolidation?.footer ??
+            released?.footer ??
+            null;
+        if (!base) {
+            return null;
+        }
+
+        return {
+            ...base,
+            sample_id: footerSampleId ?? base.sample_id ?? null,
+            form_id: footerFormId ?? base.form_id ?? null,
+        };
+    }, [
+        footerJobId,
+        footerSampleId,
+        footerFormId,
+        consolidationsById,
+        releasedById,
+    ]);
 
     function openEditSignatories(jobId: number) {
         setEditSignatoryError(null);

@@ -132,26 +132,43 @@ export default function AnalystEncodingStudio({
         ''
     ).trim();
 
-    const canEditFooter = Boolean(
-        consolidation?.footer?.can_edit || releasedPrint?.footer?.can_edit,
-    );
+    const activeSheetFooter = useMemo(() => {
+        const sampleId = active?.sample_id ?? null;
+        const formId = active?.report?.form_id ?? null;
+        const sample = consolidation?.samples?.find((row) =>
+            sampleId == null
+                ? false
+                : Number(row.id) === Number(sampleId),
+        );
+        const reportFooter =
+            sample?.reports?.find((report) =>
+                formId == null
+                    ? Boolean(report.footer)
+                    : Number(report.form_id) === Number(formId),
+            )?.footer ??
+            sample?.reports?.find((report) => report.footer)?.footer ??
+            null;
+
+        return (
+            reportFooter ??
+            consolidation?.footer ??
+            releasedPrint?.footer ??
+            null
+        );
+    }, [active, consolidation, releasedPrint]);
+
+    const canEditFooter = Boolean(activeSheetFooter?.can_edit);
     const atmosphereComplete = Boolean(
-        consolidation?.footer?.atmosphere_complete ??
-            releasedPrint?.footer?.atmosphere_complete ??
-            true,
+        activeSheetFooter?.atmosphere_complete ?? true,
     );
     const requiresAtmosphere = Boolean(
-        consolidation?.footer?.requires_atmosphere ||
-            releasedPrint?.footer?.requires_atmosphere,
+        activeSheetFooter?.requires_atmosphere,
     );
     const fieldDataComplete = Boolean(
-        consolidation?.footer?.field_data_complete ??
-            releasedPrint?.footer?.field_data_complete ??
-            true,
+        activeSheetFooter?.field_data_complete ?? true,
     );
     const requiresFieldData = Boolean(
-        consolidation?.footer?.requires_field_data ||
-            releasedPrint?.footer?.requires_field_data,
+        activeSheetFooter?.requires_field_data,
     );
     const encodeBlockedByLabConditions =
         (requiresAtmosphere && !atmosphereComplete) ||

@@ -116,6 +116,9 @@ export type ResultFooterConfig = {
     field_data_time_of_sampling?: string;
     field_data_time_of_sampling_from?: string;
     field_data_time_of_sampling_to?: string;
+    sample_id?: number | null;
+    form_id?: number | null;
+    form_code?: string | null;
     requires_atmosphere?: boolean;
     requires_field_data?: boolean;
     atmosphere_complete?: boolean;
@@ -134,6 +137,7 @@ export type ConsolidationReport = {
     preview_url?: string | null;
     submitted?: boolean;
     missing: string[];
+    footer?: ResultFooterConfig | null;
 };
 
 export type ConsolidationSample = {

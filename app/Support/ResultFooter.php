@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\ControlledForm;
 use App\Models\JobOrder;
+use App\Models\Sample;
 
 class ResultFooter
 {
@@ -30,6 +31,143 @@ class ResultFooter
 
     public const FO37_MDL_LINE = 'Method Detection Limit: Arsenic=6x10-5 mg/L, Lead=0.003 mg/L, Cadmium=0.002 mg/L';
 
+    public static function sheetKey(?int $sampleId, ?ControlledForm $form): ?string
+    {
+        $code = trim((string) ($form?->form_code ?? ''));
+        if ($sampleId === null || $sampleId <= 0 || $code === '') {
+            return null;
+        }
+
+        return $sampleId.':'.$code;
+    }
+
+    /**
+     * @param  array<mixed>|null  $stored
+     * @return array<string, array<string, mixed>>
+     */
+    public static function bySheetMap(?array $stored): array
+    {
+        if (! is_array($stored) || $stored === []) {
+            return [];
+        }
+
+        if (! isset($stored['by_sheet']) || ! is_array($stored['by_sheet'])) {
+            return [];
+        }
+
+        $map = [];
+        foreach ($stored['by_sheet'] as $key => $bucket) {
+            if (! is_string($key) || $key === '' || ! is_array($bucket)) {
+                continue;
+            }
+            $map[$key] = $bucket;
+        }
+
+        return $map;
+    }
+
+    /**
+     * Flat legacy footer (no by_sheet) used before per-sheet storage.
+     *
+     * @param  array<mixed>|null  $stored
+     */
+    public static function isLegacyFlatFooter(?array $stored): bool
+    {
+        if (! is_array($stored) || $stored === []) {
+            return false;
+        }
+
+        if (isset($stored['by_sheet'])) {
+            return false;
+        }
+
+        return array_key_exists('temperature_c', $stored)
+            || array_key_exists('humidity_pct', $stored)
+            || array_key_exists('test_report_no', $stored)
+            || array_key_exists('lab_conditions', $stored)
+            || array_key_exists('notes', $stored)
+            || array_key_exists('references', $stored);
+    }
+
+    /**
+     * @param  array<mixed>|null  $stored
+     * @return array<string, mixed>
+     */
+    public static function bucketForSheet(
+        ?array $stored,
+        ?int $sampleId,
+        ?ControlledForm $form,
+    ): array {
+        $key = self::sheetKey($sampleId, $form);
+        $bySheet = self::bySheetMap($stored);
+
+        if ($key !== null && isset($bySheet[$key]) && is_array($bySheet[$key])) {
+            return $bySheet[$key];
+        }
+
+        if (self::isLegacyFlatFooter($stored)) {
+            return $stored;
+        }
+
+        return [];
+    }
+
+    /**
+     * @param  array<mixed>|null  $existing
+     * @param  array{
+     *     temperature_c?: string|null,
+     *     humidity_pct?: string|null,
+     *     test_report_no?: string|null,
+     *     lab_conditions?: string|null,
+     *     references?: string|null,
+     *     notes?: string|null
+     * }  $normalized
+     * @return array{by_sheet: array<string, array<string, mixed>>}
+     */
+    public static function mergeIntoStorage(
+        ?array $existing,
+        ?int $sampleId,
+        ControlledForm $form,
+        array $normalized,
+    ): array {
+        $key = self::sheetKey($sampleId, $form);
+        $bySheet = self::bySheetMap($existing);
+
+        // Promote legacy flat footer into a sheet bucket when first keyed save happens.
+        if ($bySheet === [] && self::isLegacyFlatFooter($existing) && $key !== null) {
+            $bySheet[$key] = array_intersect_key(
+                $existing ?? [],
+                array_flip([
+                    'temperature_c',
+                    'humidity_pct',
+                    'test_report_no',
+                    'lab_conditions',
+                    'references',
+                    'notes',
+                ]),
+            );
+        }
+
+        if ($key !== null) {
+            $bySheet[$key] = $normalized;
+        }
+
+        return ['by_sheet' => $bySheet];
+    }
+
+    /**
+     * FIELD DATA text for a sheet: sample column first, else JO legacy.
+     */
+    public static function fieldDataTextForSample(?Sample $sample, ?JobOrder $jobOrder): string
+    {
+        $fromSample = trim((string) ($sample?->field_data ?? ''));
+        if ($fromSample !== '') {
+            return $fromSample;
+        }
+
+        return trim((string) ($jobOrder?->field_data ?? ''));
+    }
+
     /**
      * @return array{
      *     temperature_c: string,
@@ -40,29 +178,29 @@ class ResultFooter
      *     notes: string
      * }
      */
-    public static function defaultsFor(?ControlledForm $form, ?JobOrder $jobOrder = null): array
-    {
+    public static function defaultsFor(
+        ?ControlledForm $form,
+        ?JobOrder $jobOrder = null,
+        ?Sample $sample = null,
+    ): array {
         $code = $form?->form_code;
-        $description = trim((string) ($jobOrder?->samples->first()?->description ?? ''));
+        $description = trim((string) ($sample?->description
+            ?? $jobOrder?->samples->first()?->description
+            ?? ''));
         $variant = OfficialAnalysisCatalog::fo2FooterVariant(
             $code === 'LSP-7.8-FO2A'
                 ? 'Abstracted water'
                 : ($code === 'LSP-7.8-FO2B' ? 'Coastal Water' : $description),
         );
 
-        $stored = is_array($jobOrder?->result_footer) ? $jobOrder->result_footer : [];
-        $temperature = trim((string) ($stored['temperature_c'] ?? ''));
-        $humidity = trim((string) ($stored['humidity_pct'] ?? ''));
-        $testReportNo = trim((string) ($stored['test_report_no'] ?? ''));
-
         if (in_array($code, ['LSP-7.8-FO3', 'LSP-7.8-FO37'], true)) {
             return [
-                'temperature_c' => $temperature,
-                'humidity_pct' => $humidity,
-                'test_report_no' => $testReportNo,
+                'temperature_c' => '',
+                'humidity_pct' => '',
+                'test_report_no' => '',
                 'lab_conditions' => self::composeLabConditionsText($form, [
-                    'temperature_c' => $temperature !== '' ? $temperature : null,
-                    'humidity_pct' => $humidity !== '' ? $humidity : null,
+                    'temperature_c' => null,
+                    'humidity_pct' => null,
                 ]),
                 'references' => '',
                 'notes' => '',
@@ -76,12 +214,12 @@ class ResultFooter
         };
 
         return [
-            'temperature_c' => $temperature,
-            'humidity_pct' => $humidity,
-            'test_report_no' => $testReportNo,
+            'temperature_c' => '',
+            'humidity_pct' => '',
+            'test_report_no' => '',
             'lab_conditions' => self::composeLabConditionsText($form, [
-                'temperature_c' => $temperature !== '' ? $temperature : null,
-                'humidity_pct' => $humidity !== '' ? $humidity : null,
+                'temperature_c' => null,
+                'humidity_pct' => null,
             ], $variant),
             'references' => OfficialAnalysisCatalog::fo2ReferencesText(),
             'notes' => $notes,
@@ -97,6 +235,9 @@ class ResultFooter
      *     lab_conditions: string,
      *     references: string,
      *     notes: string,
+     *     sample_id: int|null,
+     *     form_id: int|null,
+     *     form_code: string|null,
      *     requires_atmosphere: bool,
      *     atmosphere_complete: bool,
      *     show_notes_fields: bool,
@@ -108,10 +249,16 @@ class ResultFooter
         JobOrder $jobOrder,
         ?ControlledForm $form,
         ?string $saveUrl = null,
+        ?Sample $sample = null,
     ): array {
         $jobOrder->loadMissing('samples');
-        $defaults = self::defaultsFor($form, $jobOrder);
-        $stored = is_array($jobOrder->result_footer) ? $jobOrder->result_footer : [];
+        if ($sample === null && $jobOrder->samples->isNotEmpty()) {
+            $sample = $jobOrder->samples->first();
+        }
+
+        $defaults = self::defaultsFor($form, $jobOrder, $sample);
+        $storedRoot = is_array($jobOrder->result_footer) ? $jobOrder->result_footer : [];
+        $stored = self::bucketForSheet($storedRoot, $sample?->id, $form);
 
         $temperature = trim((string) ($stored['temperature_c'] ?? ''));
         $humidity = trim((string) ($stored['humidity_pct'] ?? ''));
@@ -133,8 +280,8 @@ class ResultFooter
             'lab_conditions' => $stored['lab_conditions'] ?? null,
         ]);
 
-        $showFieldData = self::formShowsFieldData($form, $jobOrder);
-        $fieldDataRaw = trim((string) ($jobOrder->field_data ?? ''));
+        $showFieldData = self::formShowsFieldData($form, $jobOrder, $sample);
+        $fieldDataRaw = self::fieldDataTextForSample($sample, $jobOrder);
         $fieldComplete = self::isCoastalFieldDataComplete($fieldDataRaw);
         $emptyParts = [
             'temperature' => '',
@@ -143,8 +290,6 @@ class ResultFooter
             'time_of_sampling_from' => '',
             'time_of_sampling_to' => '',
         ];
-        // Keep parsed answers visible even when incomplete so a failed completeness
-        // check does not look like the values were discarded after save.
         $fieldParts = ($showFieldData && $fieldDataRaw !== '')
             ? self::parseCoastalFieldData($fieldDataRaw)
             : $emptyParts;
@@ -168,9 +313,12 @@ class ResultFooter
             'field_data_time_of_sampling' => $fieldParts['time_of_sampling'],
             'field_data_time_of_sampling_from' => $fieldParts['time_of_sampling_from'],
             'field_data_time_of_sampling_to' => $fieldParts['time_of_sampling_to'],
+            'sample_id' => $sample?->id,
+            'form_id' => $form?->id,
+            'form_code' => $form?->form_code,
             'requires_atmosphere' => $requiresAtmosphere,
             'requires_field_data' => $showFieldData,
-            'atmosphere_complete' => self::isAtmosphereComplete($jobOrder, $form),
+            'atmosphere_complete' => self::isAtmosphereComplete($jobOrder, $form, $sample),
             'field_data_complete' => ! $showFieldData || $fieldComplete,
             'show_notes_fields' => $showNotes,
             'show_field_data' => $showFieldData,
@@ -179,22 +327,33 @@ class ResultFooter
         ];
     }
 
-    public static function formShowsFieldData(?ControlledForm $form, ?JobOrder $jobOrder = null): bool
-    {
+    public static function formShowsFieldData(
+        ?ControlledForm $form,
+        ?JobOrder $jobOrder = null,
+        ?Sample $sample = null,
+    ): bool {
+        if ($sample !== null) {
+            $description = trim((string) ($sample->description ?? ''));
+            if ($description !== '' && in_array($description, OfficialAnalysisCatalog::wastewaterKinds(), true)) {
+                return OfficialAnalysisCatalog::isWastewaterCoastalKind($description);
+            }
+
+            return $form?->form_code === 'LSP-7.8-FO2B'
+                || OfficialAnalysisCatalog::isWastewaterCoastalKind($description);
+        }
+
         $jobOrder?->loadMissing('samples');
         $descriptions = collect($jobOrder?->samples ?? [])
-            ->map(static fn ($sample): string => trim((string) ($sample->description ?? '')))
+            ->map(static fn ($row): string => trim((string) ($row->description ?? '')))
             ->filter(static fn (string $description): bool => $description !== '')
             ->values();
 
-        // JO-level FIELD DATA: any Coastal Water sample requires it (not only samples->first()).
         if ($descriptions->contains(
             static fn (string $description): bool => OfficialAnalysisCatalog::isWastewaterCoastalKind($description),
         )) {
             return true;
         }
 
-        // Non-coastal WW kinds never require FIELD DATA, even if sheet resolve picks FO2B.
         if ($descriptions->contains(
             static fn (string $description): bool => in_array(
                 $description,
@@ -379,13 +538,17 @@ class ResultFooter
         return self::TEST_REPORT_PREFIX_WW;
     }
 
-    public static function isAtmosphereComplete(JobOrder $jobOrder, ?ControlledForm $form = null): bool
-    {
+    public static function isAtmosphereComplete(
+        JobOrder $jobOrder,
+        ?ControlledForm $form = null,
+        ?Sample $sample = null,
+    ): bool {
         if ($form !== null && ! self::formRequiresLabAtmosphere($form)) {
             return true;
         }
 
-        $stored = is_array($jobOrder->result_footer) ? $jobOrder->result_footer : [];
+        $storedRoot = is_array($jobOrder->result_footer) ? $jobOrder->result_footer : [];
+        $stored = self::bucketForSheet($storedRoot, $sample?->id, $form);
         $temperature = trim((string) ($stored['temperature_c'] ?? ''));
         $humidity = trim((string) ($stored['humidity_pct'] ?? ''));
         $testReportNo = trim((string) ($stored['test_report_no'] ?? ''));

@@ -18,6 +18,9 @@ export type ResultFooterConfig = {
     field_data_time_of_sampling?: string;
     field_data_time_of_sampling_from?: string;
     field_data_time_of_sampling_to?: string;
+    sample_id?: number | null;
+    form_id?: number | null;
+    form_code?: string | null;
     requires_atmosphere?: boolean;
     requires_field_data?: boolean;
     atmosphere_complete?: boolean;
@@ -272,9 +275,15 @@ export default function ResultFooterPanel({
                 </h2>
                 <p className="mt-1 text-xs text-slate-600">
                     Enter temperature, humidity, and Test Report #
-                    {showFieldData ? ', plus FIELD DATA' : ''} before encoding
-                    results. Values print on FO2 / FO2A / FO2B / FO3 / FO37 result
-                    sheets.
+                    {showFieldData ? ', plus FIELD DATA' : ''} for this result
+                    sheet
+                    {config.form_code || config.test_report_prefix
+                        ? ` (${[config.form_code, config.test_report_prefix?.replace(/[–\s]+$/, '')]
+                              .filter(Boolean)
+                              .join(' · ')})`
+                        : ''}
+                    . Multi-sample jobs keep separate values per sample and form
+                    (CHE WW vs CHE DW, Coastal FIELD DATA).
                 </p>
             </div>
 

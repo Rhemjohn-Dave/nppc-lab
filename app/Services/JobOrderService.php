@@ -1637,17 +1637,25 @@ class JobOrderService
 
         $jobOrder = $analysis->jobOrder;
         if ($jobOrder instanceof JobOrder) {
-            $resultForm = $this->reports->matchingControlledForm($jobOrder);
+            $resolvedSheet = $this->reports->forAnalysis($analysis, $analyst, withValues: false);
+            $resultForm = $resolvedSheet->controlledForm
+                ?? $this->reports->matchingControlledForm($jobOrder);
+            $sample = $jobOrder->samples->firstWhere(
+                'id',
+                (int) ($resolvedSheet->sampleId ?? $analysis->sample_id ?? 0),
+            ) ?? $jobOrder->samples->first();
+
             if (ResultFooter::formRequiresLabAtmosphere($resultForm)
-                && ! ResultFooter::isAtmosphereComplete($jobOrder, $resultForm)) {
+                && ! ResultFooter::isAtmosphereComplete($jobOrder, $resultForm, $sample)) {
                 throw ValidationException::withMessages([
                     'result_footer' => 'Enter laboratory temperature and humidity before encoding results.',
                 ]);
             }
-            // Coastal FIELD DATA uses the same encode gate as lab atmosphere
-            // (check JO sample kind even when matchingControlledForm prefers another sheet).
-            if (ResultFooter::formShowsFieldData($resultForm, $jobOrder)
-                && ! ResultFooter::isCoastalFieldDataComplete($jobOrder->field_data)) {
+            // Coastal FIELD DATA is per sample (FO2B / Coastal Water sheet).
+            if (ResultFooter::formShowsFieldData($resultForm, $jobOrder, $sample)
+                && ! ResultFooter::isCoastalFieldDataComplete(
+                    ResultFooter::fieldDataTextForSample($sample, $jobOrder),
+                )) {
                 throw ValidationException::withMessages([
                     'result_footer' => 'Enter FIELD DATA (temperature, dissolved oxygen, time of sampling) in Lab conditions before encoding results.',
                 ]);
@@ -2530,6 +2538,15 @@ class JobOrderService
                         'sample_id' => $sample->id,
                         'form_id' => $formId > 0 ? $formId : null,
                     ]));
+                    $sheetForm = $report->controlledForm;
+                    $sheetFooter = $sheetForm && ResultFooter::formSupportsFooter($sheetForm)
+                        ? ResultFooter::manifestPayload(
+                            $job,
+                            $sheetForm,
+                            "/analyst/job-orders/{$job->id}/result-footer",
+                            $sample,
+                        )
+                        : null;
 
                     return [
                         'form_id' => $formId > 0 ? $formId : null,
@@ -2541,6 +2558,7 @@ class JobOrderService
                             : null,
                         'submitted' => $formSubmitted,
                         'missing' => $incomplete->pluck('name')->values()->all(),
+                        'footer' => $sheetFooter,
                     ];
                 })->values()->all();
 
@@ -2662,10 +2680,15 @@ class JobOrderService
             return null;
         }
 
+        $footerSample = $report->sampleId
+            ? $job->samples->firstWhere('id', (int) $report->sampleId)
+            : $job->samples->first();
+
         return ResultFooter::manifestPayload(
             $job,
             $form,
             "/analyst/job-orders/{$job->id}/result-footer",
+            $footerSample,
         );
     }
 
@@ -2786,6 +2809,9 @@ class JobOrderService
                         $job,
                         $form,
                         "/analyst/job-orders/{$job->id}/result-footer",
+                        $accessible?->sampleId
+                            ? $job->samples->firstWhere('id', (int) $accessible->sampleId)
+                            : $job->samples->first(),
                     )
                     : null,
             ];

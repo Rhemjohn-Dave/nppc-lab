@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AnalysisPackage;
 use App\Models\AnalysisType;
 use App\Models\ControlledForm;
 use App\Models\JobOrder;
@@ -148,16 +149,21 @@ class ResultFooterTest extends TestCase
             ->assertJsonPath('footer.field_data_time_of_sampling_from', '9:30 AM')
             ->assertJsonPath('footer.field_data_time_of_sampling_to', '10:15 AM');
 
-        $this->assertStringContainsString('Temperature – 28', (string) $job->fresh()->field_data);
-        $this->assertStringContainsString('Dissolved Oxygen - 6.2', (string) $job->fresh()->field_data);
-        $this->assertStringContainsString('Time of Sampling - 9:30 AM – 10:15 AM', (string) $job->fresh()->field_data);
+        $coastalSample = $job->samples()->firstOrFail();
+        $this->assertStringContainsString('Temperature – 28', (string) $coastalSample->fresh()->field_data);
+        $this->assertStringContainsString('Dissolved Oxygen - 6.2', (string) $coastalSample->fresh()->field_data);
+        $this->assertStringContainsString('Time of Sampling - 9:30 AM – 10:15 AM', (string) $coastalSample->fresh()->field_data);
+        $this->assertTrue(
+            isset($job->fresh()->result_footer['by_sheet'])
+            || ResultFooter::isLegacyFlatFooter($job->fresh()->result_footer),
+        );
 
         $bag = app(FieldValueResolver::class)->forResult(
             $fo2b->activeRevision()->load('fields'),
             $job->fresh(['samples', 'analyses.analysisType']),
             null,
             $fo2b->fresh(['analysisPackage', 'analysisTypes']),
-            $job->samples()->first(),
+            $coastalSample->fresh(),
         );
 
         $this->assertStringContainsString('Temperature – 28', (string) ($bag['job_orders.field_data'] ?? ''));
@@ -217,16 +223,18 @@ class ResultFooterTest extends TestCase
             ->assertJsonPath('footer.atmosphere_complete', true);
 
         $job->refresh();
-        $this->assertSame('Custom override notes', $job->result_footer['notes'] ?? null);
-        $this->assertSame('TR-001', $job->result_footer['test_report_no'] ?? null);
-        $this->assertStringContainsString('Temp = 23.5', (string) ($job->result_footer['lab_conditions'] ?? ''));
+        $sample = $job->samples()->firstOrFail();
+        $bucket = ResultFooter::bucketForSheet($job->result_footer, $sample->id, $form);
+        $this->assertSame('Custom override notes', $bucket['notes'] ?? null);
+        $this->assertSame('TR-001', $bucket['test_report_no'] ?? null);
+        $this->assertStringContainsString('Temp = 23.5', (string) ($bucket['lab_conditions'] ?? ''));
 
         $bag = app(FieldValueResolver::class)->forResult(
             $revision->load('fields'),
             $job->fresh(['samples', 'analyses.analysisType']),
             null,
             $form->fresh(['analysisPackage', 'analysisTypes']),
-            $job->samples()->first(),
+            $sample,
         );
 
         $this->assertStringContainsString('Temp = 23.5', (string) $bag['fo2_lab_conditions']);
@@ -271,8 +279,12 @@ class ResultFooterTest extends TestCase
         $job = JobOrder::query()->latest('id')->firstOrFail();
         $this->advanceFo2JobToReady($job);
 
+        $sample = $job->samples()->firstOrFail();
+
         $this->actingAs($analyst)
             ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'sample_id' => $sample->id,
+                'form_id' => $form->id,
                 'temperature_c' => '22',
                 'humidity_pct' => '50',
                 'test_report_no' => 'TR-001',
@@ -282,6 +294,8 @@ class ResultFooterTest extends TestCase
 
         $this->actingAs($analyst)
             ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'sample_id' => $sample->id,
+                'form_id' => $form->id,
                 'reset' => true,
             ])
             ->assertOk();
@@ -485,13 +499,24 @@ class ResultFooterTest extends TestCase
         $job = JobOrder::query()->latest('id')->firstOrFail();
         $this->priceApproveReceiveAssign($job, $analyst);
 
-        $payload = ResultFooter::manifestPayload($job->fresh(['samples']), null, null);
-        $this->assertTrue($payload['requires_field_data']);
-        $this->assertTrue($payload['show_field_data']);
-        $this->assertFalse($payload['field_data_complete']);
+        $wwSample = $job->samples()->orderBy('sort_order')->orderBy('id')->firstOrFail();
+        $coastalSample = $job->samples()->where('description', 'Coastal Water')->firstOrFail();
+        $fo2 = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2')->firstOrFail();
+        $fo2b = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2B')->firstOrFail();
+
+        $wwPayload = ResultFooter::manifestPayload($job->fresh(['samples']), $fo2, null, $wwSample);
+        $this->assertFalse($wwPayload['requires_field_data']);
+        $this->assertFalse($wwPayload['show_field_data']);
+
+        $coastalPayload = ResultFooter::manifestPayload($job->fresh(['samples']), $fo2b, null, $coastalSample);
+        $this->assertTrue($coastalPayload['requires_field_data']);
+        $this->assertTrue($coastalPayload['show_field_data']);
+        $this->assertFalse($coastalPayload['field_data_complete']);
 
         $this->actingAs($analyst)
             ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'sample_id' => $coastalSample->id,
+                'form_id' => $fo2b->id,
                 'temperature_c' => '25',
                 'humidity_pct' => '55',
                 'test_report_no' => 'CW-MULTI',
@@ -501,6 +526,20 @@ class ResultFooterTest extends TestCase
 
         $this->actingAs($analyst)
             ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'sample_id' => $wwSample->id,
+                'form_id' => $fo2->id,
+                'temperature_c' => '24',
+                'humidity_pct' => '50',
+                'test_report_no' => 'WW-ONLY',
+            ])
+            ->assertOk()
+            ->assertJsonPath('footer.requires_field_data', false)
+            ->assertJsonPath('footer.test_report_no', 'WW-ONLY');
+
+        $this->actingAs($analyst)
+            ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'sample_id' => $coastalSample->id,
+                'form_id' => $fo2b->id,
                 'temperature_c' => '25',
                 'humidity_pct' => '55',
                 'test_report_no' => 'CW-MULTI',
@@ -512,9 +551,63 @@ class ResultFooterTest extends TestCase
             ->assertOk()
             ->assertJsonPath('footer.show_field_data', true)
             ->assertJsonPath('footer.requires_field_data', true)
-            ->assertJsonPath('footer.field_data_complete', true);
+            ->assertJsonPath('footer.field_data_complete', true)
+            ->assertJsonPath('footer.test_report_no', 'CW-MULTI');
 
-        $this->assertStringContainsString('Temperature – 27', (string) $job->fresh()->field_data);
+        $this->assertStringContainsString('Temperature – 27', (string) $coastalSample->fresh()->field_data);
+        $job->refresh();
+        $bySheet = ResultFooter::bySheetMap($job->result_footer);
+        $this->assertSame('WW-ONLY', $bySheet[$wwSample->id.':LSP-7.8-FO2']['test_report_no'] ?? null);
+        $this->assertSame('CW-MULTI', $bySheet[$coastalSample->id.':LSP-7.8-FO2B']['test_report_no'] ?? null);
+    }
+
+    public function test_legacy_flat_result_footer_still_completes_atmosphere(): void
+    {
+        Storage::fake('local');
+        $this->seed();
+
+        $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
+        $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
+        $typeIds = AnalysisType::query()
+            ->whereIn('code', array_slice(OfficialAnalysisCatalog::wastewaterPhysicoIssue18TypeCodes(), 0, 1))
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        $this->actingAs($receiving)
+            ->post('/intake/job-orders', [
+                'customer_name' => 'Legacy Footer',
+                'customer_email' => 'legacy-footer@example.com',
+                'classification' => 'Wastewater',
+                'samples' => [
+                    [
+                        'description' => 'Wastewater',
+                        'matrix' => 'Liquid',
+                        'analysis_type_ids' => $typeIds,
+                        'package_ids' => [],
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $job = JobOrder::query()->latest('id')->firstOrFail();
+        $this->priceApproveReceiveAssign($job, $analyst);
+        $form = ControlledForm::query()->where('form_code', 'LSP-7.8-FO2')->firstOrFail();
+        $sample = $job->samples()->firstOrFail();
+
+        $job->update([
+            'result_footer' => [
+                'temperature_c' => '22',
+                'humidity_pct' => '48',
+                'test_report_no' => 'LEGACY-1',
+                'lab_conditions' => 'legacy',
+            ],
+        ]);
+
+        $this->assertTrue(ResultFooter::isAtmosphereComplete($job->fresh(), $form, $sample));
+        $payload = ResultFooter::manifestPayload($job->fresh(['samples']), $form, null, $sample);
+        $this->assertTrue($payload['atmosphere_complete']);
+        $this->assertSame('LEGACY-1', $payload['test_report_no']);
     }
 
     public function test_fo37_footer_fills_lab_conditions_bag(): void
@@ -532,30 +625,37 @@ class ResultFooterTest extends TestCase
 
         $receiving = User::where('email', 'receiving@nppc.local')->firstOrFail();
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
-        $package = $form->analysisPackage;
-        $this->assertNotNull($package);
+        $package = AnalysisPackage::query()->where('code', 'PKG-DW-PHYSICO')->firstOrFail();
+        $typeIds = $package->analysisTypes()->pluck('analysis_types.id')
+            ->map(fn ($id): int => (int) $id)
+            ->take(3)
+            ->all();
+        $this->assertNotEmpty($typeIds);
 
         $this->actingAs($receiving)
             ->post('/intake/job-orders', [
                 'customer_name' => 'FO37 Atmosphere',
                 'customer_email' => 'fo37-atmosphere@example.com',
-                'classification' => 'Drinking Water',
+                'classification' => 'Potability',
                 'samples' => [
                     [
                         'description' => 'Tap water',
                         'matrix' => 'Liquid',
-                        'analysis_type_ids' => [],
-                        'package_ids' => [$package->id],
                     ],
                 ],
+                'package_ids' => [$package->id],
+                'analysis_type_ids' => $typeIds,
             ])
             ->assertRedirect();
 
         $job = JobOrder::query()->latest('id')->firstOrFail();
         $this->priceApproveReceiveAssign($job, $analyst);
+        $sample = $job->samples()->firstOrFail();
 
         $this->actingAs($analyst)
             ->putJson("/analyst/job-orders/{$job->id}/result-footer", [
+                'sample_id' => $sample->id,
+                'form_id' => $form->id,
                 'temperature_c' => '26',
                 'humidity_pct' => '62',
                 'test_report_no' => 'DW-77',
@@ -571,7 +671,7 @@ class ResultFooterTest extends TestCase
             $job->fresh(['samples', 'analyses.analysisType', 'packages']),
             null,
             $form->fresh(['analysisPackage', 'analysisTypes']),
-            $job->samples()->first(),
+            $sample,
         );
 
         $this->assertStringContainsString('Temp: 26', (string) ($bag['fo37_lab_conditions'] ?? ''));
@@ -590,11 +690,18 @@ class ResultFooterTest extends TestCase
         $analyst = User::where('email', 'analyst@nppc.local')->firstOrFail();
         $this->priceApproveReceiveAssign($job, $analyst);
 
+        $resolved = app(\App\Services\AnalysisResultReportResolver::class)
+            ->forJobOrder($job->fresh(['samples', 'analyses', 'packages']), $analyst);
+        $sampleId = $resolved->sampleId ?? $job->samples()->value('id');
+        $formId = $resolved->controlledForm?->id;
+
         $this->actingAs($analyst)
             ->putJson("/analyst/job-orders/{$job->id}/result-footer", array_merge([
                 'temperature_c' => '25',
                 'humidity_pct' => '55',
                 'test_report_no' => 'TR-001',
+                ...( $sampleId ? ['sample_id' => (int) $sampleId] : []),
+                ...( $formId ? ['form_id' => (int) $formId] : []),
             ], $footerExtras))
             ->assertOk();
 

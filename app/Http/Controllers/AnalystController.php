@@ -990,9 +990,36 @@ class AnalystController extends Controller
             'Lab conditions apply only to FO2 / FO2A / FO2B / FO3 / FO37 physico result sheets.',
         );
 
+        $sample = null;
+        $resolvedSampleId = $sampleId ?? $resolved->sampleId;
+        if ($resolvedSampleId) {
+            $sample = $jobOrder->samples->firstWhere('id', (int) $resolvedSampleId);
+            abort_unless($sample !== null, 422, 'Sample not found on this job order.');
+        }
+
         if (($data['reset'] ?? false) === true) {
-            $jobOrder->update(['result_footer' => null]);
+            // Clear only this sheet's bucket; leave other samples/forms intact.
+            $key = ResultFooter::sheetKey($sample?->id, $form);
+            $existing = is_array($jobOrder->result_footer) ? $jobOrder->result_footer : [];
+            $bySheet = ResultFooter::bySheetMap($existing);
+            if ($key !== null && isset($bySheet[$key])) {
+                unset($bySheet[$key]);
+                $jobOrder->update([
+                    'result_footer' => $bySheet === [] ? null : ['by_sheet' => $bySheet],
+                ]);
+            } elseif (ResultFooter::isLegacyFlatFooter($existing)) {
+                $jobOrder->update(['result_footer' => null]);
+            }
+            if ($sample !== null && ResultFooter::formShowsFieldData($form, $jobOrder, $sample)) {
+                $sample->update(['field_data' => null]);
+            }
         } else {
+            abort_unless(
+                $sample !== null && $form !== null,
+                422,
+                'Lab conditions require a sample and result form context.',
+            );
+
             if (ResultFooter::formRequiresLabAtmosphere($form)) {
                 $temp = trim((string) ($data['temperature_c'] ?? ''));
                 $humidity = trim((string) ($data['humidity_pct'] ?? ''));
@@ -1012,11 +1039,17 @@ class AnalystController extends Controller
                 }
             }
 
-            $updates = [
-                'result_footer' => ResultFooter::normalizeForStorage($data, $form),
-            ];
+            $normalized = ResultFooter::normalizeForStorage($data, $form);
+            $jobOrder->update([
+                'result_footer' => ResultFooter::mergeIntoStorage(
+                    is_array($jobOrder->result_footer) ? $jobOrder->result_footer : null,
+                    $sample->id,
+                    $form,
+                    $normalized,
+                ),
+            ]);
 
-            if (ResultFooter::formShowsFieldData($form, $jobOrder)) {
+            if (ResultFooter::formShowsFieldData($form, $jobOrder, $sample)) {
                 $fdTemp = trim((string) ($data['field_data_temperature'] ?? ''));
                 $fdDo = trim((string) ($data['field_data_dissolved_oxygen'] ?? ''));
                 $fdTimeFrom = trim((string) ($data['field_data_time_of_sampling_from'] ?? ''));
@@ -1057,17 +1090,18 @@ class AnalystController extends Controller
                     throw ValidationException::withMessages($fieldDataErrors);
                 }
 
-                $updates['field_data'] = ResultFooter::composeCoastalFieldData(
-                    $fdTemp,
-                    $fdDo,
-                    ResultFooter::composeTimeOfSamplingRange($fdTimeFrom, $fdTimeTo),
-                );
+                $sample->update([
+                    'field_data' => ResultFooter::composeCoastalFieldData(
+                        $fdTemp,
+                        $fdDo,
+                        ResultFooter::composeTimeOfSamplingRange($fdTimeFrom, $fdTimeTo),
+                    ),
+                ]);
             }
-
-            $jobOrder->update($updates);
         }
 
         $jobOrder->refresh();
+        $sample?->refresh();
 
         return response()->json([
             'ok' => true,
@@ -1076,6 +1110,7 @@ class AnalystController extends Controller
                 $jobOrder,
                 $form,
                 "/analyst/job-orders/{$jobOrder->id}/result-footer",
+                $sample,
             ),
         ]);
     }
@@ -1389,12 +1424,16 @@ class AnalystController extends Controller
         ];
 
         if (ResultFooter::formSupportsFooter($resolved->controlledForm)) {
+            $footerSample = $resolved->sampleId
+                ? $jobOrder->samples->firstWhere('id', (int) $resolved->sampleId)
+                : $jobOrder->samples->first();
             $extra['footer'] = ResultFooter::manifestPayload(
                 $jobOrder,
                 $resolved->controlledForm,
                 $saveUrl
                     ? "/analyst/job-orders/{$jobOrder->id}/result-footer"
                     : null,
+                $footerSample,
             );
         }
 

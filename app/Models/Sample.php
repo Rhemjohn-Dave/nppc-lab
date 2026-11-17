@@ -18,6 +18,7 @@ class Sample extends Model
         'quantity',
         'unit',
         'remarks',
+        'field_data',
         'sort_order',
         'submitted_for_review_at',
         'submitted_form_ids',
