@@ -172,7 +172,10 @@ export default function FormDesigner({
     matrix_preview_rows = [],
     matrix_default_config = null,
 }: Props) {
-    const { flash } = usePage().props as { flash?: { success?: string } };
+    const { flash, errors: pageErrors } = usePage().props as {
+        flash?: { success?: string };
+        errors?: Record<string, string>;
+    };
 
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -222,6 +225,8 @@ export default function FormDesigner({
     const [previewOpen, setPreviewOpen] = useState(false);
     const [previewJobId, setPreviewJobId] = useState('');
     const [fileInputKey, setFileInputKey] = useState(0);
+    const [isUploadingCanonical, setIsUploadingCanonical] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [justSaved, setJustSaved] = useState(false);
     const [mobileLibraryOpen, setMobileLibraryOpen] = useState(false);
@@ -1159,12 +1164,20 @@ export default function FormDesigner({
 
                 {!revision.has_canonical && (
                     <div className="border-b bg-amber-50 px-4 py-3 text-sm">
-                        Upload a canonical PDF before placing fields.
+                        <p>
+                            Upload a canonical PDF before placing fields. The green boxes you see are
+                            field overlays — the official PDF file is missing on this server.
+                        </p>
+                        <p className="mt-1 text-xs text-amber-900/80">
+                            Use the blank Issue 18 wastewater PDF (same file as FO2 / FO2A), not a
+                            filled results printout.
+                        </p>
                         <Input
                             key={fileInputKey}
                             className="mt-2 max-w-md"
                             type="file"
-                            accept=".pdf,.doc,.docx,application/pdf"
+                            accept=".pdf,application/pdf"
+                            disabled={isUploadingCanonical}
                             onChange={(event) => {
                                 const file = event.target.files?.[0];
 
@@ -1172,16 +1185,36 @@ export default function FormDesigner({
                                     return;
                                 }
 
+                                setUploadError(null);
+                                setIsUploadingCanonical(true);
                                 router.post(
                                     `/admin/controlled-forms/${form.id}/revisions/${revision.id}/file`,
                                     { file },
                                     {
                                         forceFormData: true,
-                                        onFinish: () => setFileInputKey((value) => value + 1),
+                                        onError: (errs) => {
+                                            const message =
+                                                (errs as Record<string, string>).file ??
+                                                Object.values(errs as Record<string, string>)[0] ??
+                                                'Upload failed.';
+                                            setUploadError(message);
+                                        },
+                                        onFinish: () => {
+                                            setIsUploadingCanonical(false);
+                                            setFileInputKey((value) => value + 1);
+                                        },
                                     },
                                 );
                             }}
                         />
+                        {isUploadingCanonical && (
+                            <p className="mt-2 text-xs text-amber-900">Uploading…</p>
+                        )}
+                        {(uploadError || pageErrors?.file) && (
+                            <p className="mt-2 text-sm text-red-700">
+                                {uploadError || pageErrors?.file}
+                            </p>
+                        )}
                     </div>
                 )}
 

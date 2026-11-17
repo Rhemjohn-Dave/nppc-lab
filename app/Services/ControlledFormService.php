@@ -163,9 +163,11 @@ class ControlledFormService
 
     public function attachFile(ControlledForm $form, ControlledFormRevision $revision, UploadedFile $file): ControlledFormRevision
     {
-        if (! $revision->status->isEditable() && $revision->status !== ControlledFormRevisionStatus::Draft) {
+        // Missing file on disk (deploy without storage/) may be healed on any status.
+        // Replacing an existing canonical is only allowed on draft / for_review.
+        if ($revision->hasCanonicalPdf() && ! $revision->status->isEditable()) {
             throw ValidationException::withMessages([
-                'file' => 'Files can only be replaced on draft revisions.',
+                'file' => 'Files can only be replaced on draft or for-review revisions. Create a new revision to change an active PDF.',
             ]);
         }
 
