@@ -95,6 +95,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/job-orders/{jobOrder}/submit-for-review', [AnalystController::class, 'submitForReview'])->name('submit-for-review');
         Route::patch('/job-orders/{jobOrder}/samples/{sample}', [AnalystController::class, 'updateSampleDescription'])->name('samples.update-description');
         Route::patch('/job-orders/{jobOrder}/result-facts', [AnalystController::class, 'updateResultFacts'])->name('result-facts');
+        Route::patch('/job-orders/{jobOrder}/report-date', [AnalystController::class, 'updateReportDate'])->name('report-date');
         Route::put('/job-orders/{jobOrder}/result-signatories', [AnalystController::class, 'updateResultSignatories'])->name('result-signatories');
         Route::put('/job-orders/{jobOrder}/result-footer', [AnalystController::class, 'updateResultFooter'])->name('result-footer');
         Route::get('/job-orders/{jobOrder}/result-report', [AnalystController::class, 'resultReport'])->name('result-report');

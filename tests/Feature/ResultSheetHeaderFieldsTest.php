@@ -408,6 +408,7 @@ class ResultSheetHeaderFieldsTest extends TestCase
         $this->post('/intake/job-orders', [
             'customer_name' => 'Coastal Farms',
             'customer_email' => 'coastal-analysis@example.com',
+            'classification' => 'Wastewater',
             'samples' => [
                 ['description' => 'Wastewater', 'matrix' => 'Liquid'],
             ],
@@ -450,8 +451,9 @@ class ResultSheetHeaderFieldsTest extends TestCase
         $this->assertSame('July 21, 2026 (10:00AM)', $bag['results.receipt_at']);
         $this->assertSame('July 29, 2026 (3:00PM)', $bag['results.analysis_datetime']);
         $this->assertSame($bag['results.analysis_datetime'], $bag['results.examination_datetime']);
-        $this->assertNull($bag['results.release_date']);
-        $this->assertNull($bag['results.report_date']);
+        // jobOrderBag has no sheet context → default +7 calendar days from received_at.
+        $this->assertSame('July 28, 2026', $bag['results.release_date']);
+        $this->assertSame('July 28, 2026', $bag['results.report_date']);
     }
 
     public function test_receipt_and_examination_print_manila_time_not_utc(): void
@@ -510,8 +512,9 @@ class ResultSheetHeaderFieldsTest extends TestCase
         $this->assertSame('August 20, 2026 (12:05AM)', $bag['results.collection_datetime']);
         $this->assertSame('August 20, 2026 (12:51AM)', $bag['results.receipt_at']);
         $this->assertSame('August 20, 2026 (12:51AM)', $bag['results.examination_datetime']);
-        $this->assertNull($bag['results.report_date']);
-        $this->assertNull($bag['results.release_date']);
+        // jobOrderBag has no sheet context → default +7 calendar days from received_at.
+        $this->assertSame('August 27, 2026', $bag['results.report_date']);
+        $this->assertSame('August 27, 2026', $bag['results.release_date']);
     }
 
     public function test_sterile_bottle_field_data_prints_as_sample_description(): void

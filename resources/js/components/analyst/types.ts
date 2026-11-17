@@ -76,6 +76,7 @@ export type AnalystTask = {
     report: ReportSummary;
     result_facts?: ResultFact[];
     can_edit_result_facts?: boolean;
+    report_date?: ReportDateConfig | null;
     job_order: {
         id: number;
         reference_no: string;
@@ -99,6 +100,19 @@ export type ResultSignatoryConfig = {
     confirmed: boolean;
     can_edit?: boolean;
     signatories: Array<{ name: string; prc_id: string | null }>;
+    save_url?: string | null;
+};
+
+export type ReportDateConfig = {
+    value: string | null;
+    display: string | null;
+    default_value: string | null;
+    default_display: string | null;
+    is_override: boolean;
+    sample_id?: number | null;
+    form_id?: number | null;
+    form_code?: string | null;
+    can_edit?: boolean;
     save_url?: string | null;
 };
 

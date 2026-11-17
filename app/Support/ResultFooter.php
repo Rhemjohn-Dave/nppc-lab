@@ -149,7 +149,15 @@ class ResultFooter
         }
 
         if ($key !== null) {
+            $previous = $bySheet[$key] ?? [];
             $bySheet[$key] = $normalized;
+            // Footer saves must not wipe per-sheet Date Reported overrides.
+            if (
+                ! array_key_exists(ReportDate::STORAGE_KEY, $normalized)
+                && array_key_exists(ReportDate::STORAGE_KEY, $previous)
+            ) {
+                $bySheet[$key][ReportDate::STORAGE_KEY] = $previous[ReportDate::STORAGE_KEY];
+            }
         }
 
         return ['by_sheet' => $bySheet];

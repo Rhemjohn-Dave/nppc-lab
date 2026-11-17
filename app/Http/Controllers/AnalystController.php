@@ -16,6 +16,7 @@ use App\Support\AnalysisResultReport;
 use App\Support\DynamicTestMatrix;
 use App\Support\OfficialAnalysisCatalog;
 use App\Support\BulkSampleRemarks;
+use App\Support\ReportDate;
 use App\Support\ResultFooter;
 use App\Support\ResultSheetFacts;
 use App\Support\ResultSignatories;
@@ -383,6 +384,17 @@ class AnalystController extends Controller
                         ? ResultSheetFacts::forReport($resolvedReport)
                         : [],
                     'can_edit_result_facts' => $sample !== null && isset($editableSampleIds[(int) $sample->id]),
+                    'report_date' => $resolvedReport instanceof AnalysisResultReport
+                        && $resolvedReport->controlledForm !== null
+                        && $sample !== null
+                        ? ReportDate::manifestPayload(
+                            $task->jobOrder,
+                            $resolvedReport->controlledForm,
+                            $sample,
+                            "/analyst/job-orders/{$task->jobOrder->id}/report-date",
+                            isset($editableSampleIds[(int) $sample->id]),
+                        )
+                        : null,
                     'job_order' => [
                         'id' => $task->jobOrder->id,
                         'reference_no' => $task->jobOrder->reference_no,
@@ -680,29 +692,21 @@ class AnalystController extends Controller
         $count = count($completed);
 
         if ($formId !== null) {
-            return back()->with(
-                'success',
-                $count === 1
-                    ? 'Result sheet assay marked complete.'
-                    : "{$count} assays on this result sheet marked complete.",
-            );
-        }
-
-        if ($sampleId === null) {
-            return back()->with(
-                'success',
-                $count === 1
-                    ? 'Assay marked complete.'
-                    : "{$count} assays on this job order marked complete.",
-            );
-        }
-
-        return back()->with(
-            'success',
-            $count === 1
+            $message = $count === 1
+                ? 'Result sheet assay marked complete.'
+                : "{$count} assays on this result sheet marked complete.";
+        } elseif ($sampleId === null) {
+            $message = $count === 1
+                ? 'Assay marked complete.'
+                : "{$count} assays on this job order marked complete.";
+        } else {
+            $message = $count === 1
                 ? 'Sample assay marked complete.'
-                : "{$count} assays for this sample marked complete.",
-        );
+                : "{$count} assays for this sample marked complete.";
+        }
+
+        // Keep the encoding workbench open: open status tabs drop completed lines.
+        return $this->redirectAfterSampleComplete($request, $jobOrder, $message);
     }
 
     public function submitForReview(Request $request, JobOrder $jobOrder): RedirectResponse
@@ -1115,6 +1119,50 @@ class AnalystController extends Controller
         ]);
     }
 
+    public function updateReportDate(Request $request, JobOrder $jobOrder): RedirectResponse
+    {
+        $user = $request->user();
+        abort_unless($user !== null, 403);
+
+        $jobOrder->loadMissing(['analyses', 'samples', 'packages']);
+
+        $data = $request->validate([
+            'sample_id' => ['required', 'integer'],
+            'form_id' => ['required', 'integer'],
+            'report_date' => ['nullable', 'date_format:Y-m-d'],
+            'reset' => ['sometimes', 'boolean'],
+        ]);
+
+        $sample = $jobOrder->samples->firstWhere('id', (int) $data['sample_id']);
+        abort_unless($sample !== null, 422, 'Sample not found on this job order.');
+        abort_unless($sample->released_at === null, 422, 'Released samples cannot change Date Reported.');
+
+        $allReports = $this->reports->reportsForJobOrder($jobOrder, $user, withValues: false);
+        $resolved = $this->reports->pickReport($allReports, (int) $data['sample_id'], (int) $data['form_id']);
+        abort_unless(
+            $this->reports->userCanAccessCombined($resolved->analyses, $user, $jobOrder)
+            || $user->hasRole('admin'),
+            403,
+        );
+
+        $form = $resolved->controlledForm;
+        abort_unless($form !== null, 422, 'No result form is bound for this sheet.');
+
+        $reset = ($data['reset'] ?? false) === true;
+        $reportDate = $reset ? null : ($data['report_date'] ?? null);
+
+        $jobOrder->update([
+            'result_footer' => ReportDate::mergeOverrideIntoStorage(
+                is_array($jobOrder->result_footer) ? $jobOrder->result_footer : null,
+                (int) $sample->id,
+                $form,
+                is_string($reportDate) ? $reportDate : null,
+            ),
+        ]);
+
+        return back()->with('success', 'Date Reported updated.');
+    }
+
     public function combinedPdf(Request $request, JobOrderAnalysis $analysis): HttpResponse
     {
         $user = $request->user();
@@ -1483,6 +1531,50 @@ class AnalystController extends Controller
         }
 
         return back();
+    }
+
+    /**
+     * After Save & Complete, reload analyst with the same JO focused so Send to Head can enable.
+     */
+    private function redirectAfterSampleComplete(
+        Request $request,
+        JobOrder $jobOrder,
+        string $message,
+    ): RedirectResponse {
+        $referer = $request->headers->get('referer');
+        $parts = is_string($referer) ? parse_url($referer) : false;
+        $path = is_array($parts) ? (string) ($parts['path'] ?? '') : '';
+        $query = [];
+
+        if (
+            is_array($parts)
+            && ($parts['host'] ?? '') === $request->getHost()
+            && ($path === '/analyst' || str_starts_with($path, '/analyst/'))
+        ) {
+            if (isset($parts['query']) && is_string($parts['query'])) {
+                parse_str($parts['query'], $query);
+            }
+        } else {
+            $path = '/analyst';
+        }
+
+        $status = (string) ($query['status'] ?? '');
+        $openStatuses = [
+            '',
+            'needs_action',
+            'returned',
+            JobOrderAnalysisStatus::InProgress->value,
+            JobOrderAnalysisStatus::Assigned->value,
+            JobOrderAnalysisStatus::Pending->value,
+        ];
+
+        if (in_array($status, $openStatuses, true)) {
+            $query['status'] = JobOrderAnalysisStatus::Completed->value;
+        }
+
+        $query['job'] = (string) $jobOrder->id;
+
+        return redirect($path.'?'.http_build_query($query))->with('success', $message);
     }
 
     private function userCanEditSampleDescription(User $user, Sample $sample): bool

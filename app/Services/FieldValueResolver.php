@@ -13,6 +13,7 @@ use App\Support\BulkSampleRemarks;
 use App\Support\DynamicTestMatrix;
 use App\Support\Fo2SignatoryBlockComposer;
 use App\Support\OfficialAnalysisCatalog;
+use App\Support\ReportDate;
 use App\Support\ResultFooter;
 use App\Support\ResultSignatories;
 use App\Support\SampleControlNumber;
@@ -153,9 +154,7 @@ class FieldValueResolver
             }
         }
 
-        $bag['results.issued_date'] = $this->officialDate($jobOrder->reviewed_at);
-        $bag['results.release_date'] = $bag['results.issued_date'];
-        $bag['results.report_date'] = $bag['results.release_date'];
+        $this->putReportDatesBag($bag, $jobOrder, $form, $focusSample);
         $this->putResultAnalystBag($bag, $jobOrder, $form, $ordered);
         $bag['results.test_requested'] = $this->testRequestedNames($jobOrder, $form);
         $bag['results.test_methods_references'] = $this->testMethodsReferencesBlock($ordered);
@@ -935,13 +934,11 @@ class FieldValueResolver
         $bag['results.collection_datetime'] = $bag['results.sampling_datetime'];
         $bag['results.analysis_datetime'] = $this->officialAnalysisDateTime($jobOrder);
         $bag['results.examination_datetime'] = $bag['results.analysis_datetime'];
-        $bag['results.release_date'] = $this->officialDate($jobOrder->reviewed_at);
-        $bag['results.report_date'] = $bag['results.release_date'];
+        $this->putReportDatesBag($bag, $jobOrder);
         $bag['results.collected_by'] = $jobOrder->sample_collected_by;
         $bag['results.water_supply'] = $this->listedOrSpecified($jobOrder->wastewater_source);
         $bag['results.sampling_point'] = $this->listedOrSpecified($jobOrder->wastewater_source);
         $bag['results.classification'] = $this->listedOrSpecified($jobOrder->classification);
-        $bag['results.issued_date'] = $bag['results.release_date'];
         $this->putResultAnalystBag($bag, $jobOrder);
 
         for ($i = 1; $i <= self::RFA_SAMPLE_TOTAL_SLOTS; $i++) {
@@ -1250,6 +1247,26 @@ class FieldValueResolver
         }
 
         return count($names) === 1 ? $names[0] : implode(', ', $names);
+    }
+
+    /**
+     * Date Reported / Release / Issued: TAT from Date/Time Submitted (received_at),
+     * with optional per-sheet analyst override. Not Head reviewed_at.
+     *
+     * @param  array<string, mixed>  $bag
+     */
+    private function putReportDatesBag(
+        array &$bag,
+        JobOrder $jobOrder,
+        ?ControlledForm $form = null,
+        ?\App\Models\Sample $sample = null,
+    ): void {
+        $resolved = ReportDate::resolve($jobOrder, $form, $sample);
+        $printed = $this->officialDate($resolved);
+        $bag['results.report_date'] = $printed;
+        $bag['results.release_date'] = $printed;
+        $bag['results.issued_date'] = $printed;
+        $bag['issued_date'] = $printed;
     }
 
     private function officialDateTime(?DateTimeInterface $dateTime): ?string

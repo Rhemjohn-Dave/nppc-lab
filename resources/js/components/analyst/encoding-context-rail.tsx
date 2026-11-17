@@ -1,3 +1,4 @@
+import ReportDateEditor from '@/components/analyst/report-date-editor';
 import ResultFactEditor from '@/components/analyst/result-fact-editor';
 import SampleDescriptionEditor from '@/components/analyst/sample-description-editor';
 import type { AnalystTask, SampleSummary } from '@/components/analyst/types';
@@ -142,6 +143,12 @@ export default function EncodingContextRail({
                                   />
                               ))
                             : null}
+                        {active?.report_date ? (
+                            <ReportDateEditor
+                                jobId={job.id}
+                                config={active.report_date}
+                            />
+                        ) : null}
                     </div>
                 </section>
 
