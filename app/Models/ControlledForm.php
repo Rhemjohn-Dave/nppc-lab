@@ -35,7 +35,11 @@ use Illuminate\Support\Carbon;
  */
 class ControlledForm extends Model
 {
-    public const RFA_FORM_CODE = 'NPPC-LAB-FRM-001';
+    /** General (non-Aqua) Job Order / RFA — active template code. */
+    public const RFA_FORM_CODE = 'NPPC-LAB-FRM-002';
+
+    /** Legacy general JO code removed by migration; kept for heal scripts only. */
+    public const RFA_FORM_CODE_LEGACY = 'NPPC-LAB-FRM-001';
 
     public const RFA_AQUA_FORM_CODE = 'NPPC-LAB-FRM-AQUA';
 
@@ -137,14 +141,21 @@ class ControlledForm extends Model
             ? self::RFA_AQUA_FORM_CODE
             : self::RFA_FORM_CODE;
 
-        $byVariant = static::query()
+        // Prefer a form that actually has an ACTIVE revision (e.g. FRM-002 when
+        // FRM-001 is archived). Then prefer the canonical form_code.
+        $withActive = static::query()
             ->where('category', ControlledFormCategory::JobOrder)
             ->where('job_order_variant', $variant)
+            ->whereHas(
+                'revisions',
+                fn ($q) => $q->where('status', ControlledFormRevisionStatus::Active),
+            )
+            ->orderByRaw('CASE WHEN form_code = ? THEN 0 ELSE 1 END', [$preferredCode])
             ->orderBy('id')
             ->first();
 
-        if ($byVariant) {
-            return $byVariant;
+        if ($withActive) {
+            return $withActive;
         }
 
         $byCode = static::query()
@@ -154,6 +165,16 @@ class ControlledForm extends Model
 
         if ($byCode) {
             return $byCode;
+        }
+
+        $byVariant = static::query()
+            ->where('category', ControlledFormCategory::JobOrder)
+            ->where('job_order_variant', $variant)
+            ->orderBy('id')
+            ->first();
+
+        if ($byVariant) {
+            return $byVariant;
         }
 
         // Aqua must not silently fall back to the general template when misconfigured.
@@ -167,7 +188,19 @@ class ControlledForm extends Model
                 $query->whereNull('job_order_variant')
                     ->orWhere('job_order_variant', JobOrderVariant::General);
             })
+            ->whereHas(
+                'revisions',
+                fn ($q) => $q->where('status', ControlledFormRevisionStatus::Active),
+            )
             ->orderBy('id')
-            ->first();
+            ->first()
+            ?? static::query()
+                ->where('category', ControlledFormCategory::JobOrder)
+                ->where(function ($query) {
+                    $query->whereNull('job_order_variant')
+                        ->orWhere('job_order_variant', JobOrderVariant::General);
+                })
+                ->orderBy('id')
+                ->first();
     }
 }

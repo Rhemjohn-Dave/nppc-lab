@@ -58,6 +58,7 @@ const transitions: Record<string, RevisionTransitionAction[]> = {
     approved: [{ status: 'active', label: 'Activate' }],
     active: [{ status: 'archived', label: 'Archive' }],
     superseded: [{ status: 'archived', label: 'Archive' }],
+    archived: [{ status: 'draft', label: 'Restore to draft' }],
 };
 
 export default function ControlledFormShow({

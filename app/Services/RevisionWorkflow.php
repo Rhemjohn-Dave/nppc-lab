@@ -23,7 +23,8 @@ class RevisionWorkflow
         'approved' => ['active', 'archived'],
         'active' => ['archived'],
         'superseded' => ['archived'],
-        'archived' => [],
+        // Allow restore so an older JO/RFA template can be brought back after a bad seed.
+        'archived' => ['draft'],
     ];
 
     public function transition(

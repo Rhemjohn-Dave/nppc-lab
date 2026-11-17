@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Enums\ControlledFormCategory;
+use App\Enums\ControlledFormRevisionStatus;
 use App\Enums\JobOrderStatus;
 use App\Enums\JobOrderVariant;
 use App\Models\ControlledForm;
+use App\Models\ControlledFormRevision;
 use App\Models\JobOrder;
 use App\Support\OfficialAnalysisCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -105,6 +107,46 @@ class DualJobOrderFormTest extends TestCase
         ]);
 
         $this->assertNull(ControlledForm::jobOrderFormFor($aquaJob));
+    }
+
+    public function test_general_jo_prefers_form_with_active_revision_over_older_archived(): void
+    {
+        $archived = ControlledForm::query()->create([
+            'form_code' => ControlledForm::RFA_FORM_CODE_LEGACY,
+            'name' => 'Old General RFA',
+            'category' => ControlledFormCategory::JobOrder,
+            'job_order_variant' => JobOrderVariant::General,
+        ]);
+        ControlledFormRevision::query()->create([
+            'controlled_form_id' => $archived->id,
+            'revision' => '1',
+            'status' => ControlledFormRevisionStatus::Archived,
+            'fill_mode' => ControlledFormRevision::FILL_MODE_OVERLAY,
+        ]);
+
+        $active = ControlledForm::query()->create([
+            'form_code' => ControlledForm::RFA_FORM_CODE,
+            'name' => 'Current General RFA',
+            'category' => ControlledFormCategory::JobOrder,
+            'job_order_variant' => JobOrderVariant::General,
+        ]);
+        ControlledFormRevision::query()->create([
+            'controlled_form_id' => $active->id,
+            'revision' => '12',
+            'status' => ControlledFormRevisionStatus::Active,
+            'fill_mode' => ControlledFormRevision::FILL_MODE_OVERLAY,
+        ]);
+
+        $waterJob = JobOrder::query()->create([
+            'reference_no' => '26-POT02',
+            'customer_name' => 'Water Client',
+            'classification' => 'Potability',
+            'status' => JobOrderStatus::DraftSubmitted,
+            'total_cost' => 0,
+        ]);
+
+        $this->assertTrue(ControlledForm::jobOrderFormFor($waterJob)?->is($active));
+        $this->assertTrue(ControlledForm::jobOrderForm()?->is($active));
     }
 
     public function test_result_form_registry_uses_distinct_f016_codes(): void

@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Field blueprint for NPPC-LAB-FRM-001.
+ * Field blueprint for NPPC-LAB-FRM-002 (general Job Order / RFA).
  * Captured from Form Designer ACTIVE revision 1
  * via `php artisan controlled-forms:export-blueprints`.
  */
