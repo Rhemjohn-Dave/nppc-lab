@@ -153,6 +153,10 @@ function firstFocusTask(tasks: AnalystTask[]): AnalystTask | null {
     );
 }
 
+function isMultiSampleJob(tasks: AnalystTask[]): boolean {
+    return groupTasksBySample(tasks).length >= 2;
+}
+
 function setJobQueryParam(jobId: number | null) {
     const url = new URL(window.location.href);
     if (jobId == null) {
@@ -180,6 +184,8 @@ export default function AnalystIndex({
     const [active, setActive] = useState<AnalystTask | null>(null);
     /** When true, discard confirm continues by leaving focus for the bench queue. */
     const [pendingBackToQueue, setPendingBackToQueue] = useState(false);
+    /** When true, discard confirm continues by returning to the multi-sample list. */
+    const [pendingBackToSamples, setPendingBackToSamples] = useState(false);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [confirmComplete, setConfirmComplete] = useState(false);
     const [sampleCompletePending, setSampleCompletePending] = useState<{
@@ -384,6 +390,12 @@ export default function AnalystIndex({
             return;
         }
 
+        // Multi-sample: stay on the samples list until the analyst opens a sample.
+        if (isMultiSampleJob(selectedGroup.tasks)) {
+            setActive(null);
+            return;
+        }
+
         const focus = firstFocusTask(selectedGroup.tasks);
         if (focus) {
             loadTaskIntoForm(focus);
@@ -520,11 +532,18 @@ export default function AnalystIndex({
             return;
         }
 
-        const focus = firstFocusTask(group.tasks);
-        if (focus) {
-            loadTaskIntoForm(focus);
-        } else {
+        // Multi-sample: show samples table first; encode only after Open sample.
+        if (isMultiSampleJob(group.tasks)) {
             setActive(null);
+            form.clearErrors();
+            form.reset();
+        } else {
+            const focus = firstFocusTask(group.tasks);
+            if (focus) {
+                loadTaskIntoForm(focus);
+            } else {
+                setActive(null);
+            }
         }
 
         const footer = consolidationsById.get(jobId)?.footer;
@@ -539,11 +558,40 @@ export default function AnalystIndex({
         }
     }
 
+    function backToSamples() {
+        if (!readOnly && form.isDirty) {
+            if (isCompletedLine) {
+                setPendingTask(null);
+                setPendingJobId(null);
+                setPendingBackToQueue(false);
+                setPendingBackToSamples(true);
+                setDiscardConfirm(true);
+                return;
+            }
+
+            flushDraft(() => applyBackToSamples());
+            return;
+        }
+
+        applyBackToSamples();
+    }
+
+    function applyBackToSamples() {
+        setActive(null);
+        setConfirmComplete(false);
+        setDiscardConfirm(false);
+        setPendingBackToSamples(false);
+        setPendingTask(null);
+        form.clearErrors();
+        form.reset();
+    }
+
     function applyBackToQueue() {
         setSelectedJobId(null);
         setActive(null);
         setJobQueryParam(null);
         setPendingBackToQueue(false);
+        setPendingBackToSamples(false);
         setPendingJobId(null);
         setPendingTask(null);
     }
@@ -640,6 +688,11 @@ export default function AnalystIndex({
 
         if (pendingBackToQueue) {
             applyBackToQueue();
+            return;
+        }
+
+        if (pendingBackToSamples) {
+            applyBackToSamples();
             return;
         }
 
@@ -1779,6 +1832,11 @@ export default function AnalystIndex({
                             canGoPrev={prevJobId != null}
                             canGoNext={nextJobId != null}
                             onBackToQueue={backToQueue}
+                            onBackToSamples={
+                                isMultiSampleJob(selectedGroup.tasks)
+                                    ? backToSamples
+                                    : undefined
+                            }
                             onPrevJob={() => goAdjacentJob('prev')}
                             onNextJob={() => goAdjacentJob('next')}
                             onFocusTask={openTask}
@@ -1974,6 +2032,7 @@ export default function AnalystIndex({
                         setPendingTask(null);
                         setPendingJobId(null);
                         setPendingBackToQueue(false);
+                        setPendingBackToSamples(false);
                     }
                 }}
                 title="You have unsaved changes. Discard them?"

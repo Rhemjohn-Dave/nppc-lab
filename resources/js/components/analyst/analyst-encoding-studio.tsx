@@ -2,7 +2,7 @@ import AnalystWorkflowStepper from '@/components/analyst/analyst-workflow-steppe
 import EncodingAssayForm from '@/components/analyst/encoding-assay-form';
 import EncodingAssayTabs from '@/components/analyst/encoding-assay-tabs';
 import EncodingContextRail from '@/components/analyst/encoding-context-rail';
-import EncodingSampleTabs from '@/components/analyst/encoding-sample-tabs';
+import EncodingSampleTable from '@/components/analyst/encoding-sample-table';
 import EncodingShortcutStrip from '@/components/analyst/encoding-shortcut-strip';
 import EncodingWorkbenchHeader from '@/components/analyst/encoding-workbench-header';
 import type {
@@ -19,7 +19,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { useSidebar } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
-import { ArrowRight, FileText, PanelRight, Send } from 'lucide-react';
+import {
+    ArrowRight,
+    ChevronLeft,
+    FileText,
+    PanelRight,
+    Send,
+} from 'lucide-react';
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -60,6 +66,7 @@ type Props = {
     canGoPrev?: boolean;
     canGoNext?: boolean;
     onBackToQueue?: () => void;
+    onBackToSamples?: () => void;
     onPrevJob?: () => void;
     onNextJob?: () => void;
     onFocusTask: (task: AnalystTask) => void;
@@ -104,6 +111,7 @@ export default function AnalystEncodingStudio({
     canGoPrev = false,
     canGoNext = false,
     onBackToQueue,
+    onBackToSamples,
     onPrevJob,
     onNextJob,
     onFocusTask,
@@ -179,13 +187,16 @@ export default function AnalystEncodingStudio({
     );
 
     const sampleGroups = useMemo(() => groupTasksBySample(tasks), [tasks]);
+    const isMultiSample = sampleGroups.length >= 2;
+    /** Multi-sample JOs list samples first; encode only after Open sample. */
+    const showingSampleList = isMultiSample && active == null;
 
     const activeSampleGroup = useMemo(() => {
         if (sampleGroups.length === 0) {
             return null;
         }
         if (!active) {
-            return sampleGroups[0];
+            return isMultiSample ? null : sampleGroups[0];
         }
         const sampleId = active.sample_id ?? null;
         return (
@@ -193,11 +204,11 @@ export default function AnalystEncodingStudio({
                 sampleId == null
                     ? g.sample_id == null
                     : g.sample_id === sampleId,
-            ) ?? sampleGroups[0]
+            ) ?? (isMultiSample ? null : sampleGroups[0])
         );
-    }, [sampleGroups, active]);
+    }, [sampleGroups, active, isMultiSample]);
 
-    const checklist = activeSampleGroup?.tasks ?? tasks;
+    const checklist = activeSampleGroup?.tasks ?? (isMultiSample ? [] : tasks);
 
     const activeSample: SampleSummary | null = useMemo(() => {
         const id = active?.sample_id ?? activeSampleGroup?.sample_id ?? null;
@@ -308,11 +319,25 @@ export default function AnalystEncodingStudio({
             : active?.report?.message?.trim() ||
               'Encode all tests on this result sheet to preview';
 
-    const sampleLabel =
-        active?.sample_label?.trim() ||
-        activeSampleGroup?.label ||
-        activeSample?.description ||
-        null;
+    const sampleLabel = (() => {
+        if (!active && showingSampleList) {
+            return null;
+        }
+        const control =
+            active?.control_number?.trim() ||
+            activeSampleGroup?.control_number?.trim() ||
+            activeSample?.control_number?.trim() ||
+            null;
+        const name =
+            active?.sample_label?.trim() ||
+            activeSampleGroup?.label ||
+            activeSample?.description ||
+            null;
+        if (control && name && !name.startsWith(control)) {
+            return `${control} · ${name}`;
+        }
+        return name || control;
+    })();
 
     const activeIndex = checklist.findIndex((t) => t.id === active?.id);
     const nextAssay =
@@ -459,8 +484,8 @@ export default function AnalystEncodingStudio({
                                 <strong className="font-semibold text-slate-700">
                                     {job.sample_storage_temp}
                                 </strong>
-                                </span>
-                            ) : null}
+                            </span>
+                        ) : null}
                         {job.received_at ? (
                             <>
                                 <span>·</span>
@@ -470,30 +495,55 @@ export default function AnalystEncodingStudio({
                             </>
                         ) : null}
                     </div>
-                    )}
+                )}
+            </div>
+
+            {showingSampleList ? (
+                <EncodingSampleTable
+                    groups={sampleGroups}
+                    jobSamples={job.samples}
+                    consolidationSamples={consolidation?.samples}
+                    onOpenSample={onFocusTask}
+                />
+            ) : null}
+
+            {!showingSampleList && isMultiSample && onBackToSamples ? (
+                <div className="flex h-9 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3 sm:px-4">
+                    <button
+                        type="button"
+                        onClick={onBackToSamples}
+                        className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-200 sm:text-xs"
+                    >
+                        <ChevronLeft className="size-3.5" />
+                        Back to samples
+                    </button>
+                    {sampleLabel ? (
+                        <>
+                            <span className="text-slate-300">·</span>
+                            <span className="min-w-0 truncate text-xs font-medium text-slate-700">
+                                {sampleLabel}
+                            </span>
+                        </>
+                    ) : null}
                 </div>
+            ) : null}
 
-            <EncodingSampleTabs
-                groups={sampleGroups}
-                activeSampleId={
-                    active?.sample_id ?? activeSampleGroup?.sample_id ?? null
-                }
-                onFocusTask={onFocusTask}
-            />
+            {!showingSampleList ? (
+                <EncodingAssayTabs
+                    tasks={checklist}
+                    activeId={active?.id ?? null}
+                    onFocusTask={onFocusTask}
+                />
+            ) : null}
 
-            <EncodingAssayTabs
-                tasks={checklist}
-                activeId={active?.id ?? null}
-                onFocusTask={onFocusTask}
-            />
-
-            {hasReturned && reviewNotes ? (
+            {!showingSampleList && hasReturned && reviewNotes ? (
                 <div className="shrink-0 border-b border-rose-100 bg-rose-50 px-3 py-1.5 text-xs text-rose-950 sm:px-4">
                     <span className="font-bold">QA return · </span>
                     <span className="whitespace-pre-wrap">{reviewNotes}</span>
                 </div>
             ) : null}
 
+            {showingSampleList ? null : (
             <form
                 id="analyst-encoding-form"
                 className="flex min-h-0 flex-1 flex-col overflow-hidden"
@@ -892,6 +942,7 @@ export default function AnalystEncodingStudio({
                     </div>
                 </footer>
             </form>
+            )}
         </main>
     );
 }
