@@ -203,13 +203,13 @@ export function AppSidebar({ collapsible = 'icon' }: AppSidebarProps) {
             variant="inset"
             className="z-20 border-r border-slate-200 bg-white"
         >
-            <SidebarHeader className="border-b border-slate-100 px-2 py-2">
-                <SidebarMenu>
-                    <SidebarMenuItem>
+            <SidebarHeader className="border-b border-slate-100 px-2 py-2 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-2.5">
+                <SidebarMenu className="group-data-[collapsible=icon]:items-center">
+                    <SidebarMenuItem className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
                         <SidebarMenuButton
                             size="lg"
                             asChild
-                            className="h-auto rounded-lg hover:bg-slate-50 data-[slot=sidebar-menu-button]:p-2 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-0!"
+                            className="h-auto rounded-lg hover:bg-slate-50 data-[slot=sidebar-menu-button]:p-2 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0!"
                         >
                             <Link href="/dashboard" prefetch>
                                 <AppLogo />

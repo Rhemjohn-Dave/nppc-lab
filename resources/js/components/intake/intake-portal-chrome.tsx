@@ -107,10 +107,7 @@ export default function IntakePortalChrome({
                     >
                         {landing ? (
                             <>
-                                <span className="inline-flex items-center gap-2 font-medium text-emerald-700">
-                                    <span className="size-2 rounded-full bg-emerald-500" />
-                                    ISO/IEC 17025 Accredited
-                                </span>
+                                
                                 <span
                                     className="hidden h-4 w-px bg-slate-200 sm:block"
                                     aria-hidden
@@ -138,10 +135,7 @@ export default function IntakePortalChrome({
                             <>
                                 {!compact ? (
                                     <>
-                                        <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700">
-                                            <span className="size-1.5 rounded-full bg-emerald-500" />
-                                            ISO/IEC 17025 Accredited
-                                        </span>
+                                        
                                         <span className="hidden text-slate-500 sm:inline">
                                             Turnaround: 5–7 business days
                                         </span>
@@ -271,7 +265,7 @@ export default function IntakePortalChrome({
             {!landing && !compact && !wizard ? (
                 <div className="border-b border-nppc-100 bg-nppc-50/80">
                     <div className="mx-auto flex w-full max-w-[1920px] flex-wrap items-center justify-between gap-2 px-3 py-1.5 text-[10px] font-medium tracking-wide text-nppc-800 uppercase sm:px-4 lg:px-5 xl:px-6">
-                        <span>ISO/IEC 17025 Accredited</span>
+                        <span></span>
                         <span className="text-nppc-700/80">
                             Bacolod City, Negros Occidental
                         </span>

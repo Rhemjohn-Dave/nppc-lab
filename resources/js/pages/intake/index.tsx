@@ -444,10 +444,7 @@ export default function IntakeIndex() {
 
                     <div className="mt-6 flex flex-col items-stretch gap-3 border-t border-slate-200/80 pt-5 sm:mt-7 sm:flex-row sm:items-center sm:justify-center sm:gap-0 sm:divide-x sm:divide-slate-200 sm:border-0 sm:pt-6">
                         {[
-                            {
-                                icon: Award,
-                                label: 'ISO/IEC 17025 Accredited',
-                            },
+                            
                             {
                                 icon: Clock,
                                 label: 'Turnaround Time 5–7 Business Days',
@@ -484,8 +481,7 @@ export default function IntakeIndex() {
                             |
                         </span>
                         <span>
-                            ISO/IEC 17025 · DENR &amp; DOH Recognized · RA 10173
-                            Data Privacy
+                            DENR &amp; DOH Recognized · RA 10173 Data Privacy
                         </span>
                     </div>
                     <p className="sm:text-right">

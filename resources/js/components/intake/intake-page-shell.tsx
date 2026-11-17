@@ -61,7 +61,7 @@ export default function IntakePageShell({
             <footer className="relative z-10 shrink-0 border-t border-slate-200 bg-white">
                 <div className="mx-auto flex w-full max-w-[1600px] flex-wrap items-center justify-between gap-2 px-4 py-1.5 text-[10px] text-slate-500 sm:px-5 lg:px-6">
                     <p>
-                        ISO/IEC 17025 · NPPC Analytical &amp; Diagnostic Testing
+                        NPPC Analytical &amp; Diagnostic Testing
                     </p>
                     <p>Powered by FNDS · All rights reserved 2026</p>
                 </div>

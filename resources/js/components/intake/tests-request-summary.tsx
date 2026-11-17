@@ -349,7 +349,7 @@ export default function TestsRequestSummary({
                 </div>
                 <p className="text-[10px] leading-snug text-slate-500">
                     Receiving may adjust final pricing. Typical turnaround 5–7
-                    business days · ISO/IEC 17025.
+                    business days.
                 </p>
             </div>
         </div>

@@ -12,7 +12,7 @@ export default function DocumentControlCallout({
     return (
         <aside className="rounded-lg border border-nppc-900/25 bg-nppc-50/80 px-3 py-2.5 text-xs">
             {/* <p className="font-semibold text-nppc-900">
-                ISO/IEC 17025:2017 document rule
+                
             </p> */}
             <p className="mt-1 leading-relaxed text-slate-700">
                 Official {formCode}
