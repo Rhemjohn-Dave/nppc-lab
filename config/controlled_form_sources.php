@@ -19,6 +19,30 @@ return [
             'label' => 'Result sheet header',
             'categories' => ['analysis_result'],
             'sources' => [
+                [
+                    'key' => 'chrome.nppc_logo',
+                    'label' => 'NPPC Logo',
+                    'type' => 'image',
+                    'hint' => 'Circular NPPC Analytical and Diagnostic Laboratory seal. Asset: nppc-letterhead-logo.png.',
+                ],
+                [
+                    'key' => 'chrome.nppc_header',
+                    'label' => 'NPPC Header Text',
+                    'type' => 'image',
+                    'hint' => 'Company name, address, and contact lines. Asset: nppc-letterhead-title.png.',
+                ],
+                [
+                    'key' => 'chrome.nppc_pab',
+                    'label' => 'PAB Accredited',
+                    'type' => 'image',
+                    'hint' => 'PAB accreditation mark + LA-2016-289C block. Asset: nppc-letterhead-pab.png.',
+                ],
+                [
+                    'key' => 'chrome.nppc_letterhead',
+                    'label' => 'NPPC Letterhead (full)',
+                    'type' => 'image',
+                    'hint' => 'Combined logo + header + PAB banner (single image). Prefer the three separate fields when placing independently. Asset: nppc-letterhead-header.png.',
+                ],
                 ['key' => 'results.customer', 'label' => 'Customer', 'type' => 'text'],
                 ['key' => 'results.address', 'label' => 'Address', 'type' => 'text'],
                 ['key' => 'results.ref_no', 'label' => 'Ref. No.', 'type' => 'text', 'hint' => 'Job order / LSO reference number.'],

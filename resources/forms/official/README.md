@@ -39,7 +39,7 @@ Several printed sheets share official label **LSP 7.8 F016**. Distinct internal 
 
 `LSP-7.8-FO4` and `LSP-7.8-FO5` ship field blueprints at `config/result_fo4_form_fields.php` and `config/result_fo5_form_fields.php` (registered in `config/controlled_form_blueprints.php`). Fresh installs seed those overlay boxes automatically; Form Designer → **Import blueprint** reloads them after you upload the PDF.
 
-`LSP-7.8-FO2` (Physico-Chemical Test Results — Wastewater, Issue 18) is **individual / per-test**: no package binding, types-only dynamic matrix (`config/result_ww_physico_form_fields.php`). Any non-empty subset of its bound WW/SA panel tests resolves this form. Source blank: `PC Wastewater result Form Issue 18 09012026 blank.pdf`.
+`LSP-7.8-FO2` (Physico-Chemical Test Results — Wastewater, Issue 18) is **individual / per-test**: no package binding, types-only dynamic matrix (`config/result_ww_physico_form_fields.php`). Any non-empty subset of its bound WW/SA panel tests resolves this form. Source blank: `PC Wastewater result Form Issue 18 09012026 blank.pdf` (FO2 / FO2A / FO2B share this PDF). Letterhead asset: `nppc-letterhead-header.png` (baked into the blank).
 
 `LSP-7.8-FO37` (Drinking Water Physico-Chemical Issue 7) ships with a **blank-table** PDF under this folder. The dynamic matrix draws Tests | Method | Results | Acceptable Values | Remarks (`config/result_dw_physico_form_fields.php`); package `PKG-DW-PHYSICO` uses `report_layout = dynamic_matrix`. Do **not** confuse with FO5 drinking-water **microbiology**.
 

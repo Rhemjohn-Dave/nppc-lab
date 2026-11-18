@@ -268,8 +268,13 @@ class ControlledPdfFiller
                 continue;
             }
             $staticText = trim((string) ($options['static_text'] ?? ''));
+            $staticImage = trim((string) ($options['static_image'] ?? ''));
+            $sourceKey = trim((string) ($field->data_source_key ?? ''));
+            $isImageField = $field->field_type === ControlledFormFieldType::Image
+                || $staticImage !== ''
+                || str_starts_with($sourceKey, 'chrome.nppc_');
             $hasValue = array_key_exists($field->name, $values);
-            if (! $hasValue && $staticText === '') {
+            if (! $hasValue && $staticText === '' && ! $isImageField) {
                 continue;
             }
             $drawableFields[] = [
@@ -1375,6 +1380,88 @@ class ControlledPdfFiller
     }
 
     /**
+     * Resolve official form image assets (basename only under resources/forms/official).
+     */
+    private function resolveOfficialImagePath(?string $filename): ?string
+    {
+        $name = basename(str_replace('\\', '/', trim((string) $filename)));
+        if ($name === '' || $name === '.' || $name === '..') {
+            return null;
+        }
+
+        $path = resource_path('forms/official/'.$name);
+        if (! is_file($path)) {
+            return null;
+        }
+
+        return $path;
+    }
+
+    /**
+     * @param  array<string, mixed>  $field
+     * @param  array<string, mixed>  $options
+     */
+    private function writeStaticImage(
+        Fpdi $pdf,
+        array $field,
+        array $options,
+        float $x,
+        float $y,
+        float $w,
+        float $h,
+    ): bool {
+        $type = (string) ($field['type'] ?? 'text');
+        $fromOptions = trim((string) ($options['static_image'] ?? ''));
+        $name = (string) ($field['name'] ?? '');
+        $chromeDefaults = [
+            'chrome.nppc_logo' => 'nppc-letterhead-logo.png',
+            'chrome_nppc_logo' => 'nppc-letterhead-logo.png',
+            'chrome.nppc_header' => 'nppc-letterhead-title.png',
+            'chrome_nppc_header' => 'nppc-letterhead-title.png',
+            'chrome.nppc_pab' => 'nppc-letterhead-pab.png',
+            'chrome_nppc_pab' => 'nppc-letterhead-pab.png',
+            'chrome.nppc_letterhead' => 'nppc-letterhead-header.png',
+            'chrome_nppc_letterhead' => 'nppc-letterhead-header.png',
+        ];
+        $filename = $fromOptions !== ''
+            ? $fromOptions
+            : ($chromeDefaults[$name]
+                ?? ($type === ControlledFormFieldType::Image->value
+                    ? 'nppc-letterhead-header.png'
+                    : ''));
+
+        if ($filename === '') {
+            return false;
+        }
+
+        $path = $this->resolveOfficialImagePath($filename);
+        if ($path === null) {
+            return false;
+        }
+
+        // Keep aspect ratio inside the designer box (fit, not stretch).
+        $info = @getimagesize($path);
+        if (is_array($info) && ($info[0] ?? 0) > 0 && ($info[1] ?? 0) > 0) {
+            $aspect = ((float) $info[0]) / ((float) $info[1]);
+            $fitW = $w;
+            $fitH = $fitW / $aspect;
+            if ($fitH > $h) {
+                $fitH = $h;
+                $fitW = $fitH * $aspect;
+            }
+            $drawX = $x + max(0.0, ($w - $fitW) / 2);
+            $drawY = $y + max(0.0, ($h - $fitH) / 2);
+            $pdf->Image($path, $drawX, $drawY, $fitW, $fitH, '', '', '', false, 300, '', false, false, 0, false, false, false);
+
+            return true;
+        }
+
+        $pdf->Image($path, $x, $y, $w, $h, '', '', '', false, 300, '', false, false, 0, false, false, false);
+
+        return true;
+    }
+
+    /**
      * @param  array{name: string, type: string, page: int, x: float, y: float, w: float, h: float, font_size: float, align: string, font_family?: string, font_color?: string, table_config?: array<int|string, mixed>|null}  $field
      * @param  array<string, mixed>  $allValues
      * @return float|null Content bottom Y for multiline fields; null when not applicable.
@@ -1424,6 +1511,10 @@ class ControlledPdfFiller
         $h = (float) $field['h'];
 
         $options = is_array($field['options'] ?? null) ? $field['options'] : [];
+        if ($this->writeStaticImage($pdf, $field, $options, $x, $y, $w, $h)) {
+            return null;
+        }
+
         $cover = ($options['cover'] ?? false) === true;
         if ($cover) {
             $pdf->SetFillColor(255, 255, 255);

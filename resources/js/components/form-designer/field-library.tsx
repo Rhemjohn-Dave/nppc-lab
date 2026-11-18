@@ -5,6 +5,7 @@ import {
     CircleDot,
     GripVertical,
     Hash,
+    Image as ImageIcon,
     PenLine,
     Plus,
     Search,
@@ -27,6 +28,7 @@ const typeIcons: Record<string, typeof Type> = {
     checkbox: CheckSquare,
     radio: CircleDot,
     signature: PenLine,
+    image: ImageIcon,
     table: Table2,
     dynamic_test_matrix: Table2,
 };

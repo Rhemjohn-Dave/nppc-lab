@@ -46,6 +46,29 @@ export function sourceToField(
         fieldTypes.find((option) => option.value === fieldType) ?? fieldTypes[0];
 
     const isTable = fieldType === 'table';
+    const chromeImages: Record<string, { file: string; width: number; height: number }> = {
+        'chrome.nppc_logo': {
+            file: 'nppc-letterhead-logo.png',
+            width: 28,
+            height: 25.5,
+        },
+        'chrome.nppc_header': {
+            file: 'nppc-letterhead-title.png',
+            width: 110,
+            height: 10,
+        },
+        'chrome.nppc_pab': {
+            file: 'nppc-letterhead-pab.png',
+            width: 28,
+            height: 19.5,
+        },
+        'chrome.nppc_letterhead': {
+            file: 'nppc-letterhead-header.png',
+            width: 180,
+            height: 32.5,
+        },
+    };
+    const chrome = chromeImages[source.key];
 
     return {
         name: sanitizeFieldName(source.key, index),
@@ -54,8 +77,8 @@ export function sourceToField(
         page_number: page,
         x: Math.max(0, Number(x.toFixed(3))),
         y: Math.max(0, Number(y.toFixed(3))),
-        width: isTable ? 170 : (typeOption?.width ?? 40),
-        height: isTable ? 45 : (typeOption?.height ?? 5),
+        width: isTable ? 170 : (chrome?.width ?? typeOption?.width ?? 40),
+        height: isTable ? 45 : (chrome?.height ?? typeOption?.height ?? 5),
         font_size: 11,
         font_family: 'calibri',
         font_color: '#000000',
@@ -63,7 +86,7 @@ export function sourceToField(
         data_source_key: source.key,
         format: null,
         checkbox_true_value: source.type === 'checkbox' ? '1' : null,
-        options: null,
+        options: chrome ? { static_image: chrome.file } : null,
         table_config: isTable
             ? {
                   row_height: 4.5,

@@ -23,6 +23,10 @@ class ResultSheetHeaderFieldsTest extends TestCase
         $keys = collect(FieldValueResolver::catalog(ControlledFormCategory::AnalysisResult->value))
             ->pluck('key');
 
+        $this->assertTrue($keys->contains('chrome.nppc_logo'));
+        $this->assertTrue($keys->contains('chrome.nppc_header'));
+        $this->assertTrue($keys->contains('chrome.nppc_pab'));
+        $this->assertTrue($keys->contains('chrome.nppc_letterhead'));
         $this->assertTrue($keys->contains('results.sample_received_at'));
         $this->assertTrue($keys->contains('results.sampling_datetime'));
         $this->assertTrue($keys->contains('results.analysis_datetime'));

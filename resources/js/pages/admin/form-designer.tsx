@@ -1367,6 +1367,7 @@ export default function FormDesigner({
                                         const isPrimary = id === primaryId;
                                         const isTable = field.field_type === 'table';
                                         const isMatrix = field.field_type === 'dynamic_test_matrix';
+                                        const isImage = field.field_type === 'image';
                                         // Natural-height tables: the box ends at the last row (field height stays as print capacity).
                                         const contentMm = isMatrix ? (matrixContentMm[id] ?? null) : null;
                                         const endsAtLastRow = contentMm !== null && contentMm > 0;
@@ -1394,12 +1395,15 @@ export default function FormDesigner({
                                         const showWrappedPreview =
                                             !isTable &&
                                             !isMatrix &&
+                                            !isImage &&
                                             (isMultiline || staticText !== '');
                                         const previewBody = isTable
                                             ? `▦ ${field.label}`
-                                            : staticText !== ''
-                                              ? staticText
-                                              : field.label;
+                                            : isImage
+                                              ? `🖼 ${field.label}`
+                                              : staticText !== ''
+                                                ? staticText
+                                                : field.label;
                                         // font_size is PDF points (TCPDF); match matrix preview / print.
                                         const fontSizePt = Number(field.font_size) || 11;
                                         const fontSizePx = fontSizeCssPx(fontSizePt, pxPerMm);

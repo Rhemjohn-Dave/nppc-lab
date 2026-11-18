@@ -12,6 +12,7 @@ enum ControlledFormFieldType: string
     case Checkbox = 'checkbox';
     case Radio = 'radio';
     case Signature = 'signature';
+    case Image = 'image';
     case Table = 'table';
     case DynamicTestMatrix = 'dynamic_test_matrix';
 
@@ -26,6 +27,7 @@ enum ControlledFormFieldType: string
             self::Checkbox => 'Checkbox',
             self::Radio => 'Radio / Selection',
             self::Signature => 'Signature',
+            self::Image => 'Image',
             self::Table => 'Table / Repeating Rows',
             self::DynamicTestMatrix => 'Dynamic test matrix',
         };
@@ -37,6 +39,7 @@ enum ControlledFormFieldType: string
             self::Checkbox => 3.5,
             self::Radio => 3.5,
             self::Signature => 40.0,
+            self::Image => 180.0,
             self::Table => 80.0,
             self::DynamicTestMatrix => 120.0,
             self::Multiline => 80.0,
@@ -50,6 +53,7 @@ enum ControlledFormFieldType: string
             self::Checkbox, self::Radio => 3.5,
             self::Multiline => 16.0,
             self::Signature => 14.0,
+            self::Image => 32.5,
             self::Table => 20.0,
             self::DynamicTestMatrix => 60.0,
             default => 5.0,

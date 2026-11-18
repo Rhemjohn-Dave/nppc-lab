@@ -492,6 +492,10 @@ class FieldValueResolver
             'payment_terms_30' => true,
             'results.customer' => 'ABC Corporation',
             'results.address' => 'Bacolod City',
+            'chrome.nppc_logo' => '1',
+            'chrome.nppc_header' => '1',
+            'chrome.nppc_pab' => '1',
+            'chrome.nppc_letterhead' => '1',
             'results.ref_no' => 'JO-2026-00125',
             'results.control_no' => 'JO-2026-00125',
             'results.sample_received_at' => 'July 29, 2026 (3:00PM)',
@@ -916,6 +920,11 @@ class FieldValueResolver
 
         $bag['results.customer'] = $clientDisplayName;
         $bag['results.address'] = $jobOrder->customer_address;
+        // Presence flags so letterhead image overlays always draw when mapped.
+        $bag['chrome.nppc_logo'] = '1';
+        $bag['chrome.nppc_header'] = '1';
+        $bag['chrome.nppc_pab'] = '1';
+        $bag['chrome.nppc_letterhead'] = '1';
         $bag['results.ref_no'] = $jobOrder->reference_no;
         $bag['results.control_no'] = $jobOrder->reference_no;
         $bag['results.sample_received_at'] = $this->officialDateTime($jobOrder->created_at);
